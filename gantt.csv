@@ -1,0 +1,9 @@
+Id,Name,Start,End,Duration,chart
+project,E-Commerce,2025-01-06 09:00,2025-02-28 17:00,0,-
+project.planning,Phase 1: Planning,2025-01-06 09:00,2025-01-17 17:00,0,-
+project.planning.req,Requirements,2025-01-06 09:00,2025-01-10 17:00,0,-
+project.planning.arch,Architecture,2025-01-13 09:00,2025-01-17 17:00,0,-
+project.dev,Phase 2: Development,2025-01-20 09:00,2025-02-21 17:00,0,-
+project.dev.backend,Backend Core,2025-01-20 09:00,2025-02-07 17:00,0,-
+project.dev.frontend,Frontend UI,2025-02-10 09:00,2025-02-21 17:00,0,-
+project.launch,Phase 3: Launch,2025-02-24 09:00,2025-02-28 17:00,0,-
