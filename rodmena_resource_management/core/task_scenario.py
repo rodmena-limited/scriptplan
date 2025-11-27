@@ -281,21 +281,31 @@ class TaskScenario(ScenarioData):
                     latest_end = self.project['end']  # Default to project end
 
                     # Check onstart dependencies - our END must be before predecessor's START
+                    # with gapduration subtracted if specified
                     for dep in self.getAllDependencies():
                         if isinstance(dep, dict):
                             onstart = dep.get('onstart', False)
                             pred = dep.get('task')
+                            gapduration = dep.get('gapduration')
                         elif hasattr(dep, 'task'):
                             onstart = getattr(dep, 'onstart', False)
                             pred = dep.task
+                            gapduration = getattr(dep, 'gapduration', None)
                         else:
                             onstart = False
                             pred = dep
+                            gapduration = None
 
                         if onstart and pred:
                             pred_start = pred.get('start', self.scenarioIdx)
-                            if pred_start and pred_start < latest_end:
-                                latest_end = pred_start
+                            if pred_start:
+                                # Apply gapduration - A must end (gapduration) before B starts
+                                if gapduration:
+                                    gap_hours = self._parse_duration(gapduration)
+                                    from datetime import timedelta
+                                    pred_start = pred_start - timedelta(hours=gap_hours)
+                                if pred_start < latest_end:
+                                    latest_end = pred_start
 
                     # Also check successors (finish-to-start deps)
                     successors = self._getSuccessors()

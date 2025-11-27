@@ -1,0 +1,48 @@
+/*
+ * Issue #58: "Blindfolded" Edition - Date Line + ALAP Gap Paradox
+ * Tests gapduration subtraction in ALAP backward pass with extreme timezones
+ */
+
+project "Paradox" 2025-12-25 +2w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-12-25
+  scheduling alap
+}
+
+shift daily "Daily" {
+  workinghours mon - sun 09:00 - 15:00
+}
+
+resource k "K" {
+  timezone "Pacific/Kiritimati"
+  workinghours daily
+  efficiency 0.5
+}
+
+resource n "N" {
+  timezone "Pacific/Niue"
+  workinghours daily
+  efficiency 2.0
+}
+
+task sequence "Event" {
+  end 2025-12-31-23:00
+
+  task b "Omega" {
+    effort 3h
+    allocate k
+  }
+
+  task a "Alpha" {
+    effort 12h
+    allocate n
+    depends !!b { gapduration 48h onstart }
+  }
+}
+
+taskreport paradox_output "paradox_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}

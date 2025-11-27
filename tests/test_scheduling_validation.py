@@ -1531,6 +1531,204 @@ class TestIssue57BlackBoxProtocol:
         assert errors == 0, "FAIL: LOGIC MISMATCH - System integrity check failed"
 
 
+class TestIssue58BlindParadox:
+    """
+    Issue #58: "Blindfolded" Edition - Date Line + ALAP Gap Paradox
+
+    Tests gapduration subtraction in ALAP backward pass with extreme timezones:
+    - Resource K: Pacific/Kiritimati (UTC+14) - first timezone to see new day
+    - Resource N: Pacific/Niue (UTC-11) - nearly last timezone
+    - 48h gapduration with onstart dependency in ALAP mode
+
+    The trap: gapduration must be subtracted from predecessor's START,
+    not just stacked like bricks.
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'paradox.tjp'
+
+    # Base64 encoded ground truth (from blind judge)
+    TRUTH_A_START = "MjAyNS0xMi0yNy0yMzowMA=="  # 2025-12-27-23:00
+    TRUTH_A_END = "MjAyNS0xMi0yOC0yMzowMA=="    # 2025-12-28-23:00
+    TRUTH_B_START = "MjAyNS0xMi0zMC0yMzowMA=="  # 2025-12-30-23:00
+    TRUTH_B_END = "MjAyNS0xMi0zMS0yMzowMA=="    # 2025-12-31-23:00
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def _check_task(self, df, tid, code_start, code_end):
+        """Verify task against base64 encoded truth (exact blind judge logic)."""
+        import base64
+
+        row = df[df['id'] == tid]
+        assert not row.empty, f"FAIL: Task {tid} missing."
+
+        got_s = row.iloc[0]['start'].strip()
+        got_e = row.iloc[0]['end'].strip()
+
+        user_s_enc = base64.b64encode(got_s.encode('utf-8')).decode('utf-8')
+        user_e_enc = base64.b64encode(got_e.encode('utf-8')).decode('utf-8')
+
+        assert user_s_enc == code_start and user_e_enc == code_end, (
+            f"FAIL: {tid} Logic Mismatch.\n"
+            f"  -> Your output is mathematically incorrect.\n"
+            f"  -> Debug your Timezone-ALAP-Gap iterator."
+        )
+
+    def test_task_alpha_integrity(self, csv_dataframe):
+        """Task Alpha must respect 48h gapduration from Omega's start."""
+        self._check_task(csv_dataframe, 'sequence.a',
+                        self.TRUTH_A_START, self.TRUTH_A_END)
+
+    def test_task_omega_integrity(self, csv_dataframe):
+        """Task Omega must be anchored to container deadline."""
+        self._check_task(csv_dataframe, 'sequence.b',
+                        self.TRUTH_B_START, self.TRUTH_B_END)
+
+    def test_blind_judge_full_verification(self, csv_dataframe):
+        """
+        Run complete blind judge protocol.
+        ACCESS GRANTED only if both tasks pass integrity check.
+        """
+        import base64
+
+        errors = 0
+        for tid, code_s, code_e in [
+            ('sequence.a', self.TRUTH_A_START, self.TRUTH_A_END),
+            ('sequence.b', self.TRUTH_B_START, self.TRUTH_B_END)
+        ]:
+            row = csv_dataframe[csv_dataframe['id'] == tid]
+            if row.empty:
+                errors += 1
+                continue
+
+            got_s = row.iloc[0]['start'].strip()
+            got_e = row.iloc[0]['end'].strip()
+
+            user_s_enc = base64.b64encode(got_s.encode('utf-8')).decode('utf-8')
+            user_e_enc = base64.b64encode(got_e.encode('utf-8')).decode('utf-8')
+
+            if user_s_enc != code_s or user_e_enc != code_e:
+                errors += 1
+
+        assert errors == 0, "ACCESS DENIED - System logic mismatch"
+
+
+class TestIssue60EclipseProtocol:
+    """
+    Issue #60: The "Eclipse" Protocol
+
+    Tests intersection of discontinuous shift patterns.
+    Task requires BOTH resources simultaneously:
+    - r_sun: Mon, Wed, Fri 09:00-17:00
+    - r_moon: Mon-Sun 12:00-14:00
+    - Intersection: Mon, Wed, Fri 12:00-14:00 (2h windows)
+
+    7h effort across 2h windows = 4 work sessions needed
+    Jun 2 (Mon): 2h, Jun 4 (Wed): 2h, Jun 6 (Fri): 2h, Jun 9 (Mon): 1h
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'eclipse.tjp'
+
+    # Cryptic checksums from judge (reversed -> base64 encoded)
+    K_START = "MDA6MjEtMjAtNjAtNTIwMg=="  # 2025-06-02-12:00 reversed
+    K_END = "MDA6MzEtOTAtNjAtNTIwMg=="    # 2025-06-09-13:00 reversed
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def _verify(self, val, key):
+        """Exact judge verification: reverse string -> base64 encode -> compare."""
+        import base64
+        rev = val[::-1]
+        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
+        return enc == key
+
+    def test_sync_task_start(self, csv_dataframe):
+        """Task start must align with first intersection window."""
+        row = csv_dataframe[csv_dataframe['id'] == 'sys.sync']
+        assert not row.empty, "FAIL: Task sys.sync missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        assert self._verify(user_start, self.K_START), (
+            "FAIL: Start time alignment error.\n"
+            "Your scheduler likely booked a time slot where\n"
+            "one resource was available, but the other was not."
+        )
+
+    def test_sync_task_end(self, csv_dataframe):
+        """Task end must reflect correct intersection calculation."""
+        row = csv_dataframe[csv_dataframe['id'] == 'sys.sync']
+        assert not row.empty, "FAIL: Task sys.sync missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        assert self._verify(user_end, self.K_END), (
+            "FAIL: End time alignment error.\n"
+            "7h effort across 2h intersection windows should take ~1 week."
+        )
+
+    def test_orbital_alignment_full(self, csv_dataframe):
+        """
+        Run complete eclipse judge protocol.
+        SUCCESS only if both start and end match intersection calculation.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'sys.sync']
+        assert not row.empty, "FAIL: Task missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        user_end = row.iloc[0]['end'].strip()
+
+        s_match = self._verify(user_start, self.K_START)
+        e_match = self._verify(user_end, self.K_END)
+
+        assert s_match and e_match, (
+            "FAIL: ALIGNMENT ERROR.\n"
+            "Your scheduler likely booked a time slot where\n"
+            "one resource was available, but the other was not."
+        )
+
+
 # Convenience function to run all validation tests
 def run_all_scheduling_validations():
     """Run all scheduling validation tests."""
