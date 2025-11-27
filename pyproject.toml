@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rodmena_resource_management"
+version = "0.1.0"
+description = "A Python implementation of TaskJuggler"
+authors = [
+  { name="Rodmena Team", email="team@rodmena.com" },
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "lark", # For parsing TJP files
+    "python-dateutil",
+]
+
+[project.scripts]
+rodmena = "rodmena_resource_management.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
