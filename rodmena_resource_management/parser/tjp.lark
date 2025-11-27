@@ -114,8 +114,9 @@ resource_flags: "flags" ID ("," ID)*
 leaves_type: "annual" | "sick" | "holiday" | "special" | "unpaid"
 
 limits_body: limit_attr*
-limit_attr: "dailymax" duration_value limits_resources?
-          | "weeklymax" duration_value limits_resources?
+limit_attr: limit_dailymax | limit_weeklymax
+limit_dailymax: "dailymax" duration_value limits_resources?
+limit_weeklymax: "weeklymax" duration_value limits_resources?
 limits_resources: "{" "resources" ID ("," ID)* "}"
 
 // Task

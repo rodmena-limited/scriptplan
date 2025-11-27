@@ -190,6 +190,7 @@ class Project(MessageHandler):
             ['gauge', 'Gauge', StringAttribute, True, False, True, None],
             ['index', 'Index', IntegerAttribute, False, False, False, -1],
             ['length', 'Length', IntegerAttribute, True, False, True, 0],
+            ['limits', 'Limits', PropertyAttribute, True, False, True, None],
             ['maxend', 'Max End', DateAttribute, True, False, True, None],
             ['maxstart', 'Max Start', DateAttribute, True, False, True, None],
             ['minend', 'Min End', DateAttribute, True, False, True, None],

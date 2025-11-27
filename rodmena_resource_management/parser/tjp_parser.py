@@ -188,6 +188,59 @@ class TJPTransformer(Transformer):
     def resource_limits(self, items):
         return ('limits', items[0] if items else [])
 
+    def limits_body(self, items):
+        """Parse limits body containing limit_attr items."""
+        return list(items) if items else []
+
+    def limit_attr(self, items):
+        """Parse a single limit attribute - pass through the dailymax/weeklymax result."""
+        return items[0] if items else None
+
+    def limit_dailymax(self, items):
+        """Parse dailymax limit."""
+        duration = items[0] if items else '0h'
+        resources = items[1] if len(items) > 1 else None
+        hours = self._parse_duration_to_hours(duration) if isinstance(duration, str) else duration
+        return {
+            'type': 'dailymax',
+            'value': hours,
+            'resources': resources
+        }
+
+    def limit_weeklymax(self, items):
+        """Parse weeklymax limit."""
+        duration = items[0] if items else '0h'
+        resources = items[1] if len(items) > 1 else None
+        hours = self._parse_duration_to_hours(duration) if isinstance(duration, str) else duration
+        return {
+            'type': 'weeklymax',
+            'value': hours,
+            'resources': resources
+        }
+
+    def limits_resources(self, items):
+        """Parse limits resources: { resources id1, id2, ... }."""
+        return [self._get_value(i) for i in items]
+
+    def _parse_duration_to_hours(self, duration_str):
+        """Parse duration string to hours."""
+        import re
+        match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmy]?)', str(duration_str))
+        if match:
+            value = float(match.group(1))
+            unit = match.group(2) or 'h'
+            if unit == 'h':
+                return value
+            elif unit == 'd':
+                return value * 8  # 8 hours per day
+            elif unit == 'w':
+                return value * 40  # 40 hours per week
+            elif unit == 'm':
+                return value * 160  # ~160 hours per month
+            elif unit == 'y':
+                return value * 2000  # ~2000 hours per year
+        return 0
+
     def resource_leaves(self, items):
         """Handle resource leaves: leaves type start_date [- end_date]."""
         leave_type = items[0] if items else 'annual'
@@ -885,15 +938,41 @@ class ModelBuilder:
 
     def _apply_global_attributes(self, project, attributes):
         """Apply global attributes to the project."""
+        from rodmena_resource_management.core.leave import Leave
+        from rodmena_resource_management.utils.time import TimeInterval
+
         for attr in attributes:
             if attr is None:
                 continue
             if isinstance(attr, tuple):
                 key, value = attr
-                try:
-                    project[key] = value
-                except (ValueError, KeyError):
-                    pass
+                if key == 'leaves':
+                    # Global leaves - convert dict to Leave object
+                    leave_type = value.get('type', 'holiday')
+                    start_date = value.get('start')
+                    # For single-day holidays, end_date might be None
+                    end_date = value.get('end')
+                    if end_date is None:
+                        # Single day - end is start + 1 day
+                        from datetime import timedelta
+                        end_date = start_date + timedelta(days=1)
+
+                    if start_date:
+                        interval = TimeInterval(start_date, end_date)
+                        type_idx = Leave.Types.get(leave_type, 1)  # Default to 'holiday' (1)
+                        leave = Leave(interval, type_idx)
+
+                        # Add to project's leaves list
+                        existing = project.attributes.get('leaves', [])
+                        if not isinstance(existing, list):
+                            existing = [existing] if existing else []
+                        existing.append(leave)
+                        project.attributes['leaves'] = existing
+                else:
+                    try:
+                        project[key] = value
+                    except (ValueError, KeyError):
+                        pass
 
     def _create_scenario(self, project, scenario_data, parent=None):
         """Create a scenario in the project.
@@ -1051,6 +1130,30 @@ class ModelBuilder:
                                 existing = [existing]
                             existing.append(leave)
                             obj[('leaves', scIdx)] = existing
+                elif key == 'limits':
+                    # Task or resource limits - create Limits object
+                    from rodmena_resource_management.core.limits import Limits
+
+                    limits_obj = Limits()
+                    limits_obj.setProject(obj.project)
+
+                    # value is a list of limit dicts from parsing
+                    for limit_def in value:
+                        limit_type = limit_def.get('type', 'dailymax')
+                        limit_value = limit_def.get('value', 0)
+                        limit_resources = limit_def.get('resources')
+
+                        if limit_resources:
+                            # Resource-specific limits
+                            for res_id in limit_resources:
+                                limits_obj.setLimit(limit_type, limit_value, resource=res_id)
+                        else:
+                            # General limit
+                            limits_obj.setLimit(limit_type, limit_value)
+
+                    # Store limits on task/resource for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('limits', scIdx)] = limits_obj
                 else:
                     try:
                         obj[key] = value

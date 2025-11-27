@@ -338,10 +338,16 @@ class ResourceScenario(ScenarioData):
         efficiency = self.property.get('efficiency', self.scenarioIdx) or 1.0
         self._effort += efficiency
 
-        # Update limits
+        # Update resource limits
         limits = self.property.get('limits', self.scenarioIdx)
         if limits and hasattr(limits, 'inc'):
             limits.inc(sb_idx)
+
+        # Update task limits (including parent task limits)
+        # This matches TaskJuggler's behavior: task.incLimits(@scenarioIdx, sbIdx, @property)
+        task_scenario = task.data[self.scenarioIdx] if hasattr(task, 'data') and task.data else None
+        if task_scenario and hasattr(task_scenario, 'incLimits'):
+            task_scenario.incLimits(sb_idx, self.property)
 
         # Track booked slot ranges
         if self.firstBookedSlot is None or self.firstBookedSlot > sb_idx:

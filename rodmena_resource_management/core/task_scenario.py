@@ -33,12 +33,32 @@ class TaskScenario(ScenarioData):
         if not self.property.parent:
             mode = AttributeBase.mode()
             AttributeBase.setMode(1)
-            
+
             proj_projection = self.project.scenario(self.scenarioIdx).get('projection') if hasattr(self.project, 'scenario') else None
             if proj_projection:
                  self.property[( 'projectionmode', self.scenarioIdx )] = proj_projection
-            
+
             AttributeBase.setMode(mode)
+
+    def prepareScheduling(self):
+        """
+        Reset all scheduling related data prior to scheduling.
+        Called once per scenario before scheduling begins.
+        """
+        self.isRunAway = False
+        self.currentSlotIdx = None
+        self.doneDuration = 0
+        self.doneLength = 0
+        self.doneEffort = 0.0
+        self.scheduled = False
+
+        # Reset the counters of all limits of this task (not parent tasks).
+        # This is critical - limits track usage per period and must be reset
+        # before each scheduling run to avoid carrying over counts from
+        # previous scenario scheduling.
+        limits = self.property.get('limits', self.scenarioIdx)
+        if limits:
+            limits.reset()
     
     def getAllDependencies(self):
         """
@@ -282,6 +302,47 @@ class TaskScenario(ScenarioData):
                     efficiency = 1.0
                 self.doneEffort += efficiency
 
+    def getAllLimits(self):
+        """
+        Collect limits from this task and all parent tasks.
+        Returns a list of Limits objects.
+        """
+        all_limits = []
+        task = self.property
+        while task is not None:
+            limits = task.get('limits', self.scenarioIdx)
+            if limits:
+                all_limits.append(limits)
+            task = task.parent
+        return all_limits
+
+    def limitsOk(self, sbIdx, resource=None):
+        """
+        Check if all task limits (including parent limits) are satisfied.
+
+        Args:
+            sbIdx: Scoreboard index to check
+            resource: Resource to check (for resource-specific limits)
+
+        Returns:
+            True if all limits are satisfied
+        """
+        for limits in self.getAllLimits():
+            if not limits.ok(sbIdx, upper=True, resource=resource.id if resource else None):
+                return False
+        return True
+
+    def incLimits(self, sbIdx, resource=None):
+        """
+        Increment all task limit counters (including parent limits).
+
+        Args:
+            sbIdx: Scoreboard index
+            resource: Resource being booked (for resource-specific limits)
+        """
+        for limits in self.getAllLimits():
+            limits.inc(sbIdx, resource=resource.id if resource else None)
+
     def bookResource(self, resource):
         """
         Try to book a single resource for the current slot.
@@ -305,7 +366,11 @@ class TaskScenario(ScenarioData):
         if not res_scenario.available(self.currentSlotIdx):
             return False
 
-        # Book the resource
+        # Check task limits for this resource (including parent limits)
+        if not self.limitsOk(self.currentSlotIdx, resource):
+            return False
+
+        # Book the resource - ResourceScenario.book will call back to incLimits
         return res_scenario.book(self.currentSlotIdx, self.property)
 
     def propagateDate(self, date, atEnd):
