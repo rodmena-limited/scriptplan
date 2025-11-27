@@ -85,6 +85,8 @@ class TaskScenario(ScenarioData):
 
         # Determine start slot
         forward = self.property.get('forward', self.scenarioIdx)
+        effort = self.property.get('effort', self.scenarioIdx) or 0
+        allocations = self.property.get('allocate', self.scenarioIdx)
 
         if self.currentSlotIdx is None:
             if forward:
@@ -105,8 +107,6 @@ class TaskScenario(ScenarioData):
                             earliest_start = dep_end
 
                     self.currentSlotIdx = self.project.dateToIdx(earliest_start)
-                    # Set the start date now
-                    self.property[('start', self.scenarioIdx)] = earliest_start
             else:
                 end_date = self.property.get('end', self.scenarioIdx)
                 if end_date:
@@ -114,6 +114,17 @@ class TaskScenario(ScenarioData):
                 else:
                     # ALAP mode, end at project end
                     self.currentSlotIdx = self.project.dateToIdx(self.project['end']) - 1
+
+        # For effort tasks with allocations, don't set start yet - it will be set
+        # when first resource is booked. For non-effort tasks, find first working slot.
+        if forward and not self.property.get('start', self.scenarioIdx):
+            if effort == 0 or not allocations:
+                # Non-effort task: find first working slot and set start
+                upperLimit = self.project.dateToIdx(self.project['end'])
+                while self.currentSlotIdx < upperLimit and not self.isWorkingTime(self.currentSlotIdx):
+                    self.currentSlotIdx += 1
+                self.property[('start', self.scenarioIdx)] = self.project.idxToDate(self.currentSlotIdx)
+            # For effort tasks, start will be set in bookResources() on first booking
 
         # Record starting position for forward scheduling
         start_slot_idx = self.currentSlotIdx
@@ -224,29 +235,78 @@ class TaskScenario(ScenarioData):
         """
         Book resources for the current slot and accumulate effort.
 
-        Only counts effort during working hours.
+        This method attempts to book allocated resources for the current time slot.
+        Only resources that are available (not booked, not on leave, within working hours)
+        will be booked. Effort is accumulated based on resource efficiency.
         """
-        # Skip non-working time slots
-        if not self.isWorkingTime(self.currentSlotIdx):
+        # Get allocations
+        allocations = self.property.get('allocate', self.scenarioIdx)
+        if not allocations:
             return
 
-        # Check mandatory allocations
-        allocations = self.property.get('allocate', self.scenarioIdx)
+        # Track if we booked any resource this slot
+        booked_any = False
+        effort = self.property.get('effort', self.scenarioIdx) or 0
 
-        # Get schedule granularity (seconds per slot, default 1 hour = 3600)
-        granularity = self.project['scheduleGranularity'] or 3600
-        hours_per_slot = granularity / 3600.0  # Convert seconds to hours
+        for alloc in allocations:
+            # alloc might be a Resource object or a string ID
+            if isinstance(alloc, str):
+                resource = self.project.resources[alloc]
+                # If not found by full ID, search all resources by short ID
+                if resource is None:
+                    for res in self.project.resources:
+                        if res.id == alloc:
+                            resource = res
+                            break
+            else:
+                resource = alloc
 
-        if allocations:
-            # Each allocated resource contributes hours_per_slot of effort per slot
-            num_resources = len(allocations)
-            self.doneEffort += hours_per_slot * num_resources
-        else:
-            # No allocations but still an effort task - assume 1 resource implicitly
-            self.doneEffort += hours_per_slot
+            if resource is None:
+                continue
 
-        # Note: doneDuration and doneLength are tracked separately in scheduleSlot
-        # since duration/length tasks have their own increment logic
+            # Try to book this resource
+            if self.bookResource(resource):
+                booked_any = True
+
+                # For effort-based tasks, set start date on first booking
+                if effort > 0 and self.doneEffort == 0:
+                    forward = self.property.get('forward', self.scenarioIdx)
+                    if forward:
+                        # First booking - set start date
+                        start_date = self.project.idxToDate(self.currentSlotIdx)
+                        self.property[('start', self.scenarioIdx)] = start_date
+
+                # Accumulate effort based on resource efficiency
+                efficiency = resource.get('efficiency', self.scenarioIdx)
+                if efficiency is None:
+                    efficiency = 1.0
+                self.doneEffort += efficiency
+
+    def bookResource(self, resource):
+        """
+        Try to book a single resource for the current slot.
+
+        Args:
+            resource: The resource to book
+
+        Returns:
+            True if booking succeeded, False otherwise
+        """
+        # Get the resource's scenario data
+        res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+        if res_scenario is None:
+            return False
+
+        # Initialize resource scoreboard if needed
+        if res_scenario.scoreboard is None:
+            res_scenario.prepareScheduling()
+
+        # Check if resource is available
+        if not res_scenario.available(self.currentSlotIdx):
+            return False
+
+        # Book the resource
+        return res_scenario.book(self.currentSlotIdx, self.property)
 
     def propagateDate(self, date, atEnd):
         attr = 'end' if atEnd else 'start'

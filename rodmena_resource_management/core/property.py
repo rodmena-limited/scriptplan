@@ -644,8 +644,24 @@ class AttributeOverwrite(ValueError):
 
 
 def deep_clone(value):
-    """Create a deep copy of a value."""
+    """Create a copy of a value for inheritance.
+
+    For most values, we do a deep copy. However, for lists containing
+    PropertyTreeNode objects (like Task references in depends), we do
+    a shallow copy to preserve object identity.
+    """
     import copy
+
+    # For lists, check if they contain PropertyTreeNode objects
+    if isinstance(value, list):
+        if value and hasattr(value[0], 'propertySet'):
+            # This is a list of PropertyTreeNode objects (like tasks in depends)
+            # Do a shallow copy to preserve object identity
+            return list(value)
+        else:
+            # Regular list, deep copy
+            return copy.deepcopy(value)
+
     return copy.deepcopy(value)
 
 
@@ -1094,46 +1110,41 @@ class PropertyTreeNode(MessageHandler):
         for attrDef in self.propertySet.attributes:
             if attrDef.scenarioSpecific or not attrDef.inheritedFromParent:
                 continue
-            
+
             aId = attrDef.id
             if self.parent:
                 # If parent provided or inherited
-                # Simplified: check if parent has value different from default or just take it?
-                # Ruby: if parent.provided(aId) || parent.inherited(aId)
-                # In our implementation, 'provided' flag handles this.
-                # We need to check parent's attribute object status.
-                
                 parent_attr = self.parent._get_attribute(aId)
                 if parent_attr.provided or parent_attr.inherited:
                     my_attr = self._get_attribute(aId)
-                    my_attr.inherit(parent_attr.get())
+                    # Only inherit if not already provided explicitly
+                    if not my_attr.provided:
+                        my_attr.inherit(parent_attr.get())
             else:
                 if attrDef.inheritedFromProject:
                     # Check project
                     if aId in self.project.attributes:
-                         # Project attributes are raw values or Attribute objects?
-                         # In Project.py they are in self.attributes dict as values/objects.
-                         # If standard attribute (int/string), it's value.
-                         # If AttributeBase, it's object?
-                         # My Project implementation uses a mix.
-                         # But we should use standard access.
                          val = self.project[aId]
                          if val is not None:
                              my_attr = self._get_attribute(aId)
-                             my_attr.inherit(val)
+                             # Only inherit if not already provided explicitly
+                             if not my_attr.provided:
+                                 my_attr.inherit(val)
 
         # Inherit scenario-specific values
         for attrDef in self.propertySet.attributes:
             if not attrDef.scenarioSpecific or not attrDef.inheritedFromParent:
                 continue
-            
+
             scenario_count = self.project.scenarioCount() if hasattr(self.project, 'scenarioCount') else 1
             for scenarioIdx in range(scenario_count):
                 if self.parent:
                     parent_attr = self.parent._get_scenario_attribute(attrDef.id, scenarioIdx)
                     if parent_attr.provided or parent_attr.inherited:
                         my_attr = self._get_scenario_attribute(attrDef.id, scenarioIdx)
-                        my_attr.inherit(parent_attr.get())
+                        # Only inherit if not already provided explicitly
+                        if not my_attr.provided:
+                            my_attr.inherit(parent_attr.get())
                 else:
                     if attrDef.inheritedFromProject:
                          val = self.project[attrDef.id]
@@ -1142,7 +1153,9 @@ class PropertyTreeNode(MessageHandler):
                          # If project has it, inherit.
                          if val is not None:
                              my_attr = self._get_scenario_attribute(attrDef.id, scenarioIdx)
-                             my_attr.inherit(val)
+                             # Only inherit if not already provided explicitly
+                             if not my_attr.provided:
+                                 my_attr.inherit(val)
 
     def ancestors(self, includeStepParents=False):
         nodes = []

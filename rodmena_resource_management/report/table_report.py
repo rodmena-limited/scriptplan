@@ -528,6 +528,12 @@ class TableReport(ReportBase):
             The cell value
         """
         try:
+            # Handle special computed columns
+            if column_id == 'revenue':
+                return self._get_revenue_value(property_node, scenario_idx)
+            elif column_id == 'cost':
+                return self._get_cost_value(property_node, scenario_idx)
+
             if self.is_scenario_specific(column_id):
                 return property_node.get(column_id, scenario_idx) if hasattr(property_node, 'get') else None
             else:
@@ -535,6 +541,60 @@ class TableReport(ReportBase):
         except (ValueError, KeyError, AttributeError):
             # Unknown attribute - return placeholder
             return '-'
+
+    def _get_revenue_value(self, property_node: Any, scenario_idx: int) -> Any:
+        """
+        Get the revenue value for a task.
+
+        Revenue is the sum of charges that go to revenue accounts.
+        """
+        if not hasattr(property_node, 'get'):
+            return None
+
+        charge = property_node.get('charge', scenario_idx)
+        if not charge or charge == 0:
+            return None
+
+        # Check if the chargeset is a revenue account
+        chargeset_id = property_node.get('chargeset', scenario_idx)
+        if not chargeset_id:
+            return None
+
+        # Look up the account and check if it's a revenue account
+        # For now, use a simple heuristic: if the chargeset is 'rev' or similar
+        # A more complete implementation would check the account's properties
+        if isinstance(chargeset_id, str):
+            # Simple check: 'rev' accounts are revenue accounts
+            if 'rev' in chargeset_id.lower() or chargeset_id == 'rev':
+                return charge
+
+        return None
+
+    def _get_cost_value(self, property_node: Any, scenario_idx: int) -> Any:
+        """
+        Get the cost value for a task.
+
+        Cost is the sum of charges that go to cost accounts.
+        """
+        if not hasattr(property_node, 'get'):
+            return None
+
+        charge = property_node.get('charge', scenario_idx)
+        if not charge or charge == 0:
+            return None
+
+        # Check if the chargeset is a cost account
+        chargeset_id = property_node.get('chargeset', scenario_idx)
+        if not chargeset_id:
+            return None
+
+        # Look up the account and check if it's a cost account
+        if isinstance(chargeset_id, str):
+            # Simple check: accounts other than 'rev' are cost accounts
+            if 'rev' not in chargeset_id.lower() and chargeset_id != 'rev':
+                return charge
+
+        return None
 
     def _format_value(self, value: Any, column_id: str) -> str:
         """

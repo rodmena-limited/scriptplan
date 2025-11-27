@@ -391,8 +391,8 @@ class ResourceScenario(ScenarioData):
             workinghours = self.property.get('workinghours', self.scenarioIdx)
             if workinghours and hasattr(workinghours, 'onShift'):
                 return workinghours.onShift(sb_idx)
-        # Default: assume working hours (9-5 equivalent check would go here)
-        return True
+        # Default: use project's working time
+        return self.project.isWorkingTime(sb_idx)
 
     def setReports_i(self, reports: List) -> None:
         """

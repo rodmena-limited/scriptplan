@@ -173,6 +173,39 @@ class TJPTransformer(Transformer):
     def resource_attr(self, items):
         return items[0] if items else None
 
+    def resource_email(self, items):
+        return ('email', self._get_value(items[0]))
+
+    def resource_rate(self, items):
+        return ('rate', float(self._get_value(items[0])))
+
+    def resource_efficiency(self, items):
+        return ('efficiency', float(self._get_value(items[0])))
+
+    def resource_managers(self, items):
+        return ('managers', [self._get_value(i) for i in items])
+
+    def resource_limits(self, items):
+        return ('limits', items[0] if items else [])
+
+    def resource_leaves(self, items):
+        """Handle resource leaves: leaves type start_date [- end_date]."""
+        leave_type = items[0] if items else 'annual'
+        start_date = items[1] if len(items) > 1 else None
+        end_date = items[2] if len(items) > 2 else start_date
+        return ('leaves', {
+            'type': leave_type,
+            'start': start_date,
+            'end': end_date
+        })
+
+    def resource_flags(self, items):
+        return ('flags', [self._get_value(i) for i in items])
+
+    def leaves_type(self, items):
+        """Handle leaves type: annual, sick, holiday, special, unpaid."""
+        return self._get_value(items[0]) if items else 'annual'
+
     # Task
     def task(self, items):
         t_id = self._get_value(items[0])
@@ -724,11 +757,31 @@ class ModelBuilder:
         # Resolve dependencies after all tasks are created
         self._resolve_dependencies(project)
 
+        # Inherit attributes from parents for all tasks
+        self._inherit_all_attributes(project)
+
         # Create reports
         for report_data in data.get('reports', []):
             self._create_report(project, report_data)
 
         return project
+
+    def _inherit_all_attributes(self, project):
+        """Inherit attributes from parent nodes for all tasks and resources."""
+        # Process tasks in tree order (parents before children)
+        def inherit_recursive(node):
+            node.inheritAttributes()
+            for child in node.children:
+                inherit_recursive(child)
+
+        # Get top-level items (no parent)
+        for task in project.tasks:
+            if not task.parent:
+                inherit_recursive(task)
+
+        for resource in project.resources:
+            if not resource.parent:
+                inherit_recursive(resource)
 
     def _resolve_dependencies(self, project):
         """Resolve task dependency references to actual Task objects."""
@@ -921,7 +974,9 @@ class ModelBuilder:
                 if key == 'email':
                     obj['email'] = value
                 elif key == 'rate':
-                    obj['rate'] = value
+                    # Set for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('rate', scIdx)] = value
                 elif key == 'effort':
                     # Set for all scenarios (no prefix means apply to all)
                     for scIdx in range(obj.project.scenarioCount()):
@@ -965,12 +1020,37 @@ class ModelBuilder:
                     amount, mode = value
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('charge', scIdx)] = amount
-                        if mode:
-                            obj[('chargeMode', scIdx)] = mode
+                        # Note: mode (onstart/onend/perday) affects when charge is applied
+                        # For now we store just the amount; mode handling can be added later
                 elif key == 'chargeset':
                     # chargeset specifies which account to charge to
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('chargeset', scIdx)] = value
+                elif key == 'purge_chargeset':
+                    # Clear inherited chargeset
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('chargeset', scIdx)] = []
+                elif key == 'leaves':
+                    # Resource leaves - create Leave objects and store on resource
+                    from rodmena_resource_management.core.leave import Leave
+                    from rodmena_resource_management.utils.time import TimeInterval
+
+                    leave_type = value.get('type', 'annual')
+                    start_date = value.get('start')
+                    end_date = value.get('end', start_date)
+
+                    if start_date and end_date:
+                        interval = TimeInterval(start_date, end_date)
+                        type_idx = Leave.Types.get(leave_type, 5)  # Default to 'annual' (5)
+                        leave = Leave(interval, type_idx)
+
+                        # Store leaves as a list for all scenarios
+                        for scIdx in range(obj.project.scenarioCount()):
+                            existing = obj.get('leaves', scIdx) or []
+                            if not isinstance(existing, list):
+                                existing = [existing]
+                            existing.append(leave)
+                            obj[('leaves', scIdx)] = existing
                 else:
                     try:
                         obj[key] = value

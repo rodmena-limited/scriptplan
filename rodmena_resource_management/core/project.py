@@ -333,19 +333,32 @@ class Project(MessageHandler):
         all_tasks = list(self.tasks)
 
         # First, handle milestones - they just need end=start (or start=end)
+        # A milestone is either:
+        # 1. Explicitly marked with milestone attribute, or
+        # 2. Has start or end set, but no effort/duration/length (implicit milestone)
         for task in all_tasks:
-            if task.leaf() and task.get('milestone', scIdx):
-                start = task.get('start', scIdx)
-                end = task.get('end', scIdx)
+            if not task.leaf():
+                continue
+
+            is_explicit_milestone = task.get('milestone', scIdx)
+            effort = task.get('effort', scIdx) or 0
+            duration = task.get('duration', scIdx) or 0
+            length = task.get('length', scIdx) or 0
+            start = task.get('start', scIdx)
+            end = task.get('end', scIdx)
+
+            # Implicit milestone: has start/end but no duration metrics
+            is_implicit_milestone = (start or end) and effort == 0 and duration == 0 and length == 0
+
+            if is_explicit_milestone or is_implicit_milestone:
                 if start and not end:
                     task[('end', scIdx)] = start
                 elif end and not start:
                     task[('start', scIdx)] = end
                 task[('scheduled', scIdx)] = True
 
-        # Only care about leaf tasks that are not milestones and aren't
-        # scheduled already (marked with the 'scheduled' attribute).
-        tasks = [t for t in all_tasks if t.leaf() and not t.get('milestone', scIdx) and not t.get('scheduled', scIdx)]
+        # Only care about leaf tasks that aren't scheduled already
+        tasks = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
 
         # Sorting
         # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
@@ -438,17 +451,47 @@ class Project(MessageHandler):
             return
 
         self.scoreboard = Scoreboard(
-            self.attributes['start'], 
+            self.attributes['start'],
             self.attributes['end'],
-            self.attributes['scheduleGranularity'], 
+            self.attributes['scheduleGranularity'],
             2
         )
         self.scoreboardNoLeaves = Scoreboard(
-            self.attributes['start'], 
+            self.attributes['start'],
             self.attributes['end'],
-            self.attributes['scheduleGranularity'], 
+            self.attributes['scheduleGranularity'],
             2
         )
+
+        # Initialize working time slots - mark working hours as None
+        # Default working hours: Mon-Fri, 9am-5pm
+        from datetime import timedelta
+        size = self.scoreboardSize()
+        granularity = self.attributes['scheduleGranularity']
+
+        for i in range(size):
+            date = self.idxToDate(i)
+            if self._isDefaultWorkingTime(date):
+                self.scoreboard[i] = None
+                self.scoreboardNoLeaves[i] = None
+
+    def _isDefaultWorkingTime(self, date):
+        """Check if a date/time falls within default working hours."""
+        if date is None:
+            return False
+        weekday = date.weekday()
+        if weekday >= 5:  # Saturday or Sunday
+            return False
+        hour = date.hour
+        if hour < 9 or hour >= 17:  # Outside 9am-5pm
+            return False
+        return True
+
+    def isWorkingTime(self, sbIdx):
+        """Check if a scoreboard slot is working time."""
+        if self.scoreboard is None:
+            return self._isDefaultWorkingTime(self.idxToDate(sbIdx))
+        return self.scoreboard[sbIdx] is None
     
     def scoreboardSize(self):
         if self.scoreboard:

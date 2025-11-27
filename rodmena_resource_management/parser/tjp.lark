@@ -93,15 +93,23 @@ property_declaration: resource
 resource: "resource" ID STRING "{" resource_body "}"
 resource_body: resource_attr*
 
-resource_attr: "email" STRING
-             | "rate" NUMBER
-             | "efficiency" NUMBER
-             | "managers" ID ("," ID)*
-             | "limits" "{" limits_body "}"
-             | "leaves" leaves_type date ("-" date)?
-             | "flags" ID ("," ID)*
+resource_attr: resource_email
+             | resource_rate
+             | resource_efficiency
+             | resource_managers
+             | resource_limits
+             | resource_leaves
+             | resource_flags
              | resource
              | extended_attr
+
+resource_email: "email" STRING
+resource_rate: "rate" NUMBER
+resource_efficiency: "efficiency" NUMBER
+resource_managers: "managers" ID ("," ID)*
+resource_limits: "limits" "{" limits_body "}"
+resource_leaves: "leaves" leaves_type date ("-" date)?
+resource_flags: "flags" ID ("," ID)*
 
 leaves_type: "annual" | "sick" | "holiday" | "special" | "unpaid"
 
