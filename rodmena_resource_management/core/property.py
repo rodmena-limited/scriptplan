@@ -31,8 +31,11 @@ class PropertySet:
 
     def items(self):
         return len(self._properties)
-    
+
     def length(self):
+        return len(self._properties)
+
+    def __len__(self):
         return len(self._properties)
 
     def __getitem__(self, key):
@@ -186,139 +189,792 @@ class PropertySet:
         defn = self.attributeDefinitions.get(attrId)
         return defn.objClass if defn else None
 
-class PropertyList(list):
-    def __init__(self, property_set):
-        super().__init__()
-        self.property_set = property_set
-    
-    def setSorting(self, criteria):
-        pass
+class PTNProxy:
+    """Proxy for PropertyTreeNode that represents adopted nodes in their new parental context."""
+
+    def __init__(self, ptn, parent):
+        self._ptn = ptn
+        if not parent:
+            raise ValueError("Adopted properties must have a parent")
+        self._parent = parent
+        self._index = None
+        self._tree = None
+        self._level = -1
+
+    @property
+    def parent(self):
+        return self._parent
+
+    @property
+    def ptn(self):
+        return self._ptn
+
+    @property
+    def logicalId(self):
+        if self._ptn.propertySet.flat_namespace:
+            return self._ptn.id
+        else:
+            dot_pos = self._ptn.id.rfind('.')
+            if dot_pos >= 0:
+                id = self._ptn.id[dot_pos + 1:]
+            else:
+                id = self._ptn.id
+            return f"{self._parent.logicalId}.{id}"
+
+    def set(self, attribute, val):
+        if attribute == 'index':
+            self._index = val
+        elif attribute == 'tree':
+            self._tree = val
+        else:
+            self._ptn.set(attribute, val)
+
+    def get(self, attribute):
+        if attribute == 'index':
+            return self._index
+        elif attribute == 'tree':
+            return self._tree
+        else:
+            return self._ptn.get(attribute)
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            attribute, scenarioIdx = key
+        else:
+            attribute = key
+            scenarioIdx = None
+
+        if attribute == 'index':
+            return self._index
+        elif attribute == 'tree':
+            return self._tree
+        else:
+            if scenarioIdx is not None:
+                return self._ptn[(attribute, scenarioIdx)]
+            return self._ptn[attribute]
+
+    def level(self):
+        if self._level >= 0:
+            return self._level
+
+        t = self
+        self._level = 0
+        while t.parent is not None:
+            t = t.parent
+            self._level += 1
+        return self._level
+
+    def isChildOf(self, ancestor):
+        parent = self
+        while parent.parent is not None:
+            parent = parent.parent
+            if parent == ancestor:
+                return True
+        return False
+
+    def getIndicies(self):
+        idcs = []
+        p = self
+        while p is not None:
+            parent = p.parent
+            idcs.insert(0, p.get('index'))
+            p = parent
+        return idcs
+
+    def force(self, attribute, val):
+        if attribute == 'index':
+            self._index = val
+        elif attribute == 'tree':
+            self._tree = val
+        else:
+            self._ptn.force(attribute, val)
+
+    @property
+    def fullId(self):
+        return self._ptn.fullId
+
+    @property
+    def kids(self):
+        return self._ptn.kids()
+
+    @property
+    def adoptees(self):
+        return self._ptn.adoptees
+
+    @property
+    def propertySet(self):
+        return self._ptn.propertySet
+
+    def __getattr__(self, name):
+        return getattr(self._ptn, name)
+
+    def __eq__(self, other):
+        if isinstance(other, PTNProxy):
+            return self._ptn == other._ptn
+        return self._ptn == other
+
+
+class PropertyList:
+    """List of PropertyTreeNodes with multi-level sorting support.
+
+    All nodes in the list must belong to the same PropertySet.
+    Sorting can use multiple criteria with ascending/descending direction.
+    """
+
+    def __init__(self, arg, copyItems=True):
+        if isinstance(arg, PropertySet):
+            self._items = list(arg._properties) if copyItems else []
+            self._propertySet = arg
+            self._query = None
+            self.resetSorting()
+            self.addSortingCriteria('seqno', True, -1)
+            self.sort()
+        elif isinstance(arg, PropertyList):
+            self._items = list(arg._items) if copyItems else []
+            self._propertySet = arg._propertySet
+            self._query = arg._query.copy() if arg._query else None
+            self._sortingLevels = arg._sortingLevels
+            self._sortingCriteria = list(arg._sortingCriteria)
+            self._sortingUp = list(arg._sortingUp)
+            self._scenarioIdx = list(arg._scenarioIdx)
+        else:
+            # Assume it's a list/iterable
+            self._items = list(arg) if copyItems else []
+            self._propertySet = arg[0].propertySet if arg else None
+            self._query = None
+            self.resetSorting()
+
+    @property
+    def propertySet(self):
+        return self._propertySet
+
+    @property
+    def query(self):
+        return self._query
+
+    @query.setter
+    def query(self, value):
+        self._query = value
+
+    @property
+    def sortingLevels(self):
+        return self._sortingLevels
+
+    @property
+    def sortingCriteria(self):
+        return self._sortingCriteria
+
+    @property
+    def sortingUp(self):
+        return self._sortingUp
+
+    @property
+    def scenarioIdx(self):
+        return self._scenarioIdx
+
+    def includeAdopted(self):
+        adopted = []
+        for p in self._items:
+            for ap in p.adoptees:
+                adopted.extend(self._includeAdoptedR(ap, p))
+        self.append(adopted)
+
+    def _includeAdoptedR(self, property, parent):
+        parentProxy = PTNProxy(property, parent)
+        adopted = [parentProxy]
+
+        for p in property.kids():
+            adopted.extend(self._includeAdoptedR(p, parentProxy))
+
+        return adopted
+
+    def checkForDuplicates(self, sourceFileInfo=None):
+        ptns = {}
+        for i in self._items:
+            ptn = i.ptn if isinstance(i, PTNProxy) else i
+            if ptn in ptns:
+                other = ptns[ptn]
+                raise ValueError(
+                    f"An adopted property is included as {i.logicalId if hasattr(i, 'logicalId') else i.fullId} and "
+                    f"as {other.logicalId if hasattr(other, 'logicalId') else other.fullId}. "
+                    "Please use stronger filtering to avoid including the property more than once!"
+                )
+            ptns[ptn] = i
+
+    def __contains__(self, node):
+        target_ptn = node.ptn if isinstance(node, PTNProxy) else node
+        for p in self._items:
+            p_ptn = p.ptn if isinstance(p, PTNProxy) else p
+            if p_ptn == target_ptn:
+                return True
+        return False
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._items[key]
+        # Node lookup
+        target_ptn = key.ptn if isinstance(key, PTNProxy) else key
+        for n in self._items:
+            n_ptn = n.ptn if isinstance(n, PTNProxy) else n
+            if n_ptn == target_ptn:
+                return n
+        return None
+
+    def __len__(self):
+        return len(self._items)
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def to_ary(self):
+        return list(self._items)
+
+    def setSorting(self, modes):
+        self.resetSorting()
+        for mode in modes:
+            self.addSortingCriteria(*mode)
+
+    def resetSorting(self):
+        self._sortingLevels = 0
+        self._sortingCriteria = []
+        self._sortingUp = []
+        self._scenarioIdx = []
+
+    def append(self, items):
+        if isinstance(items, (list, PropertyList)):
+            for node in items:
+                if node.propertySet != self._propertySet:
+                    raise ValueError("All nodes must belong to the same PropertySet.")
+            self._items.extend(items)
+            if len(self._items) != len(set(id(x) for x in self._items)):
+                raise ValueError("Duplicate items")
+        else:
+            self._items.append(items)
+        self.sort()
+
+    def treeMode(self):
+        return self._sortingLevels > 0 and self._sortingCriteria[0] == 'tree'
 
     def sort(self):
-        pass
-    
+        if self.treeMode():
+            sc = self._sortingCriteria.pop(0)
+            su = self._sortingUp.pop(0)
+            si = self._scenarioIdx.pop(0)
+            self._sortingLevels -= 1
+
+            self._sortInternal()
+            self.index()
+            self._indexTree()
+
+            self._sortingCriteria.insert(0, sc)
+            self._sortingUp.insert(0, su)
+            self._scenarioIdx.insert(0, si)
+            self._sortingLevels += 1
+
+            self._sortInternal()
+        else:
+            self._sortInternal()
+        self.index()
+
+    def itemIndex(self, item):
+        try:
+            return self._items.index(item)
+        except ValueError:
+            return None
+
+    def index(self):
+        i = 0
+        for p in self._items:
+            i += 1
+            p.force('index', i)
+
+    def __str__(self):
+        res = "Sorting: "
+        for i in range(self._sortingLevels):
+            direction = 'up' if self._sortingUp[i] else 'down'
+            res += f"{self._sortingCriteria[i]}/{direction}/{self._scenarioIdx[i]}, "
+        res += f"\n{len(self._items)} properties:"
+        for item in self._items:
+            res += f"{item.get('id')}: {item.get('name')}\n"
+        return res
+
+    def addSortingCriteria(self, criteria, up, scIdx):
+        if not self._propertySet.knownAttribute(criteria) and \
+           not self._propertySet.hasQuery(criteria, scIdx):
+            raise ValueError(f"Unknown attribute '{criteria}' used for sorting criterium")
+
+        if self._propertySet.scenarioSpecific(criteria):
+            if scIdx < 0 or (hasattr(self._propertySet.project, 'scenario') and
+                           self._propertySet.project.scenario(scIdx) is None):
+                # Allow if scIdx is valid or we can't verify
+                pass
+        else:
+            scIdx = -1
+
+        self._sortingCriteria.append(criteria)
+        self._sortingUp.append(up)
+        self._scenarioIdx.append(scIdx)
+        self._sortingLevels += 1
+
+    def _indexTree(self):
+        for property in self._items:
+            if isinstance(property, PTNProxy):
+                treeIdcs = property.getIndicies()
+            else:
+                treeIdcs = self._getIndicies(property)
+
+            tree = ''
+            for idx in treeIdcs:
+                tree += str(idx).rjust(6, '0')
+            property.force('tree', tree)
+
+    def _getIndicies(self, property):
+        idcs = []
+        p = property
+        while p is not None:
+            parent = p.parent
+            idx = p.get('index')
+            idcs.insert(0, idx)
+            p = parent
+        return idcs
+
+    def _sortInternal(self):
+        def compare_key(item):
+            key_parts = []
+            for i in range(self._sortingLevels):
+                criteria = self._sortingCriteria[i]
+                scIdx = self._scenarioIdx[i]
+                up = self._sortingUp[i]
+
+                if self._query and criteria != 'tree':
+                    # Query-based sorting
+                    self._query.scenarioIdx = None if scIdx < 0 else scIdx
+                    self._query.attributeId = criteria
+                    self._query.property = item
+                    self._query.process()
+                    val = self._query.to_sort()
+                else:
+                    # Static attribute sorting
+                    if scIdx < 0:
+                        if criteria == 'id':
+                            val = item.fullId
+                        else:
+                            val = item.get(criteria)
+                    else:
+                        val = item[(criteria, scIdx)]
+
+                # Handle None values
+                if val is None:
+                    val = ''
+
+                # Invert for descending order
+                if not up:
+                    if isinstance(val, (int, float)):
+                        val = -val
+                    elif isinstance(val, str):
+                        # For strings, we need a different approach
+                        # Use a tuple with a flag
+                        val = (1, val)  # descending strings will be sorted differently
+                    else:
+                        val = (1, val)
+                else:
+                    if isinstance(val, str):
+                        val = (0, val)
+                    elif not isinstance(val, (int, float)):
+                        val = (0, val)
+
+                key_parts.append(val)
+            return tuple(key_parts)
+
+        self._items.sort(key=compare_key)
+
     def delete_if(self, func):
-        to_remove = [i for i in self if func(i)]
+        to_remove = [i for i in self._items if func(i)]
         for i in to_remove:
-            self.remove(i)
+            self._items.remove(i)
+
+    def each(self, func):
+        for item in self._items:
+            func(item)
 
 class AttributeDefinition:
-    def __init__(self, id, name, type_class, inherited, inherited_from_project, scenario_specific, default):
+    """Definition of an attribute type that can be added to a PropertySet.
+
+    The AttributeDefinition describes the meta information of a PropertyTreeNode
+    attribute. Based on this information, PropertySet objects generate the
+    attribute lists for each PropertyTreeNode upon creation of the node.
+
+    Args:
+        id: The ID of the attribute. Must be unique within the PropertySet.
+        name: A descriptive text used in report columns and the like.
+        objClass: Reference to the class of the attribute (e.g., StringAttribute).
+        inheritedFromParent: True if the node can inherit from parent node.
+        inheritedFromProject: True if the node can inherit from global scope.
+        scenarioSpecific: True if the attribute can have different values per scenario.
+        default: The default value set upon creation of the attribute.
+        userDefined: True if this is a user-defined (custom) attribute.
+    """
+
+    __slots__ = ['id', 'name', 'objClass', 'inheritedFromParent',
+                 'inheritedFromProject', 'scenarioSpecific', 'default', 'userDefined']
+
+    def __init__(self, id, name, objClass, inheritedFromParent, inheritedFromProject,
+                 scenarioSpecific, default, userDefined=False):
         self.id = id
         self.name = name
-        self.objClass = type_class
-        self.inheritedFromParent = inherited
-        self.inheritedFromProject = inherited_from_project
-        self.scenarioSpecific = scenario_specific
+        self.objClass = objClass
+        self.inheritedFromParent = inheritedFromParent
+        self.inheritedFromProject = inheritedFromProject
+        self.scenarioSpecific = scenarioSpecific
         self.default = default
-    
+        self.userDefined = userDefined
+
     def isList(self):
-        return issubclass(self.objClass, ListAttribute)
+        """Return True if this attribute holds a list of values."""
+        return issubclass(self.objClass, ListAttributeBase)
+
+    def __repr__(self):
+        return (f"AttributeDefinition(id={self.id!r}, name={self.name!r}, "
+                f"objClass={self.objClass.__name__}, scenarioSpecific={self.scenarioSpecific})")
+
+
+class AttributeOverwrite(ValueError):
+    """Exception raised when attempting to overwrite an existing attribute value."""
+    pass
+
+
+def deep_clone(value):
+    """Create a deep copy of a value."""
+    import copy
+    return copy.deepcopy(value)
+
 
 class AttributeBase:
-    _mode = 0
+    """Base class for all property attribute types.
 
-    def __init__(self, property_set, attribute_definition, property_node):
-        self.property_set = property_set
-        self.definition = attribute_definition
-        self.property_node = property_node
-        default = attribute_definition.default
-        if isinstance(default, list):
-             self.value = list(default)
+    Each property can have multiple attributes of different types. Each type
+    must be derived from this class. The class tracks whether the attribute
+    value was provided by the project file, inherited from another property,
+    or computed during scheduling.
+    """
+
+    _mode = 0  # 0=provided, 1=inherited, other=calculated
+
+    def __init__(self, property_node, type_def, container):
+        self._type = type_def
+        self._property = property_node
+        self._container = container
+        self.reset()
+
+    def reset(self):
+        """Reset the attribute value to the default value."""
+        self._inherited = False
+        self._provided = False
+
+        if isinstance(self._type, AttributeDefinition):
+            self._value = deep_clone(self._type.default)
         else:
-             self.value = default
-        self.provided = False
-        self.inherited = False
-    
-    @classmethod
-    def setMode(cls, mode):
-        cls._mode = mode
+            self._value = self._type
+
+    def getProperty(self):
+        """Return the property node this attribute belongs to."""
+        return self._property
+
+    def getType(self):
+        """Return the attribute type definition."""
+        return self._type
+
+    # Alias for Ruby compatibility
+    type = property(lambda self: self._type)
+
+    def getProvided(self):
+        """Return whether the value was provided."""
+        return self._provided
+
+    # Alias for Ruby compatibility
+    provided = property(lambda self: self._provided)
+
+    def getInherited(self):
+        """Return whether the value was inherited."""
+        return self._inherited
+
+    # Alias for Ruby compatibility
+    inherited = property(lambda self: self._inherited)
+
+    def inherit(self, value):
+        """Inherit value from parent property. Values are deep copied."""
+        self._inherited = True
+        self._value = deep_clone(value)
 
     @classmethod
     def mode(cls):
+        """Return the current attribute setting mode."""
         return cls._mode
 
-    def set(self, value):
-        self.value = value
-        self.provided = True
+    @classmethod
+    def setMode(cls, mode):
+        """Change the mode. 0=provided, 1=inherited, other=calculated."""
+        cls._mode = mode
 
-    def inherit(self, value):
-        self.value = value
-        self.inherited = True
-    
+    def getId(self):
+        """Return the ID of the attribute."""
+        return self._type.id
+
+    # Alias for Ruby compatibility
+    id = property(lambda self: self._type.id)
+
+    def getName(self):
+        """Return the name of the attribute."""
+        return self._type.name
+
+    # Alias for Ruby compatibility
+    name = property(lambda self: self._type.name)
+
+    def set(self, value):
+        """Set the value of the attribute. Flags updated based on mode."""
+        if AttributeBase._mode == 0:
+            self._provided = True
+        elif AttributeBase._mode == 1:
+            self._inherited = True
+        self._value = value
+
     def get(self):
-        return self.value
-    
+        """Return the attribute value."""
+        return self._value
+
+    # Alias for legacy purposes
+    value = property(lambda self: self.get())
+
+    def isNil(self):
+        """Check whether the value is uninitialized or nil."""
+        v = self.get()
+        if isinstance(v, list):
+            return len(v) == 0
+        return v is None
+
     def isList(self):
         return False
 
-# Attribute Types
-class StringAttribute(AttributeBase): pass
-class IntegerAttribute(AttributeBase): pass
-class FloatAttribute(AttributeBase): pass
-class DateAttribute(AttributeBase): pass
-class BooleanAttribute(AttributeBase): pass
-class ReferenceAttribute(AttributeBase): pass
+    @classmethod
+    def isListClass(cls):
+        return False
 
-class ListAttribute(AttributeBase):
-    def __init__(self, property_set, attribute_definition, property_node):
-        super().__init__(property_set, attribute_definition, property_node)
-        if self.value is None:
-             self.value = []
-        elif not isinstance(self.value, list):
-             self.value = [self.value]
+    def to_s(self, query=None):
+        """Return the value as String."""
+        return str(self.get())
 
-    def set(self, value):
-        if not isinstance(self.value, list):
-            self.value = []
-        if isinstance(value, list):
-            self.value.extend(value)
-        else:
-            self.value.append(value)
-        self.provided = True
-    
-    def __iter__(self):
-        return iter(self.value)
+    def __str__(self):
+        return self.to_s()
+
+    def to_num(self):
+        """Return value as number or None."""
+        v = self.get()
+        if isinstance(v, (int, float)):
+            return v
+        return None
+
+    def to_sort(self):
+        """Return value suitable for sorting."""
+        v = self.get()
+        if isinstance(v, (int, float)):
+            return v
+        elif isinstance(v, list):
+            # If the attribute is a list, convert to comma separated string
+            return ', '.join(str(x) for x in v)
+        elif v is not None:
+            return str(v)
+        return None
+
+    def to_rti(self, query):
+        """Return RichTextIntermediate value or None."""
+        # Placeholder - RichTextIntermediate not implemented
+        return None
+
+    def to_tjp(self):
+        """Return the value in TJP file syntax."""
+        return f"{self._type.id} {self.get()}"
+
+    def _quotedString(self, s):
+        """Format string for TJP output."""
+        if '\n' in s:
+            return f"-8<-\n{s}\n->8-"
+        return f'"{s.replace(chr(34), chr(92) + chr(34))}"'
+
+
+class ListAttributeBase(AttributeBase):
+    """Specialized AttributeBase for list values."""
+
+    def __init__(self, property_node, type_def, container):
+        super().__init__(property_node, type_def, container)
+        if self._value is None:
+            self._value = []
+        elif not isinstance(self._value, list):
+            self._value = [self._value]
+
+    def to_s(self, query=None):
+        """Return the value as comma-separated String."""
+        return ', '.join(str(x) for x in self.get())
 
     def isList(self):
         return True
 
+    @classmethod
+    def isListClass(cls):
+        return True
+
+    def set(self, value):
+        """Set value - for lists, extends the existing list."""
+        if AttributeBase._mode == 0:
+            self._provided = True
+        elif AttributeBase._mode == 1:
+            self._inherited = True
+
+        if not isinstance(self._value, list):
+            self._value = []
+        if isinstance(value, list):
+            self._value.extend(value)
+        else:
+            self._value.append(value)
+
+    def __iter__(self):
+        return iter(self._value)
+
+    def __len__(self):
+        return len(self._value)
+
+
+# Backwards compatibility aliases
+ListAttribute = ListAttributeBase
+
+
+# Attribute Types
+class StringAttribute(AttributeBase):
+    pass
+
+
+class IntegerAttribute(AttributeBase):
+    pass
+
+
+class FloatAttribute(AttributeBase):
+    pass
+
+
+class DateAttribute(AttributeBase):
+    pass
+
+
+class BooleanAttribute(AttributeBase):
+    pass
+
+
+class ReferenceAttribute(AttributeBase):
+    pass
+
 # Data Classes (Value Objects)
-class AlertLevelDefinitions: 
-    def __init__(self): pass
+class AlertLevelDefinitions:
+    def __init__(self):
+        pass
+
 
 class Journal:
-    def __init__(self): pass
+    def __init__(self):
+        pass
 
-class LeaveList(list): pass
+
+class LeaveList(list):
+    pass
+
 
 class RealFormat:
-    def __init__(self, args=None): pass
+    def __init__(self, args=None):
+        pass
 
-class KeywordArray: 
-    def __init__(self, args=None): pass
+
+class KeywordArray:
+    def __init__(self, args=None):
+        pass
+
 
 # Specific Attributes
-class ResourceListAttribute(ListAttribute): pass
-class ShiftAssignmentsAttribute(AttributeBase): pass
-class TaskDepListAttribute(ListAttribute): pass
-class LogicalExpressionListAttribute(ListAttribute): pass
-class PropertyAttribute(AttributeBase): pass
-class RichTextAttribute(AttributeBase): pass
-class ColumnListAttribute(ListAttribute): pass
-class AccountAttribute(AttributeBase): pass
-class DefinitionListAttribute(ListAttribute): pass
-class FlagListAttribute(ListAttribute): pass
-class FormatListAttribute(ListAttribute): pass
-class LogicalExpressionAttribute(AttributeBase): pass
-class SymbolListAttribute(ListAttribute): pass
-class SymbolAttribute(AttributeBase): pass
-class NodeListAttribute(ListAttribute): pass
-class ScenarioListAttribute(ListAttribute): pass
-class SortListAttribute(ListAttribute): pass
-class JournalSortListAttribute(ListAttribute): pass
-class RealFormatAttribute(AttributeBase): pass
-class LeaveListAttribute(ListAttribute): pass
+class ResourceListAttribute(ListAttributeBase):
+    pass
+
+
+class ShiftAssignmentsAttribute(AttributeBase):
+    pass
+
+
+class TaskDepListAttribute(ListAttributeBase):
+    pass
+
+
+class LogicalExpressionListAttribute(ListAttributeBase):
+    pass
+
+
+class PropertyAttribute(AttributeBase):
+    pass
+
+
+class RichTextAttribute(AttributeBase):
+    pass
+
+
+class ColumnListAttribute(ListAttributeBase):
+    pass
+
+
+class AccountAttribute(AttributeBase):
+    pass
+
+
+class DefinitionListAttribute(ListAttributeBase):
+    pass
+
+
+class FlagListAttribute(ListAttributeBase):
+    pass
+
+
+class FormatListAttribute(ListAttributeBase):
+    pass
+
+
+class LogicalExpressionAttribute(AttributeBase):
+    pass
+
+
+class SymbolListAttribute(ListAttributeBase):
+    pass
+
+
+class SymbolAttribute(AttributeBase):
+    pass
+
+
+class NodeListAttribute(ListAttributeBase):
+    pass
+
+
+class ScenarioListAttribute(ListAttributeBase):
+    pass
+
+
+class SortListAttribute(ListAttributeBase):
+    pass
+
+
+class JournalSortListAttribute(ListAttributeBase):
+    pass
+
+
+class RealFormatAttribute(AttributeBase):
+    pass
+
+
+class LeaveListAttribute(ListAttributeBase):
+    pass
 
 class PropertyTreeNode(MessageHandler):
     def __init__(self, property_set, id, name, parent):
@@ -537,38 +1193,38 @@ class PropertyTreeNode(MessageHandler):
 
     def set(self, attribute_id, value):
         attr = self._get_attribute(attribute_id)
-        if attr.definition.scenarioSpecific:
-             raise ValueError(f"Attribute {attribute_id} is scenario specific, use []=")
+        if attr.type.scenarioSpecific:
+            raise ValueError(f"Attribute {attribute_id} is scenario specific, use []=")
         attr.set(value)
 
     def _get_attribute(self, attribute_id):
         if attribute_id in self._attributes:
             return self._attributes[attribute_id]
-        
+
         defn = self.attributeDefinition(attribute_id)
         if not defn:
             raise ValueError(f"Unknown attribute {attribute_id}")
-        
+
         if defn.scenarioSpecific:
-             raise ValueError(f"Attribute {attribute_id} is scenario specific")
-        
-        attr = defn.objClass(self.propertySet, defn, self)
+            raise ValueError(f"Attribute {attribute_id} is scenario specific")
+
+        attr = defn.objClass(self, defn, self)
         self._attributes[attribute_id] = attr
         return attr
-    
+
     def _get_scenario_attribute(self, attribute_id, scenario_idx):
         if attribute_id in self._scenarioAttributes[scenario_idx]:
             return self._scenarioAttributes[scenario_idx][attribute_id]
-        
+
         defn = self.attributeDefinition(attribute_id)
         if not defn:
-             raise ValueError(f"Unknown attribute {attribute_id}")
+            raise ValueError(f"Unknown attribute {attribute_id}")
 
         if not defn.scenarioSpecific:
-             raise ValueError(f"Attribute {attribute_id} is not scenario specific")
-        
+            raise ValueError(f"Attribute {attribute_id} is not scenario specific")
+
         scenario_obj = self.data[scenario_idx] if self.data else None
-        attr = defn.objClass(self.propertySet, defn, scenario_obj)
+        attr = defn.objClass(self, defn, scenario_obj if scenario_obj else self)
         self._scenarioAttributes[scenario_idx][attribute_id] = attr
         return attr
 

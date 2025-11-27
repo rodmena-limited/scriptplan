@@ -1,0 +1,26 @@
+project simple "Simple Project" "1.0" {
+    timezone "UTC"
+    dailyworkinghours 8.0
+    yearlyworkingdays 260.0
+
+    resource dev1 "Developer 1" {
+    }
+
+    resource dev2 "Developer 2" {
+    }
+
+    task project "Project" {
+        task design "Design Phase" {
+            start 2024-01-01
+            end 2024-01-31
+        }
+        task implementation "Implementation" {
+            start 2024-02-01
+            end 2024-06-30
+        }
+        task testing "Testing" {
+            start 2024-07-01
+            end 2024-08-31
+        }
+    }
+}

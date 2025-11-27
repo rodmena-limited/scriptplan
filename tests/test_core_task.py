@@ -13,8 +13,8 @@ class TestTask(unittest.TestCase):
         self.assertIsInstance(task, PropertyTreeNode)
         self.assertEqual(task.project, project)
         
-        # Check registration
-        self.assertIn("t1", project.tasks._properties)
+        # Check registration - task is in the PropertySet
+        self.assertIn(task, project.tasks._properties)
         self.assertEqual(project.tasks["t1"], task)
         
         # Check scenario data

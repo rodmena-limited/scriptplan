@@ -6,14 +6,14 @@ from rodmena_resource_management.core.property import PropertyTreeNode
 class TestPropertyTreeNode(unittest.TestCase):
     def test_adopt(self):
         project = Project("prj", "Test Project", "1.0")
-        
+
         parent_task = Task(project, "parent", "Parent Task", None)
-        child_task = Task(project, "child", "Child Task", None) # Top level initially
-        
-        self.assertTrue(child_task in project.tasks._properties.values())
-        
+        child_task = Task(project, "child", "Child Task", None)  # Top level initially
+
+        self.assertIn(child_task, project.tasks._properties)
+
         parent_task.adopt(child_task)
-        
+
         self.assertIn(child_task, parent_task.adoptees)
         self.assertIn(parent_task, child_task.stepParents)
         self.assertIn(child_task, parent_task.kids())

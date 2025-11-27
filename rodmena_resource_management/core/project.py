@@ -4,7 +4,7 @@ from rodmena_resource_management.utils.time import TjTime, TimeInterval
 from rodmena_resource_management.utils.data_cache import DataCache, FileList
 from rodmena_resource_management.core.property import (
     PropertySet, PropertyList, AttributeDefinition, AttributeBase,
-    AlertLevelDefinitions, Journal, LeaveList, RealFormat, KeywordArray,
+    AlertLevelDefinitions, LeaveList, RealFormat, KeywordArray,
     StringAttribute, IntegerAttribute, DateAttribute, BooleanAttribute,
     ListAttribute, FloatAttribute,
     ResourceListAttribute, ShiftAssignmentsAttribute, TaskDepListAttribute,
@@ -15,6 +15,7 @@ from rodmena_resource_management.core.property import (
     SortListAttribute, JournalSortListAttribute, RealFormatAttribute,
     LeaveListAttribute
 )
+from rodmena_resource_management.core.journal import Journal
 from rodmena_resource_management.core.scenario import Scenario
 from rodmena_resource_management.core.timesheet import TimeSheets
 from rodmena_resource_management.core.working_hours import WorkingHours
@@ -46,7 +47,7 @@ class Project(MessageHandler):
             'end': None,
             'markdate': None,
             'flags': [],
-            'journal': Journal(),
+            'journal': Journal(self),
             'limits': None,
             'leaves': LeaveList(),
             'loadUnit': 'days',
@@ -75,10 +76,12 @@ class Project(MessageHandler):
             'yresolution': 1
         }
         
-        self.accounts = PropertySet(self, False)
-        
-        self.shifts = PropertySet(self, False)
-        
+        self.accounts = PropertySet(self, True)
+        self._define_account_attributes()
+
+        self.shifts = PropertySet(self, True)
+        self._define_shift_attributes()
+
         self.resources = PropertySet(self, False)
         self._define_resource_attributes()
         
@@ -113,11 +116,41 @@ class Project(MessageHandler):
         for a in attrs:
             self.scenarios.addAttributeType(AttributeDefinition(*a))
 
+    def _define_account_attributes(self):
+        attrs = [
+            # ID           Name            Type                     Inh   InhPrj Scen  Default
+            ['aggregate', 'Aggregate', SymbolAttribute, True, False, False, 'tasks'],
+            ['bsi', 'BSI', StringAttribute, False, False, False, ''],
+            ['credits', 'Credits', ListAttribute, False, False, True, []],
+            ['index', 'Index', IntegerAttribute, False, False, False, -1],
+            ['flags', 'Flags', FlagListAttribute, True, False, True, []],
+            ['tree', 'Tree Index', StringAttribute, False, False, False, ''],
+        ]
+        for a in attrs:
+            self.accounts.addAttributeType(AttributeDefinition(*a))
+
+    def _define_shift_attributes(self):
+        attrs = [
+            # ID           Name            Type                     Inh   InhPrj Scen  Default
+            ['bsi', 'BSI', StringAttribute, False, False, False, ''],
+            ['index', 'Index', IntegerAttribute, False, False, False, -1],
+            ['leaves', 'Leaves', LeaveListAttribute, True, True, True, []],
+            ['replace', 'Replace', BooleanAttribute, True, False, True, False],
+            ['timezone', 'Time Zone', StringAttribute, True, True, True, TjTime.timeZone()],
+            ['tree', 'Tree Index', StringAttribute, False, False, False, ''],
+            ['workinghours', 'Working Hours', ShiftAssignmentsAttribute, True, True, True, None],
+        ]
+        for a in attrs:
+            self.shifts.addAttributeType(AttributeDefinition(*a))
+
     def _define_resource_attributes(self):
         # Add attributes required by ResourceScenario
         attrs = [
             ['alloctdeffort', 'Allocated Effort', IntegerAttribute, True, False, True, 0],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
+            ['bsi', 'BSI', StringAttribute, False, False, False, ""],
+            ['email', 'Email', StringAttribute, False, False, False, ""],
+            ['index', 'Index', IntegerAttribute, False, False, False, -1],
             ['chargeset', 'Charge Set', StringAttribute, True, False, True, []],
             ['criticalness', 'Criticalness', FloatAttribute, False, False, True, 0.0],
             ['directreports', 'Direct Reports', ResourceListAttribute, True, False, True, []],
@@ -177,8 +210,53 @@ class Project(MessageHandler):
 
     def _define_report_attributes(self):
         attrs = [
-             ['formats', 'Formats', FormatListAttribute, True, False, False, []],
-             ['columns', 'Columns', ColumnListAttribute, True, False, False, []],
+            # ID               Name                Type                     Inh    InhPrj  Scen   Default
+            ['accountRoot', 'Account Root', StringAttribute, True, False, False, None],
+            ['auxDir', 'Aux Directory', StringAttribute, True, True, False, ''],
+            ['balance', 'Balance', ListAttribute, True, False, False, []],
+            ['caption', 'Caption', RichTextAttribute, True, False, False, None],
+            ['center', 'Center', RichTextAttribute, True, False, False, None],
+            ['columns', 'Columns', ColumnListAttribute, True, False, False, []],
+            ['currencyFormat', 'Currency Format', StringAttribute, True, True, False, None],
+            ['end', 'End Date', DateAttribute, True, True, False, None],
+            ['epilog', 'Epilog', RichTextAttribute, True, False, False, None],
+            ['flags', 'Flags', FlagListAttribute, True, False, False, []],
+            ['footer', 'Footer', RichTextAttribute, True, False, False, None],
+            ['formats', 'Formats', FormatListAttribute, True, False, False, []],
+            ['header', 'Header', RichTextAttribute, True, False, False, None],
+            ['headline', 'Headline', RichTextAttribute, True, False, False, None],
+            ['hideAccount', 'Hide Account', LogicalExpressionAttribute, True, False, False, None],
+            ['hideResource', 'Hide Resource', LogicalExpressionAttribute, True, False, False, None],
+            ['hideTask', 'Hide Task', LogicalExpressionAttribute, True, False, False, None],
+            ['interactive', 'Interactive', BooleanAttribute, True, False, False, False],
+            ['journalAttributes', 'Journal Attributes', SymbolListAttribute, True, False, False, []],
+            ['journalMode', 'Journal Mode', SymbolAttribute, True, False, False, None],
+            ['left', 'Left', RichTextAttribute, True, False, False, None],
+            ['loadUnit', 'Load Unit', SymbolAttribute, True, True, False, 'days'],
+            ['numberFormat', 'Number Format', StringAttribute, True, True, False, None],
+            ['openNodes', 'Open Nodes', ListAttribute, True, False, False, []],
+            ['period', 'Period', StringAttribute, True, True, False, None],
+            ['prolog', 'Prolog', RichTextAttribute, True, False, False, None],
+            ['rawHtmlHead', 'Raw HTML Head', RichTextAttribute, True, False, False, None],
+            ['resourceRoot', 'Resource Root', StringAttribute, True, False, False, None],
+            ['right', 'Right', RichTextAttribute, True, False, False, None],
+            ['rollupAccount', 'Rollup Account', LogicalExpressionAttribute, True, False, False, None],
+            ['rollupResource', 'Rollup Resource', LogicalExpressionAttribute, True, False, False, None],
+            ['rollupTask', 'Rollup Task', LogicalExpressionAttribute, True, False, False, None],
+            ['scenarios', 'Scenarios', ScenarioListAttribute, True, True, False, []],
+            ['selfContained', 'Self Contained', BooleanAttribute, True, False, False, False],
+            ['showResources', 'Show Resources', BooleanAttribute, True, False, False, False],
+            ['showTasks', 'Show Tasks', BooleanAttribute, True, False, False, False],
+            ['sort', 'Sort', SortListAttribute, True, False, False, []],
+            ['sortAccounts', 'Sort Accounts', SortListAttribute, True, False, False, []],
+            ['sortResources', 'Sort Resources', SortListAttribute, True, False, False, []],
+            ['sortTasks', 'Sort Tasks', SortListAttribute, True, False, False, []],
+            ['start', 'Start Date', DateAttribute, True, True, False, None],
+            ['taskRoot', 'Task Root', StringAttribute, True, False, False, None],
+            ['timeFormat', 'Time Format', StringAttribute, True, True, False, '%Y-%m-%d'],
+            ['timeZone', 'Time Zone', StringAttribute, True, True, False, None],
+            ['title', 'Title', StringAttribute, True, False, False, None],
+            ['width', 'Width', IntegerAttribute, True, False, False, None],
         ]
         for a in attrs:
             self.reports.addAttributeType(AttributeDefinition(*a))
@@ -208,7 +286,8 @@ class Project(MessageHandler):
             p.index()
             
         if self.tasks.empty():
-            self.error('no_tasks', "No tasks defined")
+            # No tasks to schedule - just return
+            return True
             
         for sc in self.scenarios:
             # Skip disabled scenarios if 'active' is false (default true if not set)
@@ -251,13 +330,23 @@ class Project(MessageHandler):
                 resource.finishScheduling(scIdx)
 
     def scheduleScenario(self, scIdx):
-        tasks = list(self.tasks)
-        
+        all_tasks = list(self.tasks)
+
+        # First, handle milestones - they just need end=start (or start=end)
+        for task in all_tasks:
+            if task.leaf() and task.get('milestone', scIdx):
+                start = task.get('start', scIdx)
+                end = task.get('end', scIdx)
+                if start and not end:
+                    task[('end', scIdx)] = start
+                elif end and not start:
+                    task[('start', scIdx)] = end
+                task[('scheduled', scIdx)] = True
+
         # Only care about leaf tasks that are not milestones and aren't
         # scheduled already (marked with the 'scheduled' attribute).
-        tasks = [t for t in tasks if t.leaf() and not t.get('milestone', scIdx) and not t.get('scheduled', scIdx)]
+        tasks = [t for t in all_tasks if t.leaf() and not t.get('milestone', scIdx) and not t.get('scheduled', scIdx)]
 
-        
         # Sorting
         # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
         # Note: attributes might return None, need safe access for sorting
@@ -268,24 +357,26 @@ class Project(MessageHandler):
             return (-prio, -crit, seq)
 
         tasks.sort(key=sort_key)
-        
+
         failedTasks = []
-        
+
         while tasks:
             taskToRemove = None
             for task in tasks:
                 # Task not ready? Ignore it.
                 if not task.readyForScheduling(scIdx):
                     continue
-                
+
                 if not task.schedule(scIdx):
                     failedTasks.append(task)
-                
+
                 taskToRemove = task
                 break
-            
+
             if taskToRemove:
                 tasks.remove(taskToRemove)
+                # After scheduling a leaf, check if any container tasks should be marked scheduled
+                self._updateContainerTaskStatus(scIdx)
             elif tasks and not failedTasks:
                 # If we have tasks but none are ready and no failures yet, it's a deadlock
                 # (Unless readyForScheduling logic waits for something else?)
@@ -296,12 +387,51 @@ class Project(MessageHandler):
                 # If tasks is not empty but we didn't remove any, we break to avoid infinite loop
                 # likely deadlock or all failed
                 break
-        
+
         if failedTasks:
             self.warning('unscheduled_tasks', f"{len(failedTasks)} tasks could not be scheduled")
             return False
-            
+
         return True
+
+    def _updateContainerTaskStatus(self, scIdx):
+        """Mark container tasks as scheduled when all their children are scheduled.
+
+        Also compute start/end dates for container tasks based on children.
+        """
+        for task in self.tasks:
+            if task.leaf():
+                continue  # Skip leaf tasks
+
+            if task.get('scheduled', scIdx):
+                continue  # Already scheduled
+
+            # Check if all children are scheduled
+            children = task.children
+            if not children:
+                continue
+
+            all_scheduled = all(child.get('scheduled', scIdx) for child in children)
+            if not all_scheduled:
+                continue
+
+            # All children scheduled - mark container as scheduled
+            # Compute start/end from children
+            min_start = None
+            max_end = None
+            for child in children:
+                child_start = child.get('start', scIdx)
+                child_end = child.get('end', scIdx)
+                if child_start and (min_start is None or child_start < min_start):
+                    min_start = child_start
+                if child_end and (max_end is None or child_end > max_end):
+                    max_end = child_end
+
+            if min_start:
+                task[('start', scIdx)] = min_start
+            if max_end:
+                task[('end', scIdx)] = max_end
+            task[('scheduled', scIdx)] = True
 
     def initScoreboards(self):
         if not self.attributes['start'] or not self.attributes['end']:
@@ -345,8 +475,90 @@ class Project(MessageHandler):
     def idxToDate(self, idx):
         if not self.attributes['start']:
             return None
-        
+
         from datetime import timedelta
         # Assuming idx is integer steps of scheduleGranularity from start
         seconds = idx * self.attributes['scheduleGranularity']
         return self.attributes['start'] + timedelta(seconds=seconds)
+
+    def addReport(self, report):
+        """
+        Add a report to the project's report list.
+        This is called automatically by Report.__init__.
+
+        Args:
+            report: The Report object to add
+        """
+        # Report is already added via PropertySet in PropertyTreeNode.__init__
+        # This method exists for compatibility with TaskJuggler's API
+        pass
+
+    def addAccount(self, account):
+        """
+        Add an account to the project's account list.
+        This is called automatically by Account.__init__.
+
+        Args:
+            account: The Account object to add
+        """
+        # Account is already added via PropertySet in PropertyTreeNode.__init__
+        # This method exists for compatibility with TaskJuggler's API
+        pass
+
+    def addShift(self, shift):
+        """
+        Add a shift to the project's shift list.
+        This is called automatically by Shift.__init__.
+
+        Args:
+            shift: The Shift object to add
+        """
+        # Shift is already added via PropertySet in PropertyTreeNode.__init__
+        # This method exists for compatibility with TaskJuggler's API
+        pass
+
+    def addResource(self, resource):
+        """
+        Add a resource to the project's resource list.
+        This is called automatically by Resource.__init__.
+
+        Args:
+            resource: The Resource object to add
+        """
+        # Resource is already added via PropertySet in PropertyTreeNode.__init__
+        # This method exists for compatibility with TaskJuggler's API
+        pass
+
+    def addTask(self, task):
+        """
+        Add a task to the project's task list.
+        This is called automatically by Task.__init__.
+
+        Args:
+            task: The Task object to add
+        """
+        # Task is already added via PropertySet in PropertyTreeNode.__init__
+        # This method exists for compatibility with TaskJuggler's API
+        pass
+
+    def __getitem__(self, key):
+        """
+        Get a project attribute.
+
+        Args:
+            key: Attribute name
+
+        Returns:
+            Attribute value or None
+        """
+        return self.attributes.get(key)
+
+    def __setitem__(self, key, value):
+        """
+        Set a project attribute.
+
+        Args:
+            key: Attribute name
+            value: Attribute value
+        """
+        self.attributes[key] = value

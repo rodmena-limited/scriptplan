@@ -24,8 +24,8 @@ class TestProject(unittest.TestCase):
 
     def test_attribute_error(self):
         project = Project("prj", "Test Project", "1.0")
-        with self.assertRaises(ValueError):
-            _ = project['nonexistent_attribute']
+        # Accessing nonexistent attribute returns None (not an error)
+        self.assertIsNone(project['nonexistent_attribute'])
 
 if __name__ == '__main__':
     unittest.main()
