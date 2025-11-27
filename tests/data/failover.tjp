@@ -1,0 +1,37 @@
+/*
+ * Issue #63: The "Failover" Protocol
+ * Tests alternative resource allocation (smart routing)
+ * Primary is on vacation, system should use slower backup to finish earlier
+ */
+
+project "Failover_Test" 2025-08-01 +2w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-08-01
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+resource primary "Cluster A (GPU)" {
+  workinghours standard
+  efficiency 1.0
+  vacation 2025-08-01 - 2025-08-05
+}
+
+resource backup "Cluster B (CPU)" {
+  workinghours standard
+  efficiency 0.5
+}
+
+task compute "Rendering" {
+  effort 8h
+  allocate primary { alternative backup }
+}
+
+taskreport failover_output "failover_output" {
+  formats csv
+  columns id, start, end, resources
+  timeformat "%Y-%m-%d-%H:%M"
+}

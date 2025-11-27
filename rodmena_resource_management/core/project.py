@@ -157,6 +157,7 @@ class Project(MessageHandler):
             ['duties', 'Duties', TaskDepListAttribute, True, False, True, []],
             ['efficiency', 'Efficiency', FloatAttribute, True, False, True, 1.0],
             ['effort', 'Effort', IntegerAttribute, True, False, True, 0],
+            ['flags', 'Flags', FlagListAttribute, True, False, True, []],
             ['leaves', 'Leaves', LeaveListAttribute, True, False, True, []], # Changed to LeaveListAttribute
             ['leaveallowances', 'Leave Allowances', AttributeBase, True, False, True, None], # Placeholder
             ['limits', 'Limits', AttributeBase, True, False, True, None], # Placeholder
@@ -187,6 +188,7 @@ class Project(MessageHandler):
             ['effortdone', 'Effort Done', IntegerAttribute, True, False, True, 0],
             ['effortleft', 'Effort Left', IntegerAttribute, True, False, True, 0],
             ['end', 'End', DateAttribute, False, False, True, None],
+            ['flags', 'Flags', FlagListAttribute, True, False, True, []],
             ['forward', 'Forward', BooleanAttribute, True, False, True, True],
             ['gauge', 'Gauge', StringAttribute, True, False, True, None],
             ['index', 'Index', IntegerAttribute, False, False, False, -1],

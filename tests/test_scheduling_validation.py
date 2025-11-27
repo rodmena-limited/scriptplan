@@ -1729,6 +1729,575 @@ class TestIssue60EclipseProtocol:
         )
 
 
+class TestIssue61SineWaveCapacity:
+    """
+    Issue #61: The "Sine Wave" Capacity Protocol
+
+    Tests variable daily throughput where batch capacity changes each day:
+    - Mon: 2h, Tue: 4h, Wed: 8h, Thu: 16h (peak), Fri: 8h, Sat: 4h, Sun: 2h
+    - Weekly capacity: 44h
+    - 100h effort distributed across variable buckets
+
+    Simulation breakdown:
+    - Week 1 (Sep 1-7): 44h consumed, 56h remaining
+    - Week 2 (Sep 8-14): 44h consumed, 12h remaining
+    - Week 3: Mon 2h (10h rem), Tue 4h (6h rem), Wed 6h (done at 15:00)
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'throughput.tjp'
+
+    # Expected values verified by simulation
+    EXPECTED_START = "2025-09-01-09:00"
+    EXPECTED_END = "2025-09-17-15:00"
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def test_processing_task_start(self, csv_dataframe):
+        """Task must start on Sep 1 09:00."""
+        row = csv_dataframe[csv_dataframe['id'] == 'processing']
+        assert not row.empty, "FAIL: Task processing missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        assert user_start == self.EXPECTED_START, (
+            f"FAIL: Start time wrong.\n"
+            f"  Expected: {self.EXPECTED_START}\n"
+            f"  Got: {user_start}"
+        )
+
+    def test_processing_task_end(self, csv_dataframe):
+        """
+        100h effort across variable capacity should end Sep 17 15:00.
+        Week 1: 44h, Week 2: 44h, Week 3: 2+4+6=12h
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'processing']
+        assert not row.empty, "FAIL: Task processing missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        assert user_end == self.EXPECTED_END, (
+            f"FAIL: End time drift detected.\n"
+            f"  Expected: {self.EXPECTED_END}\n"
+            f"  Got: {user_end}\n"
+            f"  Hint: Did you handle the 16h peak on Thursday correctly?"
+        )
+
+    def test_waveform_simulation_match(self, csv_dataframe):
+        """
+        Verify against full simulation of daily bucket filling.
+        """
+        import datetime
+
+        daily_caps = {0: 2.0, 1: 4.0, 2: 8.0, 3: 16.0, 4: 8.0, 5: 4.0, 6: 2.0}
+        remaining = 100.0
+        current_date = datetime.datetime(2025, 9, 1)
+
+        while remaining > 0:
+            weekday = current_date.weekday()
+            capacity = daily_caps[weekday]
+            consumed = min(remaining, capacity)
+            remaining -= consumed
+
+            if remaining == 0:
+                start_hour = 6 if weekday == 3 else 9
+                end_hour = start_hour + consumed
+                expected_end = current_date.replace(
+                    hour=int(end_hour), minute=0
+                ).strftime("%Y-%m-%d-%H:%M")
+                break
+
+            current_date += datetime.timedelta(days=1)
+
+        row = csv_dataframe[csv_dataframe['id'] == 'processing']
+        assert not row.empty, "FAIL: Task missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        assert user_end == expected_end, (
+            f"FAIL: Waveform simulation mismatch.\n"
+            f"  Simulation says: {expected_end}\n"
+            f"  Your system says: {user_end}"
+        )
+
+
+class TestIssue59DateLineParadox:
+    """
+    Issue #59: The "Date Line" Paradox
+
+    Tests ALAP + Efficiency + Elapsed Lags + Dateline Crossing.
+    Resources are in extreme timezones:
+    - Resource K: Pacific/Kiritimati (UTC+14) - first to see tomorrow
+    - Resource N: Pacific/Niue (UTC-11) - almost last to see today
+
+    Ground Truth (from judge_paradox.py):
+    - Task B (Omega): Dec 30 23:00 -> Dec 31 23:00 UTC
+    - Task A (Alpha): Dec 27 23:00 -> Dec 28 23:00 UTC
+      (48h gap before B starts, efficiency 2.0)
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'paradox.tjp'
+
+    # Ground truth from judge script
+    TARGET_A_START = "2025-12-27-23:00"
+    TARGET_A_END = "2025-12-28-23:00"
+    TARGET_B_START = "2025-12-30-23:00"
+    TARGET_B_END = "2025-12-31-23:00"
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def test_task_alpha_schedule(self, csv_dataframe):
+        """
+        Task Alpha: 12h effort with efficiency 2.0 = 6h duration.
+        Must end 48h before Omega starts (Dec 30 23:00 - 48h = Dec 28 23:00).
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'sequence.a']
+        assert not row.empty, "FAIL: Task A missing."
+
+        s = row.iloc[0]['start'].strip()
+        e = row.iloc[0]['end'].strip()
+
+        assert s == self.TARGET_A_START and e == self.TARGET_A_END, (
+            f"FAIL: Alpha Alignment.\n"
+            f"  Expected: {self.TARGET_A_START} -> {self.TARGET_A_END}\n"
+            f"  Got:      {s} -> {e}"
+        )
+
+    def test_task_omega_schedule(self, csv_dataframe):
+        """
+        Task Omega: 3h effort with efficiency 0.5 = 6h duration.
+        Must end at deadline (Dec 31 23:00).
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'sequence.b']
+        assert not row.empty, "FAIL: Task B missing."
+
+        s = row.iloc[0]['start'].strip()
+        e = row.iloc[0]['end'].strip()
+
+        assert s == self.TARGET_B_START and e == self.TARGET_B_END, (
+            f"FAIL: Omega Alignment.\n"
+            f"  Expected: {self.TARGET_B_START} -> {self.TARGET_B_END}\n"
+            f"  Got:      {s} -> {e}"
+        )
+
+    def test_dateline_traversed(self, csv_dataframe):
+        """
+        Full judge verification: All timestamps should show 23:00 UTC
+        if timezone math is correct (UTC+14 and UTC-11 interacting).
+        """
+        errors = 0
+
+        # Check A
+        row_a = csv_dataframe[csv_dataframe['id'] == 'sequence.a']
+        if row_a.empty:
+            errors += 1
+        else:
+            s = row_a.iloc[0]['start'].strip()
+            e = row_a.iloc[0]['end'].strip()
+            if s != self.TARGET_A_START or e != self.TARGET_A_END:
+                errors += 1
+
+        # Check B
+        row_b = csv_dataframe[csv_dataframe['id'] == 'sequence.b']
+        if row_b.empty:
+            errors += 1
+        else:
+            s = row_b.iloc[0]['start'].strip()
+            e = row_b.iloc[0]['end'].strip()
+            if s != self.TARGET_B_START or e != self.TARGET_B_END:
+                errors += 1
+
+        assert errors == 0, (
+            "FAIL: PARADOX UNRESOLVED.\n"
+            "Your system did not correctly handle UTC+14 and UTC-11\n"
+            "interacting in an ALAP backward pass."
+        )
+
+
+class TestIssue62SharedQuotaProtocol:
+    """
+    Issue #62: The "Shared Quota" Protocol
+
+    Tests hierarchical resource limits (parent dailymax applies to children).
+    Scenario: 3 connection slots under a rate limiter with dailymax 6h.
+
+    - slot_1, slot_2, slot_3 can run in parallel (concurrency)
+    - But combined usage cannot exceed 6h/day (quota)
+
+    Expected:
+    - job_a (3h on slot_1): Jul 1 09:00-12:00
+    - job_b (3h on slot_2): Jul 1 09:00-12:00
+    - job_c (3h on slot_3): MUST wait for Jul 2 (quota exceeded)
+
+    The TRAP: Just because a slot is free doesn't mean you can use it.
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'quota.tjp'
+
+    # Base64 encoded checksums from judge (reversed string -> base64)
+    K_END_AB = "MDA6MjEtMTAtNzAtNTIwMg=="  # 2025-07-01-12:00 reversed
+    K_END_C = "MDA6MjEtMjAtNzAtNTIwMg=="   # 2025-07-02-12:00 reversed
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def _verify(self, val, key):
+        """Exact judge verification: reverse string -> base64 encode -> compare."""
+        import base64
+        rev = val[::-1]
+        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
+        return enc == key
+
+    def test_job_a_fits_in_day1(self, csv_dataframe):
+        """Job A (3h) should complete on Jul 1 by 12:00."""
+        row = csv_dataframe[csv_dataframe['id'] == 'batch.job_a']
+        assert not row.empty, "FAIL: Job A missing."
+
+        end_a = row.iloc[0]['end'].strip()
+        assert self._verify(end_a, self.K_END_AB), (
+            f"FAIL: Job A timing mismatch.\n"
+            f"  Got: {end_a}"
+        )
+
+    def test_job_b_fits_in_day1(self, csv_dataframe):
+        """Job B (3h) should complete on Jul 1 by 12:00 (parallel with A)."""
+        row = csv_dataframe[csv_dataframe['id'] == 'batch.job_b']
+        assert not row.empty, "FAIL: Job B missing."
+
+        end_b = row.iloc[0]['end'].strip()
+        assert self._verify(end_b, self.K_END_AB), (
+            f"FAIL: Job B timing mismatch.\n"
+            f"  Got: {end_b}"
+        )
+
+    def test_job_c_pushed_to_day2(self, csv_dataframe):
+        """
+        Job C cannot start on Jul 1 even though slot_3 is free.
+        Parent's dailymax 6h is already consumed by A+B.
+        C must wait for Jul 2 quota reset.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'batch.job_c']
+        assert not row.empty, "FAIL: Job C missing."
+
+        end_c = row.iloc[0]['end'].strip()
+        assert self._verify(end_c, self.K_END_C), (
+            f"FAIL: Job C leaked into the restricted zone.\n"
+            f"  Got: {end_c}\n"
+            f"  Job C should end on Jul 2, not Jul 1.\n"
+            f"  Parent dailymax 6h should prevent scheduling on Jul 1."
+        )
+
+    def test_quota_enforced(self, csv_dataframe):
+        """
+        Full quota enforcement verification.
+        A+B use 6h on Day 1, C must wait for Day 2.
+        """
+        # Verify A and B
+        row_a = csv_dataframe[csv_dataframe['id'] == 'batch.job_a']
+        row_b = csv_dataframe[csv_dataframe['id'] == 'batch.job_b']
+        row_c = csv_dataframe[csv_dataframe['id'] == 'batch.job_c']
+
+        assert not row_a.empty, "FAIL: Job A missing."
+        assert not row_b.empty, "FAIL: Job B missing."
+        assert not row_c.empty, "FAIL: Job C missing."
+
+        end_a = row_a.iloc[0]['end'].strip()
+        end_b = row_b.iloc[0]['end'].strip()
+        end_c = row_c.iloc[0]['end'].strip()
+
+        ab_ok = self._verify(end_a, self.K_END_AB) and self._verify(end_b, self.K_END_AB)
+        c_ok = self._verify(end_c, self.K_END_C)
+
+        assert ab_ok and c_ok, (
+            "FAIL: QUOTA NOT ENFORCED.\n"
+            "Concurrent slots utilized beyond the shared parent limit.\n"
+            f"  A ends: {end_a}\n"
+            f"  B ends: {end_b}\n"
+            f"  C ends: {end_c}\n"
+            "Expected: A/B on Jul 1, C on Jul 2."
+        )
+
+
+class TestIssue63FailoverProtocol:
+    """
+    Issue #63: The "Failover" Protocol
+
+    Tests alternative resource allocation with smart routing.
+    Scenario: Primary resource on vacation, backup resource available but slower.
+
+    Primary (efficiency 1.0): On vacation Aug 1-5, first available Aug 6
+    Backup (efficiency 0.5): Available immediately but takes 2x time
+
+    8h effort paths:
+    - Path A (Primary): Wait till Aug 6, Duration 8h, End: Aug 6 17:00
+    - Path B (Backup): Start Aug 1, Duration 16h (8h/0.5), End: Aug 4 17:00
+
+    Smart routing should pick Path B (finishes 2 days earlier).
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'failover.tjp'
+
+    # Base64 encoded checksum from judge (reversed string -> base64)
+    K_END = "MDA6NzEtNDAtODAtNTIwMg=="  # 2025-08-04-17:00 reversed
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def _verify(self, val, key):
+        """Exact judge verification: reverse string -> base64 encode -> compare."""
+        import base64
+        rev = val[::-1]
+        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
+        return enc == key
+
+    def test_task_ends_aug_4(self, csv_dataframe):
+        """
+        Task must end Aug 4 17:00 (using backup resource).
+        If it ends Aug 6, smart routing failed to switch to backup.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'compute']
+        assert not row.empty, "FAIL: Task compute missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        assert self._verify(user_end, self.K_END), (
+            f"FAIL: SUBOPTIMAL PATH CHOSEN.\n"
+            f"  Your End Time: {user_end}\n"
+            f"  Expected: 2025-08-04-17:00\n"
+            f"  Did you wait for the Primary resource? (Aug 6)\n"
+            f"  A smart scheduler should have switched to Backup (Aug 4)."
+        )
+
+    def test_task_starts_aug_1(self, csv_dataframe):
+        """Task must start on Aug 1 (immediately with backup, not waiting for primary)."""
+        row = csv_dataframe[csv_dataframe['id'] == 'compute']
+        assert not row.empty, "FAIL: Task compute missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        expected_start = "2025-08-01-09:00"
+
+        assert user_start == expected_start, (
+            f"FAIL: Task should start immediately with backup.\n"
+            f"  Expected: {expected_start}\n"
+            f"  Got: {user_start}\n"
+            f"  Task should not wait for primary to become available."
+        )
+
+    def test_intelligent_routing(self, csv_dataframe):
+        """
+        Full judge verification: timing must match AND resource selection must be correct.
+        Start now with slow > Wait for fast.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'compute']
+        assert not row.empty, "FAIL: Task missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        user_start = row.iloc[0]['start'].strip()
+
+        # Verify timing
+        timing_ok = self._verify(user_end, self.K_END)
+
+        # Verify start (must be Aug 1, not Aug 6)
+        start_ok = user_start == "2025-08-01-09:00"
+
+        assert timing_ok and start_ok, (
+            "FAIL: INTELLIGENT ROUTING NOT CONFIRMED.\n"
+            f"  Start: {user_start} (expected 2025-08-01-09:00)\n"
+            f"  End: {user_end} (expected 2025-08-04-17:00)\n"
+            "System should prioritize completion time over resource preference."
+        )
+
+
+class TestIssue64AtomicBooking:
+    """
+    Issue #64: The "Indivisible" Protocol - Atomicity
+
+    Tests contiguous (atomic) flag for tasks that cannot be split across breaks.
+    Scenario: Kiln firing that cannot be paused once started.
+
+    Shift: Mon-Fri 08:00-12:00, 13:00-18:00 (4h morning, 1h lunch gap, 5h afternoon)
+    Task: 4.5h effort with contiguous flag
+
+    Logic:
+    - Morning slot: 08:00-12:00 = 4h (NOT enough for 4.5h)
+    - Afternoon slot: 13:00-18:00 = 5h (ENOUGH for 4.5h)
+
+    Expected: Task slides to afternoon block
+    - Start: 2025-11-03-13:00 (Monday afternoon)
+    - End: 2025-11-03-17:30 (4.5h later)
+
+    Note: The original judge expected Nov 1, but Nov 1 2025 is Saturday.
+    The shift specifies Mon-Fri, so first working day is Nov 3 (Monday).
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'atomic.tjp'
+
+    # Correct expected values based on logic (not judge which has Nov 1 Saturday bug)
+    TARGET_START = "2025-11-03-13:00"
+    TARGET_END = "2025-11-03-17:30"
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def test_task_starts_afternoon(self, csv_dataframe):
+        """
+        Task must start at 13:00 (afternoon), not 08:00 (morning).
+        Morning slot (4h) is too small for 4.5h contiguous task.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'production']
+        assert not row.empty, "FAIL: Task production missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        assert user_start == self.TARGET_START, (
+            f"FAIL: Task should start in afternoon slot.\n"
+            f"  Expected: {self.TARGET_START}\n"
+            f"  Got: {user_start}\n"
+            f"  Morning slot (4h) is too small for 4.5h contiguous task."
+        )
+
+    def test_task_ends_correct_time(self, csv_dataframe):
+        """Task must end at 17:30 (13:00 + 4.5h)."""
+        row = csv_dataframe[csv_dataframe['id'] == 'production']
+        assert not row.empty, "FAIL: Task production missing."
+
+        user_end = row.iloc[0]['end'].strip()
+        assert user_end == self.TARGET_END, (
+            f"FAIL: Task end time incorrect.\n"
+            f"  Expected: {self.TARGET_END}\n"
+            f"  Got: {user_end}"
+        )
+
+    def test_atomicity_preserved(self, csv_dataframe):
+        """
+        Full verification: Task was NOT split across lunch break.
+        Start at 13:00 proves the task waited for the 5h afternoon slot
+        instead of starting at 08:00 and splitting at 12:00-13:00 lunch.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'production']
+        assert not row.empty, "FAIL: Task missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        user_end = row.iloc[0]['end'].strip()
+
+        # If start is 08:00, the task was fragmented
+        if '08:00' in user_start:
+            assert False, (
+                "FAIL: FRAGMENTATION DETECTED.\n"
+                f"  Your Start: {user_start}\n"
+                "You likely split a contiguous task across the lunch break.\n"
+                "The kiln cooled down. The batch is ruined."
+            )
+
+        assert user_start == self.TARGET_START and user_end == self.TARGET_END, (
+            "FAIL: ATOMICITY NOT PRESERVED.\n"
+            f"  Start: {user_start} (expected {self.TARGET_START})\n"
+            f"  End: {user_end} (expected {self.TARGET_END})\n"
+            "Task should have slid to the 5h afternoon slot."
+        )
+
+
 # Convenience function to run all validation tests
 def run_all_scheduling_validations():
     """Run all scheduling validation tests."""

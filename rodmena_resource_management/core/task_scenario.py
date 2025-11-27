@@ -51,6 +51,7 @@ class TaskScenario(ScenarioData):
         self.doneLength = 0
         self.doneEffort = 0.0
         self.scheduled = False
+        self._selectedResources = None  # Reset alternative resource selection
 
         # Track exact start time within a slot (for mid-slot dependency starts)
         # This is the number of seconds into the slot where we should start booking
@@ -454,6 +455,14 @@ class TaskScenario(ScenarioData):
             return False
 
         if effort > 0:
+            # Check for contiguous flag - task cannot be split across breaks
+            flags = self.property.get('flags', self.scenarioIdx) or []
+            if 'contiguous' in flags and self.doneEffort == 0:
+                # Before starting, verify we have a contiguous block large enough
+                if not self._hasContiguousBlock(effort):
+                    # Skip this slot - no contiguous block starts here
+                    return True  # Continue to next slot
+
             # Store effort before booking to calculate fraction used in final slot
             effort_before = self.doneEffort
             self.bookResources()
@@ -642,18 +651,27 @@ class TaskScenario(ScenarioData):
             # No allocations - fall back to project working time
             return self.project.isWorkingTime(slotIdx)
 
-        # Check each allocated resource
-        for alloc in allocations:
-            if isinstance(alloc, str):
-                # Look up resource by ID
-                resource = None
-                for res in self.project.resources:
-                    if res.id == alloc:
-                        resource = res
-                        break
-            else:
-                resource = alloc
+        # Parse allocations - handle both simple list and dict with alternatives
+        resource_ids = []
 
+        # Normalize allocations
+        alloc_data = allocations
+        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
+            alloc_data = allocations[0]
+
+        if isinstance(alloc_data, dict):
+            resource_ids = alloc_data.get('resources', [])
+            # Also include alternatives
+            alternatives = alloc_data.get('options', {}).get('alternative', [])
+            resource_ids = resource_ids + alternatives
+        elif isinstance(alloc_data, list):
+            resource_ids = alloc_data
+        else:
+            resource_ids = [alloc_data]
+
+        # Check each allocated resource
+        for alloc in resource_ids:
+            resource = self._resolve_resource(alloc)
             if resource is None:
                 continue
 
@@ -672,6 +690,247 @@ class TaskScenario(ScenarioData):
 
         return False
 
+    def _hasContiguousBlock(self, effort):
+        """
+        Check if there's a contiguous block of working time starting from current slot
+        that can fit the required effort.
+
+        For contiguous (atomic) tasks, we need to ensure the task won't be split
+        across breaks (like lunch breaks). The entire effort must fit in one
+        continuous working period.
+
+        Args:
+            effort: Required effort in hours
+
+        Returns:
+            True if a contiguous block large enough exists starting at current slot
+        """
+        from datetime import timedelta
+
+        # Get allocations to check resource availability
+        allocations = self.property.get('allocate', self.scenarioIdx)
+        if not allocations:
+            # No allocations - check project working time
+            return self._checkProjectContiguousBlock(effort)
+
+        # Normalize allocations
+        alloc_data = allocations
+        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
+            alloc_data = allocations[0]
+
+        if isinstance(alloc_data, dict):
+            resource_ids = alloc_data.get('resources', [])
+        elif isinstance(alloc_data, list):
+            resource_ids = alloc_data
+        else:
+            resource_ids = [alloc_data]
+
+        # Get the first resource (for contiguous check, we use primary resource's availability)
+        resource = None
+        for res_id in resource_ids:
+            resource = self._resolve_resource(res_id)
+            if resource:
+                break
+
+        if not resource:
+            return self._checkProjectContiguousBlock(effort)
+
+        # Get resource's scenario data
+        res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+        if res_scenario is None:
+            return self._checkProjectContiguousBlock(effort)
+
+        # Initialize scoreboard if needed
+        if res_scenario.scoreboard is None:
+            res_scenario.prepareScheduling()
+
+        # Get efficiency
+        efficiency = resource.get('efficiency', self.scenarioIdx) or 1.0
+
+        # Calculate required duration (hours of actual clock time)
+        required_duration = effort / efficiency
+
+        # Get slot duration in hours
+        slot_duration_sec = self.project.attributes.get('scheduleGranularity', 3600)
+        slot_duration_hours = slot_duration_sec / 3600.0
+
+        # Calculate how many consecutive slots we need
+        slots_needed = required_duration / slot_duration_hours
+
+        # Check if we have that many consecutive working slots starting from current
+        consecutive_count = 0
+        current_slot = self.currentSlotIdx
+        max_slots = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
+
+        while current_slot < max_slots and consecutive_count < slots_needed:
+            if res_scenario.available(current_slot):
+                if consecutive_count == 0:
+                    # First available slot - check if it's the current slot
+                    if current_slot != self.currentSlotIdx:
+                        # Gap before first available - not contiguous from current
+                        return False
+                consecutive_count += 1
+                current_slot += 1
+            else:
+                # Hit a break/unavailable slot
+                if consecutive_count > 0:
+                    # Already started counting but hit a break - not enough contiguous
+                    return False
+                else:
+                    # Haven't found starting slot yet - not available at current
+                    return False
+
+        return consecutive_count >= slots_needed
+
+    def _checkProjectContiguousBlock(self, effort):
+        """
+        Fallback check for contiguous block using project working time.
+        """
+        slot_duration_sec = self.project.attributes.get('scheduleGranularity', 3600)
+        slot_duration_hours = slot_duration_sec / 3600.0
+        slots_needed = effort / slot_duration_hours
+
+        consecutive_count = 0
+        current_slot = self.currentSlotIdx
+        max_slots = 1000
+
+        while current_slot < max_slots and consecutive_count < slots_needed:
+            if self.project.isWorkingTime(current_slot):
+                if consecutive_count == 0 and current_slot != self.currentSlotIdx:
+                    return False
+                consecutive_count += 1
+                current_slot += 1
+            else:
+                if consecutive_count > 0:
+                    return False
+                else:
+                    return False
+
+        return consecutive_count >= slots_needed
+
+    def _resolve_resource(self, alloc):
+        """
+        Resolve a resource allocation to an actual Resource object.
+
+        Args:
+            alloc: Either a resource ID string or a Resource object
+
+        Returns:
+            The Resource object or None if not found
+        """
+        if isinstance(alloc, str):
+            # Try indexed lookup first
+            resource = self.project.resources.get(alloc) if hasattr(self.project.resources, 'get') else None
+            if resource is None:
+                # Fall back to iteration
+                for res in self.project.resources:
+                    if res.id == alloc:
+                        return res
+            return resource
+        return alloc
+
+    def _selectBestResources(self, primary_resources, alternative_resources, effort):
+        """
+        Select the best resources for this task using smart routing.
+
+        For tasks with alternatives, this compares completion times:
+        - Path A: Wait for primary resource to become available
+        - Path B: Start now with alternative resource
+
+        The path that finishes earlier wins.
+
+        Args:
+            primary_resources: List of primary (preferred) resources
+            alternative_resources: List of alternative (fallback) resources
+            effort: Required effort in hours
+
+        Returns:
+            List of resources to book
+        """
+        if not primary_resources and not alternative_resources:
+            return []
+
+        # If no alternatives, use primary resources
+        if not alternative_resources:
+            return primary_resources
+
+        # If no primaries, use alternatives
+        if not primary_resources:
+            return alternative_resources
+
+        # Smart routing: compare completion times
+        # Calculate when each path would complete the task
+
+        primary_end = self._estimateCompletionTime(primary_resources, effort)
+        alternative_end = self._estimateCompletionTime(alternative_resources, effort)
+
+        # Choose the path that finishes earlier
+        if alternative_end is not None and (primary_end is None or alternative_end < primary_end):
+            # Store which resource was selected for reporting
+            if not hasattr(self, '_selectedAlternative'):
+                self._selectedAlternative = True
+            return alternative_resources
+        else:
+            if not hasattr(self, '_selectedAlternative'):
+                self._selectedAlternative = False
+            return primary_resources
+
+    def _estimateCompletionTime(self, resources, effort):
+        """
+        Estimate when a task would complete using the given resources.
+
+        Args:
+            resources: List of resources to use
+            effort: Required effort in hours
+
+        Returns:
+            Estimated completion datetime or None if cannot complete
+        """
+        if not resources or effort <= 0:
+            return None
+
+        from datetime import timedelta
+
+        # Get efficiency (use first resource's efficiency)
+        resource = resources[0]
+        efficiency = resource.get('efficiency', self.scenarioIdx) or 1.0
+
+        # Duration = effort / efficiency
+        duration_hours = effort / efficiency
+
+        # Find the first available slot for this resource
+        res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+        if res_scenario is None:
+            return None
+
+        if res_scenario.scoreboard is None:
+            res_scenario.prepareScheduling()
+
+        # Simulate scheduling to find completion time
+        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        effort_per_slot = (slot_duration / 3600.0) * efficiency
+
+        remaining_effort = effort
+        current_slot = self.currentSlotIdx
+
+        # Safety limit to prevent infinite loops
+        max_slots = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
+
+        while remaining_effort > 0 and current_slot < max_slots:
+            if res_scenario.available(current_slot):
+                remaining_effort -= effort_per_slot
+            current_slot += 1
+
+        if remaining_effort > 0:
+            return None  # Cannot complete within project timeframe
+
+        # Calculate the end time
+        # current_slot is now one past the last booked slot
+        end_slot = current_slot - 1
+        end_time = self.project.idxToDate(end_slot) + timedelta(seconds=slot_duration)
+
+        return end_time
+
     def bookResources(self):
         """
         Book resources for the current slot and accumulate effort.
@@ -682,6 +941,9 @@ class TaskScenario(ScenarioData):
 
         For continuous time scheduling, effort is tracked based on actual available
         time in slots (accounting for partial slot usage by other tasks).
+
+        Supports alternative resources: if primary is unavailable, tries alternatives.
+        Smart routing picks the resource that finishes the task earliest.
         """
         # Get allocations
         allocations = self.property.get('allocate', self.scenarioIdx)
@@ -690,21 +952,51 @@ class TaskScenario(ScenarioData):
 
         effort = self.property.get('effort', self.scenarioIdx) or 0
 
-        # Resolve all allocation references to actual Resource objects
-        resources_to_book = []
-        for alloc in allocations:
-            if isinstance(alloc, str):
-                resource = self.project.resources[alloc]
-                if resource is None:
-                    for res in self.project.resources:
-                        if res.id == alloc:
-                            resource = res
-                            break
-            else:
-                resource = alloc
+        # Parse allocations - handle both simple list and dict with alternatives
+        primary_resources = []
+        alternative_resources = []
 
-            if resource is not None:
-                resources_to_book.append(resource)
+        # Normalize allocations - can be list of strings, list containing dict, or dict
+        alloc_data = allocations
+        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
+            # List containing a single dict with options
+            alloc_data = allocations[0]
+
+        if isinstance(alloc_data, dict):
+            # New format with options: {'resources': [...], 'options': {...}}
+            resource_ids = alloc_data.get('resources', [])
+            options = alloc_data.get('options', {})
+            alternative_ids = options.get('alternative', [])
+
+            for res_id in resource_ids:
+                resource = self._resolve_resource(res_id)
+                if resource:
+                    primary_resources.append(resource)
+
+            for res_id in alternative_ids:
+                resource = self._resolve_resource(res_id)
+                if resource:
+                    alternative_resources.append(resource)
+        elif isinstance(alloc_data, list):
+            # Simple list format
+            for alloc in alloc_data:
+                resource = self._resolve_resource(alloc)
+                if resource:
+                    primary_resources.append(resource)
+        else:
+            # Single resource
+            resource = self._resolve_resource(alloc_data)
+            if resource:
+                primary_resources.append(resource)
+
+        # Determine which resources to try booking
+        # Smart routing: pick the resource that can complete the task earliest
+        # Only select once at the beginning of scheduling (when no effort done yet)
+        if not hasattr(self, '_selectedResources') or self._selectedResources is None:
+            self._selectedResources = self._selectBestResources(
+                primary_resources, alternative_resources, effort
+            )
+        resources_to_book = self._selectedResources
 
         if not resources_to_book:
             return

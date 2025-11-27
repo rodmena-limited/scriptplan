@@ -650,10 +650,61 @@ class TJPTransformer(Transformer):
 
     def allocate_spec(self, items):
         resources = []
+        options = {}
         for item in items:
             if isinstance(item, Token):
                 resources.append(item.value)
+            elif isinstance(item, dict):
+                # allocate_options dict
+                options.update(item)
+        # If there are alternatives, include them in the allocation structure
+        if options:
+            return ('allocate', {'resources': resources, 'options': options})
         return ('allocate', resources)
+
+    def allocate_options(self, items):
+        """Process allocation options like persistent, mandatory, alternative."""
+        result = {}
+        for item in items:
+            if isinstance(item, dict):
+                result.update(item)
+            elif isinstance(item, list):
+                # Flatten nested lists from allocate_option
+                for subitem in item:
+                    if isinstance(subitem, dict):
+                        result.update(subitem)
+        return result
+
+    def allocate_option(self, items):
+        """
+        Process a single allocation option.
+
+        The grammar literals ("alternative", "persistent", etc.) are filtered out,
+        so we detect the option type by the structure:
+        - Empty items -> persistent or mandatory (no IDs)
+        - ID tokens -> alternative (list of resource IDs)
+        - Dict with limits -> limits
+        """
+        if not items:
+            # This shouldn't happen for well-formed input
+            return {}
+
+        # Check if it's a limits block (dict)
+        if isinstance(items[0], dict):
+            return items[0]
+
+        # Check if items are ID tokens -> alternative resources
+        alternatives = []
+        for item in items:
+            if isinstance(item, Token) and item.type == 'ID':
+                alternatives.append(item.value)
+
+        if alternatives:
+            return {'alternative': alternatives}
+
+        # Persistent and mandatory have no child items in the parse tree
+        # They're handled at the grammar level as literals
+        return {}
 
     # Account
     def account(self, items):
@@ -1392,6 +1443,10 @@ class ModelBuilder:
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('milestone', scIdx)] = value
+                elif key == 'flags':
+                    # Set flags for all scenarios (list of flag strings)
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('flags', scIdx)] = value
                 elif key == 'priority':
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):

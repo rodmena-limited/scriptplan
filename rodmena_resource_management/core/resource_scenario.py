@@ -304,6 +304,15 @@ class ResourceScenario(ScenarioData):
         if limits and hasattr(limits, 'ok') and not limits.ok(sb_idx):
             return False
 
+        # Check parent resource limits (hierarchical limit propagation)
+        # When a child resource is booked, parent limits must also be checked
+        parent = self.property.parent
+        while parent:
+            parent_limits = parent.get('limits', self.scenarioIdx)
+            if parent_limits and hasattr(parent_limits, 'ok') and not parent_limits.ok(sb_idx):
+                return False
+            parent = parent.parent
+
         return True
 
     def booked(self, sb_idx: int) -> bool:
@@ -419,6 +428,15 @@ class ResourceScenario(ScenarioData):
         limits = self.property.get('limits', self.scenarioIdx)
         if limits and hasattr(limits, 'inc'):
             limits.inc(sb_idx)
+
+        # Propagate to parent resource limits (hierarchical limit propagation)
+        # When a child resource is booked, parent limits must also be incremented
+        parent = self.property.parent
+        while parent:
+            parent_limits = parent.get('limits', self.scenarioIdx)
+            if parent_limits and hasattr(parent_limits, 'inc'):
+                parent_limits.inc(sb_idx)
+            parent = parent.parent
 
         # Update task limits (including parent task limits)
         task_scenario = task.data[self.scenarioIdx] if hasattr(task, 'data') and task.data else None

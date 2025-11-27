@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rodmena_resource_management"
-version = "0.1.0"
-description = "A Python implementation of TaskJuggler"
+name = "planscript"
+version = "0.9.0"
+description = "A powerful project management tool for resource allocation and scheduling."
 authors = [
   { name="Rodmena Team", email="team@rodmena.com" },
 ]
@@ -20,6 +20,17 @@ dependencies = [
     "python-dateutil",
 ]
 
+dev-dependencies = [
+    "pytest",
+    "pytest-xdist",
+    "pandas",
+    "ruff",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+
 [project.scripts]
 rodmena = "rodmena_resource_management.cli.main:main"
 
@@ -31,5 +42,5 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -n 8"
 filterwarnings = ["ignore::DeprecationWarning"]
