@@ -135,8 +135,41 @@ class ResourceScenario(ScenarioData):
              self.lastBookedSlots[task] = sbIdx
         return True
 
-    def initScoreboard(self):
-        start = self.project['start']
+    def bookedEffort(self, scenarioIdx=None):
+        # In Python scenarioIdx is typically self.scenarioIdx if not passed?
+        # The method signature in Ruby: bookedEffort(scenarioIdx)
+        # But wait, this method IS on ResourceScenario which is bound to a scenarioIdx.
+        # So 'scenarioIdx' arg might be redundant or for cross-scenario?
+        # Actually Ruby implementation:
+        # def bookedEffort
+        #   if @property.leaf?
+        #     @effort
+        #   else
+        #     effort = 0
+        #     @property.kids.each do |r|
+        #       effort += r.bookedEffort(@scenarioIdx)
+        #     end
+        #     effort
+        #   end
+        # end
+        # The call r.bookedEffort(@scenarioIdx) calls Resource#bookedEffort which delegates to ResourceScenario.
+        
+        if self.property.leaf():
+            return self.property.get('effort', self.scenarioIdx)
+        else:
+            effort = 0.0
+            for r in self.property.kids():
+                # r is Resource. We need to call bookedEffort on it (delegating to its scenario)
+                # Or access its scenario directly.
+                # Delegate via Resource methods if implemented, or direct access.
+                # Since Resource has method_missing logic in Ruby, we might need similar in Python or helper.
+                if hasattr(r, 'bookedEffort'):
+                     # If Resource has bookedEffort, it takes scenarioIdx
+                     effort += r.bookedEffort(self.scenarioIdx)
+                else:
+                     # Direct access
+                     effort += r.data[self.scenarioIdx].bookedEffort()
+            return effort
         end = self.project['end']
         granularity = self.project['scheduleGranularity']
         self.scoreboard = Scoreboard(start, end, granularity, 2)

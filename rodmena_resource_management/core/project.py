@@ -76,26 +76,22 @@ class Project(MessageHandler):
         }
         
         self.accounts = PropertySet(self, False)
-        self._add_standard_attributes(self.accounts)
         
         self.shifts = PropertySet(self, False)
-        self._add_standard_attributes(self.shifts)
         
         self.resources = PropertySet(self, False)
-        self._add_standard_attributes(self.resources)
         self._define_resource_attributes()
         
         self.tasks = PropertySet(self, False)
-        self._add_standard_attributes(self.tasks)
         self._define_task_attributes()
         
         self.reports = PropertySet(self, False)
-        self._add_standard_attributes(self.reports)
         self._define_report_attributes()
         
-        self.scenarios = PropertySet(self, False)
-        self._add_standard_attributes(self.scenarios)
+        self.scenarios = PropertySet(self, True)
+        self._define_scenario_attributes()
         
+        # Scenario needs to be added AFTER attributes are defined
         Scenario(self, 'plan', 'Plan Scenario', None)
         
         self.inputFiles = FileList()
@@ -108,10 +104,14 @@ class Project(MessageHandler):
         self.outputDir = './'
         self.warnTsDeltas = False
 
-    def _add_standard_attributes(self, property_set):
-        property_set.addAttributeType(AttributeDefinition('id', 'ID', StringAttribute, False, False, False, None))
-        property_set.addAttributeType(AttributeDefinition('name', 'Name', StringAttribute, False, False, False, None))
-        property_set.addAttributeType(AttributeDefinition('seqno', 'No', IntegerAttribute, False, False, False, None))
+    def _define_scenario_attributes(self):
+        attrs = [
+            ['active', 'Enabled', BooleanAttribute, True, False, False, True],
+            ['ownbookings', 'Own Bookings', BooleanAttribute, False, False, False, True],
+            ['projection', 'Projection Mode', BooleanAttribute, True, False, False, False],
+        ]
+        for a in attrs:
+            self.scenarios.addAttributeType(AttributeDefinition(*a))
 
     def _define_resource_attributes(self):
         # Add attributes required by ResourceScenario
@@ -141,6 +141,7 @@ class Project(MessageHandler):
             ['allocate', 'Allocate', ListAttribute, True, False, True, []],
             ['assignedresources', 'Assigned Resources', ListAttribute, False, False, True, []],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
+            ['bsi', 'BSI', StringAttribute, False, False, False, ""],
             ['charge', 'Charge', FloatAttribute, True, False, True, 0.0],
             ['chargeset', 'Charge Set', StringAttribute, True, False, True, []],
             ['complete', 'Complete', FloatAttribute, True, False, True, 0.0],
@@ -154,6 +155,7 @@ class Project(MessageHandler):
             ['end', 'End', DateAttribute, True, False, True, None],
             ['forward', 'Forward', BooleanAttribute, True, False, True, True],
             ['gauge', 'Gauge', StringAttribute, True, False, True, None],
+            ['index', 'Index', IntegerAttribute, False, False, False, -1],
             ['length', 'Length', IntegerAttribute, True, False, True, 0],
             ['maxend', 'Max End', DateAttribute, True, False, True, None],
             ['maxstart', 'Max Start', DateAttribute, True, False, True, None],
@@ -186,34 +188,14 @@ class Project(MessageHandler):
 
     def scenario(self, arg):
         if isinstance(arg, int):
-             for sc in self.scenarios._properties.values():
+             for sc in self.scenarios:
                  if sc.sequenceNo - 1 == arg:
                      return sc
         else:
             return self.scenarios[arg]
         return None
-    
-    def resource(self, id):
-        return self.resources[id]
 
-    def __getitem__(self, name):
-        if name not in self.attributes:
-            raise ValueError(f"Unknown project attribute {name}")
-        return self.attributes[name]
-
-    def __setitem__(self, name, value):
-        if name not in self.attributes:
-            raise ValueError(f"Unknown project attribute {name}")
-        self.attributes[name] = value
-        
-        if name in ['start', 'end', 'scheduleGranularity', 'timezone', 'timingresolution']:
-            if self.attributes.get('start') and self.attributes.get('end'):
-                 self.attributes['workinghours'] = WorkingHours(
-                     self.attributes['scheduleGranularity'],
-                     self.attributes['start'],
-                     self.attributes['end'],
-                     self.attributes['timezone']
-                 )
+# ...
 
     @staticmethod
     def maxScheduleGranularity():
@@ -227,7 +209,98 @@ class Project(MessageHandler):
             
         if self.tasks.empty():
             self.error('no_tasks', "No tasks defined")
-        pass
+            
+        for sc in self.scenarios:
+            # Skip disabled scenarios if 'active' is false (default true if not set)
+            if not sc.get('active') and sc.get('active') is not None:
+                continue
+
+            scIdx = sc.sequenceNo - 1
+            
+            # Propagate inherited values
+            AttributeBase.setMode(1)
+            self.prepareScenario(scIdx)
+            
+            # Schedule
+            AttributeBase.setMode(2)
+            self.scheduleScenario(scIdx)
+            
+            # Finish
+            self.finishScenario(scIdx)
+             
+        return True
+
+    def prepareScenario(self, scIdx):
+        # Simplified preparation
+        # In Ruby: computes criticalness, propagates initial values, checks loops
+        
+        # We need to ensure tasks are ready
+        for task in self.tasks:
+            task.prepareScheduling(scIdx)
+            
+        for resource in self.resources:
+            resource.prepareScheduling(scIdx)
+
+    def finishScenario(self, scIdx):
+        for task in self.tasks:
+            if not task.parent:
+                task.finishScheduling(scIdx)
+        
+        for resource in self.resources:
+            if not resource.parent:
+                resource.finishScheduling(scIdx)
+
+    def scheduleScenario(self, scIdx):
+        tasks = list(self.tasks)
+        
+        # Only care about leaf tasks that are not milestones and aren't
+        # scheduled already (marked with the 'scheduled' attribute).
+        tasks = [t for t in tasks if t.leaf() and not t.get('milestone', scIdx) and not t.get('scheduled', scIdx)]
+
+        
+        # Sorting
+        # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
+        # Note: attributes might return None, need safe access for sorting
+        def sort_key(t):
+            prio = t.get('priority', scIdx) or 500
+            crit = t.get('pathcriticalness', scIdx) or 0.0
+            seq = t.get('seqno') or 0
+            return (-prio, -crit, seq)
+
+        tasks.sort(key=sort_key)
+        
+        failedTasks = []
+        
+        while tasks:
+            taskToRemove = None
+            for task in tasks:
+                # Task not ready? Ignore it.
+                if not task.readyForScheduling(scIdx):
+                    continue
+                
+                if not task.schedule(scIdx):
+                    failedTasks.append(task)
+                
+                taskToRemove = task
+                break
+            
+            if taskToRemove:
+                tasks.remove(taskToRemove)
+            elif tasks and not failedTasks:
+                # If we have tasks but none are ready and no failures yet, it's a deadlock
+                # (Unless readyForScheduling logic waits for something else?)
+                self.warning('deadlock', 'Deadlock detected in scheduling')
+                failedTasks.extend(tasks)
+                break
+            else:
+                # If tasks is not empty but we didn't remove any, we break to avoid infinite loop
+                # likely deadlock or all failed
+                break
+        
+        if failedTasks:
+            self.warning('unscheduled_tasks', f"{len(failedTasks)} tasks could not be scheduled")
+            return False
+            
         return True
 
     def initScoreboards(self):
@@ -270,4 +343,10 @@ class Project(MessageHandler):
          return idx
 
     def idxToDate(self, idx):
-        return None
+        if not self.attributes['start']:
+            return None
+        
+        from datetime import timedelta
+        # Assuming idx is integer steps of scheduleGranularity from start
+        seconds = idx * self.attributes['scheduleGranularity']
+        return self.attributes['start'] + timedelta(seconds=seconds)

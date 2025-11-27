@@ -26,6 +26,24 @@ class Task(PropertyTreeNode):
             return self.data[scenarioIdx].readyForScheduling()
         return False
 
+    def prepareScheduling(self, scenarioIdx):
+        if self.data[scenarioIdx]:
+            # self.data[scenarioIdx] is TaskScenario
+            # TaskScenario doesn't implement prepareScheduling? 
+            # Wait, ScenarioData might? Or TaskScenario should.
+            if hasattr(self.data[scenarioIdx], 'prepareScheduling'):
+                self.data[scenarioIdx].prepareScheduling()
+
+    def finishScheduling(self, scenarioIdx):
+        if self.data[scenarioIdx]:
+            if hasattr(self.data[scenarioIdx], 'finishScheduling'):
+                self.data[scenarioIdx].finishScheduling()
+
+    def schedule(self, scenarioIdx):
+        if self.data[scenarioIdx]:
+            return self.data[scenarioIdx].schedule()
+        return False
+
     def journalText(self, query, longVersion, recursive):
         # Implementation of journalText logic
         # Depends on project.journal, RichText, etc.

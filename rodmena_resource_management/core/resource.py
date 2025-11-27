@@ -12,6 +12,17 @@ class Resource(PropertyTreeNode):
         for i in range(scenario_count):
             ResourceScenario(self, i, self._scenarioAttributes[i])
 
+    def prepareScheduling(self, scenarioIdx):
+        if self.data[scenarioIdx]:
+            self.data[scenarioIdx].prepareScheduling()
+
+    def finishScheduling(self, scenarioIdx):
+        if self.data[scenarioIdx]:
+            self.data[scenarioIdx].finishScheduling()
+
+    def bookedEffort(self, scenarioIdx):
+        return self.data[scenarioIdx].bookedEffort()
+
     def book(self, scenarioIdx, sbIdx, task):
         return self.data[scenarioIdx].book(sbIdx, task)
 
