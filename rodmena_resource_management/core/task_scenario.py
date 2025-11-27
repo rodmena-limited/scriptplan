@@ -128,17 +128,36 @@ class TaskScenario(ScenarioData):
         For ALAP, a task is ready when:
         1. It has an explicit end date (anchor), OR
         2. All tasks that depend on this task (successors) are scheduled
+           (so we can derive our end from their start), OR
+        3. For onstart dependencies: the predecessor must be scheduled first
            (so we can derive our end from their start)
         """
         # If task has explicit end date, it's an anchor - always ready
         if self.property.get('end', self.scenarioIdx):
             return True
 
-        # Otherwise, check if all successors are scheduled
-        # We need to find all tasks that depend on this task
+        # Check onstart dependencies - we need predecessor scheduled to know their start
+        # For ALAP with `depends X { onstart }`, this task's END depends on X's START
+        for dep in self.getAllDependencies():
+            if isinstance(dep, dict):
+                onstart = dep.get('onstart', False)
+                pred = dep.get('task')
+            elif hasattr(dep, 'task'):
+                onstart = getattr(dep, 'onstart', False)
+                pred = dep.task
+            else:
+                onstart = False
+                pred = dep
+
+            if onstart and pred and not pred.get('scheduled', self.scenarioIdx):
+                # Predecessor not scheduled yet - we can't derive our end
+                return False
+
+        # Check if all successors are scheduled (for finish-to-start deps)
         successors = self._getSuccessors()
         if not successors:
             # No successors and no explicit end - use project end as default
+            # (unless we have onstart deps, which we checked above)
             return True
 
         for successor in successors:
@@ -256,11 +275,30 @@ class TaskScenario(ScenarioData):
                 end_date = self.property.get('end', self.scenarioIdx)
 
                 if not end_date:
-                    # No explicit end - derive from successors (tasks depending on this)
-                    # The task must end before any successor starts
-                    successors = self._getSuccessors()
+                    # No explicit end - derive from:
+                    # 1. Predecessors with onstart deps (our END <= their START)
+                    # 2. Successors (tasks depending on this - our END <= their START)
                     latest_end = self.project['end']  # Default to project end
 
+                    # Check onstart dependencies - our END must be before predecessor's START
+                    for dep in self.getAllDependencies():
+                        if isinstance(dep, dict):
+                            onstart = dep.get('onstart', False)
+                            pred = dep.get('task')
+                        elif hasattr(dep, 'task'):
+                            onstart = getattr(dep, 'onstart', False)
+                            pred = dep.task
+                        else:
+                            onstart = False
+                            pred = dep
+
+                        if onstart and pred:
+                            pred_start = pred.get('start', self.scenarioIdx)
+                            if pred_start and pred_start < latest_end:
+                                latest_end = pred_start
+
+                    # Also check successors (finish-to-start deps)
+                    successors = self._getSuccessors()
                     for successor in successors:
                         succ_start = successor.get('start', self.scenarioIdx)
                         if succ_start and succ_start < latest_end:
@@ -272,16 +310,26 @@ class TaskScenario(ScenarioData):
                     # For ALAP, start from the last working slot BEFORE the end date
                     self.currentSlotIdx = self.project.dateToIdx(end_date) - 1
                     # Find the last working slot
+                    # For effort tasks with allocations, check resource availability
+                    # (respects resource timezone and working hours)
                     lowerLimit = self.project.dateToIdx(self.project['start'])
-                    while self.currentSlotIdx > lowerLimit and not self.isWorkingTime(self.currentSlotIdx):
-                        self.currentSlotIdx -= 1
+                    if effort > 0 and allocations:
+                        while self.currentSlotIdx > lowerLimit and not self._isResourceAvailable(self.currentSlotIdx):
+                            self.currentSlotIdx -= 1
+                    else:
+                        while self.currentSlotIdx > lowerLimit and not self.isWorkingTime(self.currentSlotIdx):
+                            self.currentSlotIdx -= 1
                 else:
                     # ALAP mode, end at project end
                     self.currentSlotIdx = self.project.dateToIdx(self.project['end']) - 1
                     # Find the last working slot
                     lowerLimit = self.project.dateToIdx(self.project['start'])
-                    while self.currentSlotIdx > lowerLimit and not self.isWorkingTime(self.currentSlotIdx):
-                        self.currentSlotIdx -= 1
+                    if effort > 0 and allocations:
+                        while self.currentSlotIdx > lowerLimit and not self._isResourceAvailable(self.currentSlotIdx):
+                            self.currentSlotIdx -= 1
+                    else:
+                        while self.currentSlotIdx > lowerLimit and not self.isWorkingTime(self.currentSlotIdx):
+                            self.currentSlotIdx -= 1
 
         # For effort tasks with allocations, don't set start yet - it will be set
         # when first resource is booked. For non-effort tasks, find first working slot.
@@ -564,6 +612,55 @@ class TaskScenario(ScenarioData):
         Returns True if the slot is during working time.
         """
         return self.project.isWorkingTime(slotIdx)
+
+    def _isResourceAvailable(self, slotIdx):
+        """
+        Check if any allocated resource is available at the given slot.
+
+        For effort-based tasks with allocations, this checks the actual resource
+        availability (considering their timezone and working hours) rather than
+        the project's default working hours.
+
+        Args:
+            slotIdx: Scoreboard index to check
+
+        Returns:
+            True if at least one allocated resource is available
+        """
+        allocations = self.property.get('allocate', self.scenarioIdx)
+        if not allocations:
+            # No allocations - fall back to project working time
+            return self.project.isWorkingTime(slotIdx)
+
+        # Check each allocated resource
+        for alloc in allocations:
+            if isinstance(alloc, str):
+                # Look up resource by ID
+                resource = None
+                for res in self.project.resources:
+                    if res.id == alloc:
+                        resource = res
+                        break
+            else:
+                resource = alloc
+
+            if resource is None:
+                continue
+
+            # Get resource's scenario data
+            res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+            if res_scenario is None:
+                continue
+
+            # Initialize scoreboard if needed
+            if res_scenario.scoreboard is None:
+                res_scenario.prepareScheduling()
+
+            # Check if resource is on shift at this slot
+            if res_scenario.onShift(slotIdx):
+                return True
+
+        return False
 
     def bookResources(self):
         """

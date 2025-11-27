@@ -345,9 +345,19 @@ class Project(MessageHandler):
         In ALAP mode, if a container has an end date, only the "terminal" tasks
         (those with no successors within the container) should get the end constraint.
         Other tasks will get their end constraints from their successors.
+
+        Special handling for `onstart` dependencies in ALAP mode:
+        - `A depends B { onstart }` means A.start >= B.start
+        - In ALAP, this translates to: A must END before B can START
+        - So B is the anchor (terminal), not A
+        - A derives its end from B's start
         """
-        # First, identify which tasks have successors (are predecessors of other tasks)
-        has_successor = set()
+        # First, identify which tasks have successors via normal (finish-to-start) dependencies
+        # For onstart dependencies in ALAP, the dependent task (A) derives its END from
+        # predecessor's START, so the predecessor (B) is the terminal task
+        has_fs_successor = set()  # Tasks that are predecessors in finish-to-start deps
+        has_onstart_dep = set()   # Tasks that have onstart dependencies (not terminal)
+
         for task in self.tasks:
             if not task.leaf():
                 continue
@@ -355,12 +365,22 @@ class Project(MessageHandler):
             for dep in deps:
                 if isinstance(dep, dict):
                     pred = dep.get('task')
+                    onstart = dep.get('onstart', False)
                 elif hasattr(dep, 'task'):
                     pred = dep.task
+                    onstart = getattr(dep, 'onstart', False)
                 else:
                     pred = dep
+                    onstart = False
+
                 if pred and hasattr(pred, 'fullId'):
-                    has_successor.add(pred.fullId)
+                    if onstart:
+                        # For onstart deps in ALAP: the dependent task (this task)
+                        # derives END from predecessor's START, so this task is NOT terminal
+                        has_onstart_dep.add(task.fullId if hasattr(task, 'fullId') else None)
+                    else:
+                        # Normal finish-to-start: predecessor has a successor
+                        has_fs_successor.add(pred.fullId)
 
         def propagate_end_to_children(task, container_end):
             """Recursively propagate end constraint down the task tree."""
@@ -370,10 +390,14 @@ class Project(MessageHandler):
 
             if task.leaf():
                 # Leaf task - apply the constraint if ALAP, no explicit end,
-                # AND the task has no successors (terminal task)
+                # AND the task is terminal
                 forward = task.get('forward', scIdx)
                 task_id = task.fullId if hasattr(task, 'fullId') else None
-                is_terminal = task_id not in has_successor
+
+                # A task is terminal if:
+                # 1. No finish-to-start successors (nothing depends on its END), AND
+                # 2. No onstart dependencies (doesn't derive END from another task's START)
+                is_terminal = (task_id not in has_fs_successor) and (task_id not in has_onstart_dep)
 
                 if forward is False and not task_end and container_end and is_terminal:
                     task[('end', scIdx)] = container_end

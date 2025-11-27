@@ -96,14 +96,47 @@ class Limit:
         """
         Convert project scoreboard index to limit scoreboard index.
 
-        The limit scoreboard has larger slots (e.g., one per day) while
+        The limit scoreboard has larger slots (e.g., one per day/week) while
         the project scoreboard has hourly slots.
+
+        For weekly limits, uses ISO week boundaries (Monday-Sunday) rather than
+        arbitrary 7-day chunks from project start. This ensures weeklymax resets
+        properly on Monday regardless of when the project started.
+
+        For daily limits, uses calendar day boundaries.
         """
-        # index is relative to project start
-        # Each slot is slot_duration seconds
-        # We need to map to periods of self.period seconds
-        slot_seconds = index * self.slot_duration
-        return int(slot_seconds / self.period)
+        from datetime import timedelta
+
+        # Calculate the actual datetime for this slot
+        slot_datetime = self.interval_start + timedelta(seconds=index * self.slot_duration)
+
+        if self.period == 60 * 60 * 24 * 7:  # Weekly
+            # Use ISO week number for proper Monday-Sunday week boundaries
+            # isocalendar() returns (year, week_number, weekday)
+            iso_year, iso_week, _ = slot_datetime.isocalendar()
+            start_year, start_week, _ = self.interval_start.isocalendar()
+
+            # Calculate week offset from project start
+            # Account for year boundaries
+            if iso_year == start_year:
+                return iso_week - start_week
+            else:
+                # Handle year boundary - weeks from start year + weeks in new year
+                # ISO week 1 of new year follows week 52 or 53 of previous year
+                weeks_in_start_year = self.interval_start.replace(month=12, day=28).isocalendar()[1]
+                return (weeks_in_start_year - start_week + 1) + (iso_week - 1) + \
+                       52 * (iso_year - start_year - 1)
+
+        elif self.period == 60 * 60 * 24:  # Daily
+            # Use calendar day boundaries
+            start_date = self.interval_start.date()
+            slot_date = slot_datetime.date()
+            return (slot_date - start_date).days
+
+        else:
+            # For other periods, use simple division from project start
+            slot_seconds = index * self.slot_duration
+            return int(slot_seconds / self.period)
 
     def inc(self, index, resource=None):
         """
