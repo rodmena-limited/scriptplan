@@ -6,12 +6,14 @@ from rodmena_resource_management.core.property import (
     PropertySet, PropertyList, AttributeDefinition, AttributeBase,
     AlertLevelDefinitions, Journal, LeaveList, RealFormat, KeywordArray,
     StringAttribute, IntegerAttribute, DateAttribute, BooleanAttribute,
+    ListAttribute, FloatAttribute,
     ResourceListAttribute, ShiftAssignmentsAttribute, TaskDepListAttribute,
     LogicalExpressionListAttribute, PropertyAttribute, RichTextAttribute,
     ColumnListAttribute, AccountAttribute, DefinitionListAttribute,
     FlagListAttribute, FormatListAttribute, LogicalExpressionAttribute,
     SymbolListAttribute, SymbolAttribute, NodeListAttribute, ScenarioListAttribute,
-    SortListAttribute, JournalSortListAttribute, RealFormatAttribute
+    SortListAttribute, JournalSortListAttribute, RealFormatAttribute,
+    LeaveListAttribute
 )
 from rodmena_resource_management.core.scenario import Scenario
 from rodmena_resource_management.core.timesheet import TimeSheets
@@ -74,18 +76,26 @@ class Project(MessageHandler):
         }
         
         self.accounts = PropertySet(self, False)
+        self._add_standard_attributes(self.accounts)
+        
         self.shifts = PropertySet(self, False)
+        self._add_standard_attributes(self.shifts)
         
         self.resources = PropertySet(self, False)
+        self._add_standard_attributes(self.resources)
         self._define_resource_attributes()
         
         self.tasks = PropertySet(self, False)
+        self._add_standard_attributes(self.tasks)
         self._define_task_attributes()
         
         self.reports = PropertySet(self, False)
+        self._add_standard_attributes(self.reports)
         self._define_report_attributes()
         
         self.scenarios = PropertySet(self, False)
+        self._add_standard_attributes(self.scenarios)
+        
         Scenario(self, 'plan', 'Plan Scenario', None)
         
         self.inputFiles = FileList()
@@ -98,26 +108,67 @@ class Project(MessageHandler):
         self.outputDir = './'
         self.warnTsDeltas = False
 
+    def _add_standard_attributes(self, property_set):
+        property_set.addAttributeType(AttributeDefinition('id', 'ID', StringAttribute, False, False, False, None))
+        property_set.addAttributeType(AttributeDefinition('name', 'Name', StringAttribute, False, False, False, None))
+        property_set.addAttributeType(AttributeDefinition('seqno', 'No', IntegerAttribute, False, False, False, None))
+
     def _define_resource_attributes(self):
-        # Partial list based on Project.rb structure/types commonly found
-        # Ideally would parse the ruby file to get exact list
+        # Add attributes required by ResourceScenario
         attrs = [
+            ['alloctdeffort', 'Allocated Effort', IntegerAttribute, True, False, True, 0],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
-            ['chargeset', 'Charge Set', StringAttribute, True, False, True, []], # Placeholder type
-             # ... Add more as discovered
+            ['chargeset', 'Charge Set', StringAttribute, True, False, True, []],
+            ['criticalness', 'Criticalness', FloatAttribute, False, False, True, 0.0],
+            ['directreports', 'Direct Reports', ResourceListAttribute, True, False, True, []],
+            ['duties', 'Duties', TaskDepListAttribute, True, False, True, []],
+            ['efficiency', 'Efficiency', FloatAttribute, True, False, True, 1.0],
+            ['effort', 'Effort', IntegerAttribute, True, False, True, 0],
+            ['leaves', 'Leaves', LeaveListAttribute, True, False, True, []], # Changed to LeaveListAttribute
+            ['leaveallowances', 'Leave Allowances', AttributeBase, True, False, True, None], # Placeholder
+            ['limits', 'Limits', AttributeBase, True, False, True, None], # Placeholder
+            ['managers', 'Managers', ResourceListAttribute, True, False, True, []],
+            ['rate', 'Rate', FloatAttribute, True, False, True, 0.0],
+            ['reports', 'Reports', ResourceListAttribute, True, False, True, []],
+            ['shifts', 'Shifts', ShiftAssignmentsAttribute, True, False, True, None],
+            ['workinghours', 'Working Hours', AttributeBase, True, False, True, None]
         ]
         for a in attrs:
             self.resources.addAttributeType(AttributeDefinition(*a))
 
     def _define_task_attributes(self):
         attrs = [
+            ['allocate', 'Allocate', ListAttribute, True, False, True, []],
+            ['assignedresources', 'Assigned Resources', ListAttribute, False, False, True, []],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
-            ['duration', 'Duration', IntegerAttribute, True, False, True, 0],
-            ['start', 'Start', DateAttribute, True, False, True, None],
-            ['end', 'End', DateAttribute, True, False, True, None],
-            ['priority', 'Priority', IntegerAttribute, True, False, True, 500],
+            ['charge', 'Charge', FloatAttribute, True, False, True, 0.0],
+            ['chargeset', 'Charge Set', StringAttribute, True, False, True, []],
+            ['complete', 'Complete', FloatAttribute, True, False, True, 0.0],
+            ['competitors', 'Competitors', ListAttribute, True, False, True, []],
+            ['criticalness', 'Criticalness', FloatAttribute, False, False, True, 0.0],
             ['depends', 'Dependencies', TaskDepListAttribute, True, False, True, []],
-             # ... Add more as discovered
+            ['duration', 'Duration', IntegerAttribute, True, False, True, 0],
+            ['effort', 'Effort', IntegerAttribute, True, False, True, 0],
+            ['effortdone', 'Effort Done', IntegerAttribute, True, False, True, 0],
+            ['effortleft', 'Effort Left', IntegerAttribute, True, False, True, 0],
+            ['end', 'End', DateAttribute, True, False, True, None],
+            ['forward', 'Forward', BooleanAttribute, True, False, True, True],
+            ['gauge', 'Gauge', StringAttribute, True, False, True, None],
+            ['length', 'Length', IntegerAttribute, True, False, True, 0],
+            ['maxend', 'Max End', DateAttribute, True, False, True, None],
+            ['maxstart', 'Max Start', DateAttribute, True, False, True, None],
+            ['minend', 'Min End', DateAttribute, True, False, True, None],
+            ['minstart', 'Min Start', DateAttribute, True, False, True, None],
+            ['milestone', 'Milestone', BooleanAttribute, True, False, True, False],
+            ['pathcriticalness', 'Path Criticalness', FloatAttribute, False, False, True, 0.0],
+            ['precedes', 'Precedes', TaskDepListAttribute, True, False, True, []],
+            ['priority', 'Priority', IntegerAttribute, True, False, True, 500],
+            ['projectionmode', 'Projection Mode', BooleanAttribute, True, False, True, False],
+            ['responsible', 'Responsible', ListAttribute, True, False, True, []],
+            ['scheduled', 'Scheduled', BooleanAttribute, True, False, True, False],
+            ['shifts', 'Shifts', ShiftAssignmentsAttribute, True, False, True, None],
+            ['start', 'Start', DateAttribute, True, False, True, None],
+            ['status', 'Status', StringAttribute, True, False, True, ""],
         ]
         for a in attrs:
             self.tasks.addAttributeType(AttributeDefinition(*a))
@@ -126,10 +177,24 @@ class Project(MessageHandler):
         attrs = [
              ['formats', 'Formats', FormatListAttribute, True, False, False, []],
              ['columns', 'Columns', ColumnListAttribute, True, False, False, []],
-             # ... Add more as discovered
         ]
         for a in attrs:
             self.reports.addAttributeType(AttributeDefinition(*a))
+    
+    def scenarioCount(self):
+        return self.scenarios.items()
+
+    def scenario(self, arg):
+        if isinstance(arg, int):
+             for sc in self.scenarios._properties.values():
+                 if sc.sequenceNo - 1 == arg:
+                     return sc
+        else:
+            return self.scenarios[arg]
+        return None
+    
+    def resource(self, id):
+        return self.resources[id]
 
     def __getitem__(self, name):
         if name not in self.attributes:
@@ -162,14 +227,7 @@ class Project(MessageHandler):
             
         if self.tasks.empty():
             self.error('no_tasks', "No tasks defined")
-            
-        # In python we might iterate differently if PropertySet isn't iterable directly
-        # Assuming PropertySet holds properties in self.scenarios.attributes or similar?
-        # No, PropertySet holds PropertyTreeNodes.
-        # We need a way to iterate scenarios.
-        # For now stub loop
         pass
-             
         return True
 
     def initScoreboards(self):
@@ -188,12 +246,28 @@ class Project(MessageHandler):
             self.attributes['scheduleGranularity'], 
             2
         )
+    
+    def scoreboardSize(self):
+        if self.scoreboard:
+            return self.scoreboard.size
+        if self.attributes['start'] and self.attributes['end']:
+             try:
+                diff = (self.attributes['end'] - self.attributes['start']).total_seconds()
+             except AttributeError:
+                diff = self.attributes['end'] - self.attributes['start']
+             return int(diff / self.attributes['scheduleGranularity']) + 1
+        return 0
 
     def dateToIdx(self, date, forceIntoProject=True):
          if not self.attributes['start']:
              return 0
-         # Simplified logic
-         return 0
+         try:
+            diff = (date - self.attributes['start']).total_seconds()
+         except AttributeError:
+            diff = date - self.attributes['start']
+         
+         idx = int(diff / self.attributes['scheduleGranularity'])
+         return idx
 
     def idxToDate(self, idx):
         return None

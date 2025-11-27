@@ -1,0 +1,87 @@
+// TJP Grammar for Lark
+
+start: project
+
+project: "project" project_id project_name version "{" project_attributes "}"
+
+project_id: STRING | ID
+project_name: STRING
+version: STRING
+
+project_attributes: (project_attribute)*
+
+project_attribute: timezone
+                 | dailyworkinghours
+                 | yearlyworkingdays
+                 | timeformat
+                 | currency
+                 | now
+                 | property_declaration
+
+timezone: "timezone" STRING
+dailyworkinghours: "dailyworkinghours" NUMBER
+yearlyworkingdays: "yearlyworkingdays" NUMBER
+timeformat: "timeformat" STRING
+currency: "currency" STRING
+now: "now" date
+
+property_declaration: resource
+                    | task
+                    | account
+                    | shift
+                    | scenario
+
+// Resource
+resource: "resource" resource_id resource_name "{" resource_attributes "}"
+resource_id: ID
+resource_name: STRING
+resource_attributes: (resource_attribute)*
+
+resource_attribute: email
+                  | efficiency
+                  | property_declaration
+
+email: "email" STRING
+efficiency: "efficiency" NUMBER
+
+// Task
+task: "task" task_id task_name "{" task_attributes "}"
+task_id: ID
+task_name: STRING
+task_attributes: (task_attribute)*
+
+task_attribute: start_attr
+              | end
+              | duration
+              | depends
+              | allocate
+              | property_declaration
+
+start_attr: "start" date
+end: "end" date
+duration: "duration" DURATION
+depends: "depends" (ID | STRING) ("," (ID | STRING))*
+allocate: "allocate" ID
+
+// Common
+account: "account" ID STRING "{" "}" // simplified
+shift: "shift" ID STRING "{" "}" // simplified
+scenario: "scenario" ID STRING "{" "}" // simplified
+
+date: DATE_TIME | DATE
+DATE: /\d{4}-\d{2}-\d{2}/
+DATE_TIME: /\d{4}-\d{2}-\d{2}-\d{2}:\d{2}/
+
+DURATION: NUMBER /[dwhmin]/
+
+ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+STRING: /"[^"]*"/
+NUMBER: /\d+(\.\d+)?/
+
+%import common.WS
+%import common.CPP_COMMENT
+%import common.SH_COMMENT
+
+%ignore WS
+%ignore CPP_COMMENT
+%ignore SH_COMMENT

@@ -1,18 +1,17 @@
-class Scenario:
+from rodmena_resource_management.core.property import PropertyTreeNode
+
+class Scenario(PropertyTreeNode):
     def __init__(self, project, id, name, parent):
-        self.project = project
-        self.id = id
-        self.name = name
-        self.parent = parent
-        self.sequenceNo = 1
+        super().__init__(project.scenarios, id, name, parent)
+        # project.addScenario(self) # PropertyTreeNode handles adding to set
     
     def get(self, attribute_name):
-        return None
+        # Stub for now, use PropertyTreeNode.get
+        try:
+            return super().get(attribute_name)
+        except ValueError:
+            return None
 
 class ScenarioList(list):
-    def addProperty(self, scenario):
-        self.append(scenario)
-    
-    @property
-    def items(self):
-        return len(self)
+    # This might be deprecated if we use PropertySet for scenarios
+    pass
