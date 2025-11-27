@@ -232,6 +232,7 @@ class Project(MessageHandler):
             ['interactive', 'Interactive', BooleanAttribute, True, False, False, False],
             ['journalAttributes', 'Journal Attributes', SymbolListAttribute, True, False, False, []],
             ['journalMode', 'Journal Mode', SymbolAttribute, True, False, False, None],
+            ['leafTasksOnly', 'Leaf Tasks Only', BooleanAttribute, True, False, False, False],
             ['left', 'Left', RichTextAttribute, True, False, False, None],
             ['loadUnit', 'Load Unit', SymbolAttribute, True, True, False, 'days'],
             ['numberFormat', 'Number Format', StringAttribute, True, True, False, None],
@@ -329,9 +330,6 @@ class Project(MessageHandler):
         for resource in self.resources:
             if not resource.parent:
                 resource.finishScheduling(scIdx)
-
-        # Apply partial slot corrections for precise timing
-        self._applyPartialSlotCorrections(scIdx)
 
     def scheduleScenario(self, scIdx):
         all_tasks = list(self.tasks)
@@ -483,6 +481,14 @@ class Project(MessageHandler):
         """Check if a date/time falls within default working hours."""
         if date is None:
             return False
+        # Check global vacations
+        vacations = self.attributes.get('vacations', [])
+        for vac in vacations:
+            if hasattr(vac, 'interval') and vac.interval:
+                if vac.interval.start <= date < vac.interval.end:
+                    return False
+            elif hasattr(vac, 'contains') and vac.contains(date):
+                return False
         weekday = date.weekday()
         if weekday >= 5:  # Saturday or Sunday
             return False

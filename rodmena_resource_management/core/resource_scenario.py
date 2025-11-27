@@ -67,6 +67,16 @@ class ResourceScenario(ScenarioData):
         # Internal effort counter
         self._effort = 0
 
+        # Track partial slot usage: slot_idx -> seconds_used
+        # When a task ends mid-slot, this records how much of the slot was used
+        # Subsequent tasks can use the remaining time in that slot
+        self.slotSecondsUsed: Dict[int, float] = {}
+
+        # Track which tasks used which slots and how much
+        # slot_idx -> list of (task, seconds_used)
+        # This allows multiple tasks to share a slot
+        self.slotTaskUsage: Dict[int, list] = {}
+
         # Data cache
         self.dCache = DataCache.instance()
 
@@ -259,15 +269,30 @@ class ResourceScenario(ScenarioData):
         """
         Check if resource is available at the given time slot.
 
+        A slot is available if:
+        1. Not fully booked by another task, OR
+        2. Partially used and has remaining time
+
         Args:
             sb_idx: Scoreboard index
 
         Returns:
-            True if available, False otherwise
+            True if available (fully or partially), False otherwise
         """
         if self.scoreboard is None:
             return False
-        if self.scoreboard[sb_idx] is not None:
+
+        # Check if slot has any available time
+        available_seconds = self.getAvailableSecondsInSlot(sb_idx)
+        if available_seconds <= 0:
+            return False
+
+        # If scoreboard shows a booking but there's available time, it's a partial slot
+        # that was released - allow booking
+        if self.scoreboard[sb_idx] is not None and available_seconds < self.project.attributes.get('scheduleGranularity', 3600):
+            # Partial slot available - allow it
+            pass
+        elif self.scoreboard[sb_idx] is not None:
             return False
 
         limits = self.property.get('limits', self.scenarioIdx)
@@ -308,7 +333,36 @@ class ResourceScenario(ScenarioData):
         sb = self.scoreboard[sb_idx]
         return sb if isinstance(sb, Task) else None
 
-    def book(self, sb_idx: int, task: 'Task', force: bool = False) -> bool:
+    def getAvailableSecondsInSlot(self, sb_idx: int) -> float:
+        """
+        Get the available seconds in a slot, accounting for partial usage.
+
+        If a previous task ended mid-slot, only the remaining time is available.
+
+        Args:
+            sb_idx: Scoreboard index
+
+        Returns:
+            Available seconds in the slot (0 to slot_duration)
+        """
+        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        seconds_used = self.slotSecondsUsed.get(sb_idx, 0.0)
+        return max(0.0, slot_duration - seconds_used)
+
+    def markSlotPartiallyUsed(self, sb_idx: int, seconds_used: float) -> None:
+        """
+        Record that a task used only part of a slot.
+
+        This allows subsequent tasks to use the remaining time.
+
+        Args:
+            sb_idx: Scoreboard index
+            seconds_used: Seconds of the slot that were used
+        """
+        current_used = self.slotSecondsUsed.get(sb_idx, 0.0)
+        self.slotSecondsUsed[sb_idx] = current_used + seconds_used
+
+    def book(self, sb_idx: int, task: 'Task', force: bool = False) -> float:
         """
         Book a time slot for a task.
 
@@ -318,10 +372,11 @@ class ResourceScenario(ScenarioData):
             force: If True, overwrite existing booking
 
         Returns:
-            True if booking succeeded, False otherwise
+            Effort gained from this booking (hours), or 0 if booking failed.
+            This accounts for partial slot usage.
         """
         if not force and not self.available(sb_idx):
-            return False
+            return 0.0
 
         # Make sure task is in duties list
         duties = self.property.get('duties', self.scenarioIdx) or []
@@ -332,11 +387,28 @@ class ResourceScenario(ScenarioData):
         if self.scoreboard is None:
             self.initScoreboard()
 
-        self.scoreboard[sb_idx] = task
+        # Calculate effort based on available time in slot (for partial slots)
+        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        available_seconds = self.getAvailableSecondsInSlot(sb_idx)
+        efficiency = self.property.get('efficiency', self.scenarioIdx) or 1.0
+
+        # Effort = (available_seconds / 3600) * efficiency
+        effort_gained = (available_seconds / 3600.0) * efficiency
 
         # Track effort
-        efficiency = self.property.get('efficiency', self.scenarioIdx) or 1.0
-        self._effort += efficiency
+        self._effort += effort_gained
+
+        # Track per-task slot usage for cost calculation
+        if sb_idx not in self.slotTaskUsage:
+            self.slotTaskUsage[sb_idx] = []
+        self.slotTaskUsage[sb_idx].append((task, available_seconds))
+
+        # Update total seconds used in this slot
+        current_used = self.slotSecondsUsed.get(sb_idx, 0.0)
+        self.slotSecondsUsed[sb_idx] = current_used + available_seconds
+
+        # Update scoreboard (may be overwritten if multiple tasks share slot)
+        self.scoreboard[sb_idx] = task
 
         # Update resource limits
         limits = self.property.get('limits', self.scenarioIdx)
@@ -344,7 +416,6 @@ class ResourceScenario(ScenarioData):
             limits.inc(sb_idx)
 
         # Update task limits (including parent task limits)
-        # This matches TaskJuggler's behavior: task.incLimits(@scenarioIdx, sbIdx, @property)
         task_scenario = task.data[self.scenarioIdx] if hasattr(task, 'data') and task.data else None
         if task_scenario and hasattr(task_scenario, 'incLimits'):
             task_scenario.incLimits(sb_idx, self.property)
@@ -362,7 +433,25 @@ class ResourceScenario(ScenarioData):
         elif task not in self.lastBookedSlots or self.lastBookedSlots[task] < sb_idx:
             self.lastBookedSlots[task] = sb_idx
 
-        return True
+        return effort_gained
+
+    def releasePartialSlot(self, sb_idx: int, seconds_to_release: float) -> None:
+        """
+        Release part of a slot back for other tasks to use.
+
+        Called when a task ends mid-slot to make the remaining time available.
+
+        Args:
+            sb_idx: Scoreboard index
+            seconds_to_release: Seconds to release back
+        """
+        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        current_used = self.slotSecondsUsed.get(sb_idx, slot_duration)
+        # Reduce the used time, making more available
+        self.slotSecondsUsed[sb_idx] = max(0.0, current_used - seconds_to_release)
+        # Clear the booking so another task can use it
+        if self.scoreboard is not None:
+            self.scoreboard[sb_idx] = None
 
     def bookedEffort(self) -> float:
         """
@@ -390,13 +479,28 @@ class ResourceScenario(ScenarioData):
         Returns:
             True if on shift, False otherwise
         """
-        shifts = self.property.get('shifts', self.scenarioIdx)
-        if shifts and hasattr(shifts, 'assigned') and shifts.assigned(sb_idx):
-            return shifts.onShift(sb_idx)
-        else:
-            workinghours = self.property.get('workinghours', self.scenarioIdx)
-            if workinghours and hasattr(workinghours, 'onShift'):
-                return workinghours.onShift(sb_idx)
+        # First check global vacations - they override everything
+        vacations = self.project.attributes.get('vacations', [])
+        if vacations:
+            date = self.project.idxToDate(sb_idx)
+            for vac in vacations:
+                if hasattr(vac, 'interval') and vac.interval:
+                    if vac.interval.start <= date < vac.interval.end:
+                        return False
+
+        # Check if resource has a shift reference
+        shift = self.property.get('shifts', self.scenarioIdx)
+        if shift:
+            # Use the shift's working hours
+            shift_wh = shift.get('workinghours', self.scenarioIdx)
+            if shift_wh and hasattr(shift_wh, 'onShift'):
+                return shift_wh.onShift(sb_idx)
+
+        # Check if resource has direct working hours
+        workinghours = self.property.get('workinghours', self.scenarioIdx)
+        if workinghours and hasattr(workinghours, 'onShift'):
+            return workinghours.onShift(sb_idx)
+
         # Default: use project's working time
         return self.project.isWorkingTime(sb_idx)
 

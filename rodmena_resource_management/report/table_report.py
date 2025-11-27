@@ -607,10 +607,17 @@ class TableReport(ReportBase):
         Returns:
             Formatted string
         """
+        from datetime import datetime
         if value is None:
             return ''
         if isinstance(value, bool):
             return 'Yes' if value else 'No'
+        if isinstance(value, datetime):
+            # Use report's timeFormat if available
+            timeformat = self.a('timeFormat')
+            if timeformat:
+                return value.strftime(timeformat)
+            return str(value)
         if isinstance(value, float):
             return f'{value:.2f}'
         if isinstance(value, list):

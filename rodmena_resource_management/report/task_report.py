@@ -98,6 +98,14 @@ class TaskReport(TableReport):
         # Sort after filtering
         self._sort_task_list(task_list)
 
+        # Filter to only leaf tasks if leafTasksOnly is set
+        if self.a('leafTasksOnly'):
+            leaf_tasks = PropertyList(task_list, copyItems=False)
+            for task in task_list:
+                if hasattr(task, 'leaf') and task.leaf():
+                    leaf_tasks.append(task)
+            return leaf_tasks
+
         return task_list
 
     def _prepare_resource_list(self) -> PropertyList:

@@ -44,12 +44,14 @@ global_attribute: copyright
                 | leaves_global
                 | flags_global
                 | balance
+                | vacation_global
 
 copyright: "copyright" STRING
 rate: "rate" NUMBER
 leaves_global: "leaves" ID STRING date (("-" | "~") date)?
 flags_global: "flags" ID ("," ID)*
 balance: "balance" ID ID
+vacation_global: "vacation" STRING? date ("-" date)?
 
 // Scenario definition (within project)
 // Scenarios can have optional body with nested scenarios
@@ -76,7 +78,7 @@ workinghours: "workinghours" workinghours_spec
 workinghours_spec: day_list duration_range ("," duration_range)*
 day_list: day_spec ("," day_spec)*
 day_spec: DAY_NAME ("-" DAY_NAME)?  // Single day or day range like "mon - fri"
-DAY_NAME: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
+DAY_NAME.2: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
 duration_range: TIME "-" TIME
 TIME: /\d{1,2}:\d{2}/
 
@@ -119,7 +121,7 @@ resource_managers: "managers" ID ("," ID)*
 resource_limits: "limits" "{" limits_body "}"
 resource_leaves: "leaves" leaves_type date ("-" date)?
 resource_vacation: "vacation" date ("-" date)?
-resource_workinghours: "workinghours" workinghours_spec
+resource_workinghours: "workinghours" (workinghours_spec | ID)
 resource_chargeset: "chargeset" ID
 resource_flags: "flags" ID ("," ID)*
 
@@ -239,7 +241,7 @@ account_attr: account
             | "aggregate" ID
 
 // Shift
-shift: "shift" ID STRING "{" shift_body "}"
+shift: "shift" ID STRING? "{" shift_body "}"
 shift_body: shift_attr*
 shift_attr: "workinghours" workinghours_spec
           | "leaves" leaves_type date ("-" date)?
@@ -289,7 +291,13 @@ taskreport_attr: taskreport_header
                | taskreport_balance
                | taskreport_journalmode
                | taskreport_journalattributes
+               | taskreport_formats
+               | taskreport_leaftasksonly
                | taskreport
+
+taskreport_leaftasksonly: "leaftasksonly" BOOLEAN
+
+taskreport_formats: "formats" format_list
 
 taskreport_header: "header" (STRING | rich_text)
 taskreport_footer: "footer" (STRING | rich_text)
@@ -383,6 +391,7 @@ DATE_TIME: /\d{4}-\d{2}-\d{2}-\d{2}:\d{2}/
 ID: /[a-zA-Z_][a-zA-Z0-9_]*/
 STRING: /"[^"]*"/ | /'[^']*'/
 NUMBER: /-?\d+(\.\d+)?/
+BOOLEAN: /true|false|yes|no|1|0/i
 
 %import common.WS
 %import common.C_COMMENT

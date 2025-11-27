@@ -1,0 +1,80 @@
+project "Airport_BHS_Upgrade" 2025-09-01 +2m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  numberformat "-" "" "," "." 1
+  currencyformat "(" ")" "," "." 0
+  now 2025-09-01
+}
+
+# --- 1. CALENDARS & SHIFTS ---
+
+# National Holiday (Friday)
+vacation "Public Holiday" 2025-09-05
+
+# Standard Office: Mon-Fri, 09:00-17:00 (8h)
+shift standard_shift {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+# Night Construction: Mon-Fri, 22:00-06:00 (8h)
+# Note: In TJP, 22:00-06:00 usually implies the shift crosses midnight.
+shift night_shift {
+  workinghours mon - fri 22:00 - 06:00
+}
+
+# --- 2. RESOURCES ---
+
+resource team "Project Team" {
+
+  # Architect: Standard hours, takes vacation the second week
+  resource arch "Senior Architect" {
+    workinghours standard_shift
+    vacation 2025-09-11 - 2025-09-12
+  }
+
+  # Construction Crew: Night shift only
+  resource crew "Night Crew" {
+    workinghours night_shift
+  }
+
+  # Electrician: Standard hours, but Junior (0.8 efficiency)
+  resource sparky "Junior Electrician" {
+    workinghours standard_shift
+    efficiency 0.8
+  }
+}
+
+# --- 3. TASKS ---
+
+task bhs "Baggage Handling System" {
+
+  # TASK 1: Design Phase
+  task design "Blueprint Design" {
+    effort 40h
+    allocate arch
+    start 2025-09-01-09:00
+  }
+
+  # TASK 2: Demolition
+  task demo "Old System Demo" {
+    effort 16h
+    allocate crew
+    depends !design
+  }
+
+  # TASK 3: Electrical Rewiring
+  task wiring "Electrical Rewiring" {
+    effort 32h
+    allocate sparky
+    depends !demo { gapduration 24h onstart }
+  }
+}
+
+# --- 4. REPORT ---
+
+taskreport "retrofit_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+  leaftasksonly true
+}

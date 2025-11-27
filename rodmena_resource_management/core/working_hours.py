@@ -111,16 +111,36 @@ class WorkingHours:
             return False
 
         slot_time = (dt.hour, dt.minute)
+        slot_minutes = slot_time[0] * 60 + slot_time[1]
 
         # Check if slot falls within any working interval
         for (start_h, start_m), (end_h, end_m) in self._hours[weekday]:
             start_minutes = start_h * 60 + start_m
             end_minutes = end_h * 60 + end_m
-            slot_minutes = slot_time[0] * 60 + slot_time[1]
 
-            # Slot is within interval if: start <= slot < end
-            if start_minutes <= slot_minutes < end_minutes:
-                return True
+            # Check for cross-midnight shift (e.g., 22:00 - 06:00)
+            if end_minutes <= start_minutes:
+                # This interval crosses midnight
+                # Working time is: start_minutes <= slot < 1440 OR 0 <= slot < end_minutes
+                if slot_minutes >= start_minutes or slot_minutes < end_minutes:
+                    return True
+            else:
+                # Normal interval within same day
+                if start_minutes <= slot_minutes < end_minutes:
+                    return True
+
+        # Also check if we're in the early morning part of a cross-midnight shift from previous day
+        prev_weekday = (weekday - 1) % 7
+        if prev_weekday in self._hours and self._hours[prev_weekday]:
+            for (start_h, start_m), (end_h, end_m) in self._hours[prev_weekday]:
+                start_minutes = start_h * 60 + start_m
+                end_minutes = end_h * 60 + end_m
+
+                # If previous day had a cross-midnight shift
+                if end_minutes <= start_minutes:
+                    # Check if current slot is in the morning part (0 <= slot < end)
+                    if slot_minutes < end_minutes:
+                        return True
 
         return False
 

@@ -127,40 +127,47 @@ class TaskScenario(ScenarioData):
                             t = dep.get('task')
                             gapduration = dep.get('gapduration')
                             gaplength = dep.get('gaplength')
+                            onstart = dep.get('onstart', False)
                         elif hasattr(dep, 'task'):
                             t = dep.task
                             gapduration = getattr(dep, 'gapduration', None)
                             gaplength = getattr(dep, 'gaplength', None)
+                            onstart = getattr(dep, 'onstart', False)
                         else:
                             t = dep
                             gapduration = None
                             gaplength = None
+                            onstart = False
 
                         if not t:
                             continue
 
-                        dep_end = t.get('end', self.scenarioIdx)
-                        if dep_end:
+                        # Use start time if onstart, otherwise use end time (finish-to-start)
+                        if onstart:
+                            dep_time = t.get('start', self.scenarioIdx)
+                        else:
+                            dep_time = t.get('end', self.scenarioIdx)
+                        if dep_time:
                             # Add gap if specified
                             if gapduration:
                                 # gapduration is calendar time (e.g., "4h" = 4 hours)
                                 gap_hours = self._parse_duration(gapduration)
                                 from datetime import timedelta
-                                dep_end = dep_end + timedelta(hours=gap_hours)
+                                dep_time = dep_time + timedelta(hours=gap_hours)
                             elif gaplength:
                                 # gaplength is working time - need to find next working slot after gap
                                 gap_hours = self._parse_duration(gaplength)
                                 gap_slots = int(gap_hours)  # Each slot is 1 hour
-                                dep_end_idx = self.project.dateToIdx(dep_end)
+                                dep_time_idx = self.project.dateToIdx(dep_time)
                                 # Skip gap_slots of working time
                                 working_slots = 0
                                 while working_slots < gap_slots:
-                                    if self.isWorkingTime(dep_end_idx):
+                                    if self.isWorkingTime(dep_time_idx):
                                         working_slots += 1
-                                    dep_end_idx += 1
-                                dep_end = self.project.idxToDate(dep_end_idx)
-                            if dep_end > earliest_start:
-                                earliest_start = dep_end
+                                    dep_time_idx += 1
+                                dep_time = self.project.idxToDate(dep_time_idx)
+                            if dep_time > earliest_start:
+                                earliest_start = dep_time
 
                     self.currentSlotIdx = self.project.dateToIdx(earliest_start)
             else:
@@ -278,7 +285,10 @@ class TaskScenario(ScenarioData):
 
             if self.doneEffort >= effort:
                 # Finished - calculate precise end time within the final slot
-                end_date = self._calculatePreciseEndTime(effort, effort_before, forward)
+                # and release unused time for other tasks
+                end_date, seconds_used = self._calculatePreciseEndTimeAndRelease(
+                    effort, effort_before, forward
+                )
                 self.propagateDate(end_date, forward)
                 return False
         elif duration > 0:
@@ -300,13 +310,14 @@ class TaskScenario(ScenarioData):
 
         return True
 
-    def _calculatePreciseEndTime(self, required_effort, effort_before_slot, forward):
+    def _calculatePreciseEndTimeAndRelease(self, required_effort, effort_before_slot, forward):
         """
-        Calculate the precise end time within the final slot based on fractional effort.
+        Calculate the precise end time within the final slot and release unused time.
 
         When a task completes within a slot, we need to determine exactly when
         within that slot the required effort was reached, rather than rounding
-        to slot boundaries.
+        to slot boundaries. The unused portion of the slot is released back to
+        the resource for other tasks to use.
 
         Args:
             required_effort: Total effort required for the task (hours)
@@ -314,7 +325,7 @@ class TaskScenario(ScenarioData):
             forward: True for forward scheduling, False for backward
 
         Returns:
-            datetime: The precise end time
+            tuple: (precise_end_datetime, seconds_used_in_slot)
         """
         from datetime import timedelta
 
@@ -322,24 +333,29 @@ class TaskScenario(ScenarioData):
         slot_duration_seconds = self.project.attributes.get('scheduleGranularity', 3600)
         slot_start = self.project.idxToDate(self.currentSlotIdx)
 
-        # Get the resource efficiency for this slot
-        # We need to find what resource was booked for this slot
-        allocations = self.property.get('allocate', self.scenarioIdx) or []
+        # Get the resource and its efficiency for this slot
+        resource = getattr(self, '_lastBookedResource', None)
         efficiency = 1.0
-        for alloc in allocations:
-            if isinstance(alloc, str):
-                resource = None
-                for res in self.project.resources:
-                    if res.id == alloc:
-                        resource = res
-                        break
-            else:
-                resource = alloc
-            if resource:
-                eff = resource.get('efficiency', self.scenarioIdx)
-                if eff is not None:
-                    efficiency = eff
-                break
+        if resource:
+            eff = resource.get('efficiency', self.scenarioIdx)
+            if eff is not None:
+                efficiency = eff
+        else:
+            # Fallback to allocations
+            allocations = self.property.get('allocate', self.scenarioIdx) or []
+            for alloc in allocations:
+                if isinstance(alloc, str):
+                    for res in self.project.resources:
+                        if res.id == alloc:
+                            resource = res
+                            break
+                else:
+                    resource = alloc
+                if resource:
+                    eff = resource.get('efficiency', self.scenarioIdx)
+                    if eff is not None:
+                        efficiency = eff
+                    break
 
         # Calculate effort gained per second in this slot
         slot_duration_hours = slot_duration_seconds / 3600.0
@@ -358,24 +374,54 @@ class TaskScenario(ScenarioData):
         # Clamp to slot duration (shouldn't exceed, but safety check)
         seconds_into_slot = min(seconds_into_slot, slot_duration_seconds)
 
-        # Calculate the precise end time
-        precise_end = slot_start + timedelta(seconds=seconds_into_slot)
+        # Calculate the precise end time, rounded to nearest second
+        # (Gold standard uses second-level precision)
+        seconds_rounded = round(seconds_into_slot)
+        precise_end = slot_start + timedelta(seconds=seconds_rounded)
 
-        return precise_end
+        # Release unused portion of the slot back to the resource
+        seconds_unused = slot_duration_seconds - seconds_into_slot
+        if seconds_unused > 0 and resource:
+            res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+            if res_scenario:
+                # Update the per-task usage record to reflect actual usage
+                if self.currentSlotIdx in res_scenario.slotTaskUsage:
+                    # Find and update this task's entry
+                    for i, (task, secs) in enumerate(res_scenario.slotTaskUsage[self.currentSlotIdx]):
+                        if task == self.property:
+                            res_scenario.slotTaskUsage[self.currentSlotIdx][i] = (task, seconds_into_slot)
+                            break
+
+                # Update total slotSecondsUsed to release unused time
+                # Old value was full slot duration, new value is actual usage
+                old_total = res_scenario.slotSecondsUsed.get(self.currentSlotIdx, slot_duration_seconds)
+                # Subtract what was previously booked (full slot) and add actual usage
+                res_scenario.slotSecondsUsed[self.currentSlotIdx] = old_total - slot_duration_seconds + seconds_into_slot
+
+        return precise_end, seconds_into_slot
+
+    def _calculatePreciseEndTime(self, required_effort, effort_before_slot, forward):
+        """
+        Calculate the precise end time within the final slot based on fractional effort.
+        (Legacy method - calls the new implementation)
+        """
+        end_time, _ = self._calculatePreciseEndTimeAndRelease(required_effort, effort_before_slot, forward)
+        return end_time
 
     def _parse_duration(self, duration_str):
         """
-        Parse a duration string like '4h', '2d', '1w' into hours.
+        Parse a duration string like '4h', '2d', '1w', '30min' into hours.
         """
         if not duration_str:
             return 0
         import re
-        match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmy])?', str(duration_str).lower())
+        # Match formats: 29min, 4h, 2d, 1w, 3m (months), 1y
+        match = re.match(r'(\d+(?:\.\d+)?)\s*(min|h|d|w|m|y)?', str(duration_str).lower())
         if not match:
             return 0
         num = float(match.group(1))
         unit = match.group(2) or 'h'
-        multipliers = {'h': 1, 'd': 8, 'w': 40, 'm': 160, 'y': 1920}
+        multipliers = {'min': 1/60, 'h': 1, 'd': 8, 'w': 40, 'm': 160, 'y': 1920}
         return num * multipliers.get(unit, 1)
 
     def isWorkingTime(self, slotIdx):
@@ -406,6 +452,9 @@ class TaskScenario(ScenarioData):
         This method attempts to book allocated resources for the current time slot.
         Only resources that are available (not booked, not on leave, within working hours)
         will be booked. Effort is accumulated based on resource efficiency.
+
+        For continuous time scheduling, effort is tracked based on actual available
+        time in slots (accounting for partial slot usage by other tasks).
         """
         # Get allocations
         allocations = self.property.get('allocate', self.scenarioIdx)
@@ -432,8 +481,9 @@ class TaskScenario(ScenarioData):
             if resource is None:
                 continue
 
-            # Try to book this resource
-            if self.bookResource(resource):
+            # Try to book this resource - returns effort gained (accounts for partial slots)
+            effort_gained = self.bookResource(resource)
+            if effort_gained > 0:
                 booked_any = True
 
                 # For effort-based tasks, set start date on first booking
@@ -444,14 +494,15 @@ class TaskScenario(ScenarioData):
                         start_date = self.project.idxToDate(self.currentSlotIdx)
                         self.property[('start', self.scenarioIdx)] = start_date
 
-                # Accumulate effort based on resource efficiency
-                # Effort per slot = slot_duration_hours * efficiency
-                efficiency = resource.get('efficiency', self.scenarioIdx)
-                if efficiency is None:
-                    efficiency = 1.0
-                slot_duration_seconds = self.project.attributes.get('scheduleGranularity', 3600)
-                slot_duration_hours = slot_duration_seconds / 3600.0
-                self.doneEffort += slot_duration_hours * efficiency
+                # Use the effort returned from book() which accounts for partial slots
+                self.doneEffort += effort_gained
+
+                # Store the resource and slot for potential partial release later
+                if not hasattr(self, '_lastBookedResource'):
+                    self._lastBookedResource = None
+                    self._lastBookedSlot = None
+                self._lastBookedResource = resource
+                self._lastBookedSlot = self.currentSlotIdx
 
     def getAllLimits(self):
         """
@@ -502,12 +553,13 @@ class TaskScenario(ScenarioData):
             resource: The resource to book
 
         Returns:
-            True if booking succeeded, False otherwise
+            Effort gained from this booking (hours), or 0 if booking failed.
+            This accounts for partial slot availability.
         """
         # Get the resource's scenario data
         res_scenario = resource.data[self.scenarioIdx] if resource.data else None
         if res_scenario is None:
-            return False
+            return 0.0
 
         # Initialize resource scoreboard if needed
         if res_scenario.scoreboard is None:
@@ -515,13 +567,13 @@ class TaskScenario(ScenarioData):
 
         # Check if resource is available
         if not res_scenario.available(self.currentSlotIdx):
-            return False
+            return 0.0
 
         # Check task limits for this resource (including parent limits)
         if not self.limitsOk(self.currentSlotIdx, resource):
-            return False
+            return 0.0
 
-        # Book the resource - ResourceScenario.book will call back to incLimits
+        # Book the resource - returns effort gained (accounts for partial slots)
         return res_scenario.book(self.currentSlotIdx, self.property)
 
     def propagateDate(self, date, atEnd):
@@ -641,7 +693,7 @@ class TaskScenario(ScenarioData):
         for resource in resources:
             # Get the resource's scenario data
             res_scenario = resource.data[self.scenarioIdx] if resource.data else None
-            if res_scenario is None or res_scenario.scoreboard is None:
+            if res_scenario is None:
                 continue
 
             # Get resource rate
@@ -649,17 +701,14 @@ class TaskScenario(ScenarioData):
             if rate == 0.0:
                 continue
 
-            # Count slots booked for this task by this resource
-            booked_slots = 0
-            for i in range(len(res_scenario.scoreboard)):
-                if res_scenario.scoreboard[i] == self.property:
-                    booked_slots += 1
+            # Use slotTaskUsage to get exact time used by this task
+            allocated_seconds = 0.0
+            for slot_idx, task_list in res_scenario.slotTaskUsage.items():
+                for task, seconds in task_list:
+                    if task == self.property:
+                        allocated_seconds += seconds
 
-            # Calculate allocated time in hours
-            granularity = self.project.attributes.get('scheduleGranularity', 3600)
-            allocated_hours = booked_slots * granularity / 3600.0
-
-            # Cost = allocated_time × rate
+            allocated_hours = allocated_seconds / 3600.0
             total_cost += allocated_hours * rate
 
         return total_cost

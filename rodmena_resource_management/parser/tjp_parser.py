@@ -112,6 +112,22 @@ class TJPTransformer(Transformer):
     def balance(self, items):
         return ('balance', (self._get_value(items[0]), self._get_value(items[1])))
 
+    def vacation_global(self, items):
+        # vacation_global: "vacation" STRING? date ("-" date)?
+        # After transformation, items contains: optional string name, datetime(s) from date rule
+        name = None
+        start_date = None
+        end_date = None
+        for item in items:
+            if isinstance(item, datetime):
+                if start_date is None:
+                    start_date = item
+                else:
+                    end_date = item
+            elif isinstance(item, str):
+                name = item
+        return ('vacation', {'name': name, 'start': start_date, 'end': end_date or start_date})
+
     # Project attribute handlers
     def timezone(self, items):
         return ('timezone', self._get_value(items[0]))
@@ -295,9 +311,20 @@ class TJPTransformer(Transformer):
         })
 
     def resource_workinghours(self, items):
-        """Handle resource workinghours: workinghours mon, tue, ... 08:00 - 17:00."""
-        # Pass through to workinghours_spec handler
-        return ('workinghours', items[0] if items else [])
+        """Handle resource workinghours: workinghours mon, tue, ... 08:00 - 17:00 or shift_id."""
+        if not items:
+            return ('workinghours', [])
+        # Check if it's a shift reference (ID) or a workinghours_spec (list)
+        item = items[0]
+        if isinstance(item, str):
+            # It's a shift ID reference
+            return ('workinghours_shift', item)
+        elif hasattr(item, 'type') and item.type == 'ID':
+            # It's a Token ID
+            return ('workinghours_shift', str(item))
+        else:
+            # It's a workinghours_spec
+            return ('workinghours', item)
 
     def resource_chargeset(self, items):
         """Handle resource chargeset: chargeset account_id."""
@@ -641,8 +668,14 @@ class TJPTransformer(Transformer):
     # Shift
     def shift(self, items):
         s_id = self._get_value(items[0])
-        s_name = self._get_value(items[1])
-        body = items[2] if len(items) > 2 else []
+        # Name is optional (STRING?)
+        # Body is the last item (a list)
+        if len(items) >= 2 and isinstance(items[-1], list):
+            body = items[-1]
+            s_name = self._get_value(items[1]) if len(items) > 2 else s_id
+        else:
+            body = []
+            s_name = self._get_value(items[1]) if len(items) > 1 else s_id
         return {
             'type': 'shift',
             'id': s_id,
@@ -654,6 +687,12 @@ class TJPTransformer(Transformer):
         return list(items)
 
     def shift_attr(self, items):
+        # shift_attr comes from workinghours workinghours_spec or leaves
+        # The workinghours handler returns ('workinghours', spec)
+        # But for shifts, the grammar directly uses workinghours_spec
+        if items and isinstance(items[0], dict):
+            # It's a workinghours_spec dict - wrap it as a tuple
+            return ('workinghours', items[0])
         return items[0] if items else None
 
     # Reports
@@ -772,6 +811,19 @@ class TJPTransformer(Transformer):
 
     def taskreport_journalattributes(self, items):
         return ('journalAttributes', [self._get_value(i) for i in items])
+
+    def taskreport_formats(self, items):
+        # items[0] is the result from format_list: ('formats', [...])
+        if items and isinstance(items[0], tuple) and items[0][0] == 'formats':
+            return items[0]  # Already a properly formatted tuple
+        return ('formats', [self._get_value(i) for i in items])
+
+    def taskreport_leaftasksonly(self, items):
+        val = self._get_value(items[0])
+        # Convert string to boolean
+        if isinstance(val, str):
+            val = val.lower() in ('true', 'yes', '1')
+        return ('leafTasksOnly', val)
 
     def resourcereport_body(self, items):
         return list(items)
@@ -999,19 +1051,25 @@ class ModelBuilder:
                     dep_ref = dep_item.get('ref', '')
                     gapduration = dep_item.get('gapduration')
                     gaplength = dep_item.get('gaplength')
+                    onstart = dep_item.get('onstart', False)
+                    onend = dep_item.get('onend', False)
                 else:
                     dep_ref = dep_item
                     gapduration = None
                     gaplength = None
+                    onstart = False
+                    onend = False
 
                 dep_task = self._resolve_task_reference(project, task, dep_ref)
                 if dep_task:
-                    # Store as dict if we have gap info, else just the task
-                    if gapduration or gaplength:
+                    # Store as dict if we have gap info or onstart/onend, else just the task
+                    if gapduration or gaplength or onstart or onend:
                         resolved.append({
                             'task': dep_task,
                             'gapduration': gapduration,
-                            'gaplength': gaplength
+                            'gaplength': gaplength,
+                            'onstart': onstart,
+                            'onend': onend
                         })
                     else:
                         resolved.append(dep_task)
@@ -1139,6 +1197,26 @@ class ModelBuilder:
                             existing = [existing] if existing else []
                         existing.append(leave)
                         project.attributes['leaves'] = existing
+                elif key == 'vacation':
+                    # Global vacation - similar to leaves but always 'holiday' type
+                    start_date = value.get('start')
+                    end_date = value.get('end')
+                    # If end_date equals start_date (single day vacation), extend to next day
+                    from datetime import timedelta
+                    if end_date is None or end_date == start_date:
+                        end_date = start_date + timedelta(days=1)
+
+                    if start_date:
+                        interval = TimeInterval(start_date, end_date)
+                        type_idx = Leave.Types.get('holiday', 1)
+                        leave = Leave(interval, type_idx)
+
+                        # Add to project's vacations/leaves list
+                        existing = project.attributes.get('vacations', [])
+                        if not isinstance(existing, list):
+                            existing = [existing] if existing else []
+                        existing.append(leave)
+                        project.attributes['vacations'] = existing
                 else:
                     try:
                         project[key] = value
@@ -1205,6 +1283,14 @@ class ModelBuilder:
         elif prop_type == 'account':
             # Skip accounts for now - need Account class
             return
+        elif prop_type == 'shift':
+            from rodmena_resource_management.core.shift import Shift
+            obj = Shift(
+                project,
+                prop_id,
+                prop_name,
+                parent if isinstance(parent, Shift) else None
+            )
         else:
             return
 
@@ -1336,10 +1422,10 @@ class ModelBuilder:
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('limits', scIdx)] = limits_obj.copy()
                 elif key == 'workinghours':
-                    # Resource working hours - extend existing or create new WorkingHours object
+                    # Working hours for resource or shift
                     from rodmena_resource_management.core.working_hours import WorkingHours
 
-                    # Check if working hours already exist for this resource
+                    # Check if working hours already exist
                     existing_wh = obj.get('workinghours', 0)
                     if existing_wh and hasattr(existing_wh, 'set_hours'):
                         wh = existing_wh
@@ -1351,9 +1437,18 @@ class ModelBuilder:
                         ranges = value.get('ranges', [])
                         wh.set_hours(days, ranges)
 
-                    # Store working hours on resource for all scenarios
+                    # Store working hours for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('workinghours', scIdx)] = wh
+                elif key == 'workinghours_shift':
+                    # Resource references a shift for its working hours
+                    # Lookup the shift and copy its working hours
+                    shift_id = value
+                    shift = obj.project.shifts[shift_id] if hasattr(obj.project, 'shifts') else None
+                    if shift:
+                        for scIdx in range(obj.project.scenarioCount()):
+                            # Store the shift reference - ResourceScenario.onShift will use it
+                            obj[('shifts', scIdx)] = shift
                 elif key == 'vacation':
                     # Resource vacation - similar to leaves but type is always vacation
                     from rodmena_resource_management.core.leave import Leave
