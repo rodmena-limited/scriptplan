@@ -37,6 +37,9 @@ project_attribute: timezone
                  | weekstartsmonday
                  | workinghours
                  | timingresolution
+                 | project_scheduling
+
+project_scheduling: "scheduling" SCHEDULING_MODE
 
 // Global attributes (outside project block)
 global_attribute: copyright
@@ -109,6 +112,7 @@ resource_attr: resource_email
              | resource_leaves
              | resource_vacation
              | resource_workinghours
+             | resource_timezone
              | resource_chargeset
              | resource_flags
              | resource
@@ -122,6 +126,7 @@ resource_limits: "limits" "{" limits_body "}"
 resource_leaves: "leaves" leaves_type date ("-" date)?
 resource_vacation: "vacation" date ("-" date)?
 resource_workinghours: "workinghours" (workinghours_spec | ID)
+resource_timezone: "timezone" STRING
 resource_chargeset: "chargeset" ID
 resource_flags: "flags" ID ("," ID)*
 

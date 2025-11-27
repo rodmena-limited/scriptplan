@@ -1,0 +1,53 @@
+/*
+ * Issue #49: The Bottlenecked Release
+ * Tests daily limits + holiday interaction
+ */
+
+project bottleneck "Bottleneck_Release" 2025-06-02 +3w {
+  timezone "UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-06-02
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+vacation "Company Founder Day" 2025-06-04
+
+resource team "Dev Team" {
+  resource dev "FullStack Dev" {
+    workinghours mon - fri 09:00 - 17:00
+  }
+
+  resource qa "QA Lead" {
+    workinghours mon - fri 09:00 - 17:00
+    limits { dailymax 4h }
+  }
+}
+
+task release "v1.0 Release" {
+  task coding "Feature Code" {
+    effort 16h
+    allocate dev
+    start 2025-06-02-09:00
+  }
+
+  task review "Code Review" {
+    effort 12h
+    allocate qa
+    depends !coding
+  }
+
+  task deploy "Deploy to Prod" {
+    effort 4h
+    allocate dev, qa
+    depends !review
+  }
+}
+
+taskreport bottleneck_output "bottleneck_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}

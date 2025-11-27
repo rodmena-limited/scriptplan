@@ -574,25 +574,25 @@ class TableReport(ReportBase):
         """
         Get the cost value for a task.
 
-        Cost is the sum of charges that go to cost accounts.
+        Cost is calculated as: allocated_time × resource_rate
+        Uses the task's getCost() method if available.
         """
-        if not hasattr(property_node, 'get'):
+        if not hasattr(property_node, 'data'):
             return None
 
-        charge = property_node.get('charge', scenario_idx)
-        if not charge or charge == 0:
+        # Get the task scenario data
+        if not property_node.data or scenario_idx >= len(property_node.data):
             return None
 
-        # Check if the chargeset is a cost account
-        chargeset_id = property_node.get('chargeset', scenario_idx)
-        if not chargeset_id:
+        task_scenario = property_node.data[scenario_idx]
+        if task_scenario is None:
             return None
 
-        # Look up the account and check if it's a cost account
-        if isinstance(chargeset_id, str):
-            # Simple check: accounts other than 'rev' are cost accounts
-            if 'rev' not in chargeset_id.lower() and chargeset_id != 'rev':
-                return charge
+        # Use getCost() method if available
+        if hasattr(task_scenario, 'getCost'):
+            cost = task_scenario.getCost()
+            if cost and cost > 0:
+                return cost
 
         return None
 
@@ -613,8 +613,13 @@ class TableReport(ReportBase):
         if isinstance(value, bool):
             return 'Yes' if value else 'No'
         if isinstance(value, datetime):
-            # Use report's timeFormat if available
+            # Use report's timeFormat, falling back to project's timeformat
             timeformat = self.a('timeFormat')
+            # Check if it's the default - if so, try project's timeformat
+            if timeformat == '%Y-%m-%d':
+                project_timeformat = self.project.attributes.get('timeformat')
+                if project_timeformat:
+                    timeformat = project_timeformat
             if timeformat:
                 return value.strftime(timeformat)
             return str(value)

@@ -1,0 +1,9 @@
+"Id";"Name";"Start";"End";"Effort";"Duration"
+"airport";"Terminal 5 Upgrade";"2025-06-02";"2025-06-24";7.5;22.3
+"airport.t_software";"  Control Software";"2025-06-02";"2025-06-04";2.0;2.2
+"airport.t_crit";"  Critical Power Patch";"2025-06-04";"2025-06-05";1.1;1.0
+"airport.t_install";"  Hardware Install";"2025-06-05";"2025-06-06";1.1;1.0
+"airport.t_migration";"  Database Migration";"2025-06-05";"2025-06-06";0.8;1.0
+"airport.t_low";"  Labeling Cables";"2025-06-06";"2025-06-06";0.6;0.2
+"airport.t_audit";"  Safety Audit";"2025-06-19";"2025-06-24";2.0;5.3
+"airport.deliver";"  Go Live";"2025-06-24";"2025-06-24";0.0;0.0

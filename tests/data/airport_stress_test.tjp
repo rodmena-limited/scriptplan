@@ -103,7 +103,8 @@ task airport "Terminal 5 Upgrade" {
 # ---------------------------------------------------------------------------
 
 taskreport status_csv "status" {
-  columns bsi { title 'WBS' }, name, start, end, effort { title "Work" }, duration
+  formats csv
+  columns id, name, start, end, effort, duration
   timeformat "%Y-%m-%d"
   loadunit days
 }

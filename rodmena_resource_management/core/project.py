@@ -164,6 +164,7 @@ class Project(MessageHandler):
             ['rate', 'Rate', FloatAttribute, True, False, True, 0.0],
             ['reports', 'Reports', ResourceListAttribute, True, False, True, []],
             ['shifts', 'Shifts', ShiftAssignmentsAttribute, True, False, True, None],
+            ['timezone', 'Time Zone', StringAttribute, True, False, True, None],
             ['workinghours', 'Working Hours', AttributeBase, True, False, True, None]
         ]
         for a in attrs:
@@ -185,7 +186,7 @@ class Project(MessageHandler):
             ['effort', 'Effort', IntegerAttribute, True, False, True, 0],
             ['effortdone', 'Effort Done', IntegerAttribute, True, False, True, 0],
             ['effortleft', 'Effort Left', IntegerAttribute, True, False, True, 0],
-            ['end', 'End', DateAttribute, True, False, True, None],
+            ['end', 'End', DateAttribute, False, False, True, None],
             ['forward', 'Forward', BooleanAttribute, True, False, True, True],
             ['gauge', 'Gauge', StringAttribute, True, False, True, None],
             ['index', 'Index', IntegerAttribute, False, False, False, -1],
@@ -314,13 +315,79 @@ class Project(MessageHandler):
     def prepareScenario(self, scIdx):
         # Simplified preparation
         # In Ruby: computes criticalness, propagates initial values, checks loops
-        
+
+        # Apply project-level scheduling mode (alap/asap) to all tasks
+        # Note: task-level 'scheduling asap/alap' overrides project-level
+        # We track which tasks have explicit scheduling via _explicit_scheduling attr
+        project_scheduling = self.attributes.get('scheduling')
+        if project_scheduling == 'alap':
+            for task in self.tasks:
+                if task.leaf():
+                    # Only override if task doesn't have explicit scheduling attribute
+                    if not getattr(task, '_explicit_scheduling', False):
+                        task[('forward', scIdx)] = False  # ALAP mode
+
+        # Propagate container end dates to leaf children for ALAP mode
+        # In ALAP, container end dates act as constraints for children
+        self._propagateContainerEndDates(scIdx)
+
         # We need to ensure tasks are ready
         for task in self.tasks:
             task.prepareScheduling(scIdx)
-            
+
         for resource in self.resources:
             resource.prepareScheduling(scIdx)
+
+    def _propagateContainerEndDates(self, scIdx):
+        """
+        Propagate container task end dates to their leaf children as constraints.
+
+        In ALAP mode, if a container has an end date, only the "terminal" tasks
+        (those with no successors within the container) should get the end constraint.
+        Other tasks will get their end constraints from their successors.
+        """
+        # First, identify which tasks have successors (are predecessors of other tasks)
+        has_successor = set()
+        for task in self.tasks:
+            if not task.leaf():
+                continue
+            deps = task.get('depends', scIdx) or []
+            for dep in deps:
+                if isinstance(dep, dict):
+                    pred = dep.get('task')
+                elif hasattr(dep, 'task'):
+                    pred = dep.task
+                else:
+                    pred = dep
+                if pred and hasattr(pred, 'fullId'):
+                    has_successor.add(pred.fullId)
+
+        def propagate_end_to_children(task, container_end):
+            """Recursively propagate end constraint down the task tree."""
+            task_end = task.get('end', scIdx)
+            # Use the most restrictive (earliest) end date
+            effective_end = task_end if task_end else container_end
+
+            if task.leaf():
+                # Leaf task - apply the constraint if ALAP, no explicit end,
+                # AND the task has no successors (terminal task)
+                forward = task.get('forward', scIdx)
+                task_id = task.fullId if hasattr(task, 'fullId') else None
+                is_terminal = task_id not in has_successor
+
+                if forward is False and not task_end and container_end and is_terminal:
+                    task[('end', scIdx)] = container_end
+            else:
+                # Container - propagate to children
+                for child in task.children:
+                    propagate_end_to_children(child, effective_end)
+
+        # Start from root tasks (no parent)
+        for task in self.tasks:
+            if task.parent is None:
+                task_end = task.get('end', scIdx)
+                if task_end:
+                    propagate_end_to_children(task, task_end)
 
     def finishScenario(self, scIdx):
         for task in self.tasks:
@@ -353,11 +420,22 @@ class Project(MessageHandler):
             is_implicit_milestone = (start or end) and effort == 0 and duration == 0 and length == 0
 
             if is_explicit_milestone or is_implicit_milestone:
+                # Only mark as scheduled if we can set both dates
+                # Milestones with dependencies but no dates need to go through normal scheduling
                 if start and not end:
                     task[('end', scIdx)] = start
+                    task[('scheduled', scIdx)] = True
                 elif end and not start:
                     task[('start', scIdx)] = end
-                task[('scheduled', scIdx)] = True
+                    task[('scheduled', scIdx)] = True
+                elif start and end:
+                    task[('scheduled', scIdx)] = True
+                # else: milestone with no dates - let it be scheduled by the main loop
+
+        # Propagate ALAP mode through dependency chains
+        # If task B depends on task A, and B is ALAP with fixed end,
+        # then A should also be ALAP (scheduled as late as possible)
+        self._propagateALAPMode(scIdx)
 
         # Only care about leaf tasks that aren't scheduled already
         tasks = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
@@ -447,6 +525,122 @@ class Project(MessageHandler):
             if max_end:
                 task[('end', scIdx)] = max_end
             task[('scheduled', scIdx)] = True
+
+    def _propagateALAPMode(self, scIdx):
+        """
+        Propagate ALAP scheduling mode backward through dependency chains.
+
+        When task B depends on task A, and B is ALAP with a fixed end date,
+        task A should also be scheduled ALAP (as late as possible) to allow
+        B to meet its deadline.
+
+        This implements "backward propagation" of ALAP constraints:
+        1. Find all ALAP tasks with fixed end dates (anchor tasks)
+        2. For each anchor, traverse its dependencies backward
+        3. Mark predecessor tasks as ALAP and set their end constraint
+           to the dependent task's calculated start
+        """
+        # Build reverse dependency map: task -> list of tasks that depend on it
+        reverse_deps = {}  # predecessor_id -> [successor tasks]
+        for task in self.tasks:
+            if not task.leaf():
+                continue
+            deps = task.get('depends', scIdx) or []
+            for dep in deps:
+                # Extract the predecessor task from dependency
+                if isinstance(dep, dict):
+                    pred = dep.get('task')
+                elif hasattr(dep, 'task'):
+                    pred = dep.task
+                else:
+                    pred = dep
+
+                if pred:
+                    pred_id = pred.fullId if hasattr(pred, 'fullId') else id(pred)
+                    if pred_id not in reverse_deps:
+                        reverse_deps[pred_id] = []
+                    reverse_deps[pred_id].append(task)
+
+        # Find ALAP anchor tasks (ALAP with fixed end)
+        alap_anchors = []
+        for task in self.tasks:
+            if not task.leaf():
+                continue
+            forward = task.get('forward', scIdx)
+            end = task.get('end', scIdx)
+            if forward is False and end:  # ALAP with fixed end
+                alap_anchors.append(task)
+
+        # Propagate ALAP backward from each anchor
+        # Use BFS to traverse dependency chains
+        processed = set()
+        for anchor in alap_anchors:
+            anchor_id = anchor.fullId if hasattr(anchor, 'fullId') else id(anchor)
+            processed.add(anchor_id)
+
+            # Get dependencies of the anchor (tasks that must finish before anchor starts)
+            deps = anchor.get('depends', scIdx) or []
+            for dep in deps:
+                if isinstance(dep, dict):
+                    pred = dep.get('task')
+                elif hasattr(dep, 'task'):
+                    pred = dep.task
+                else:
+                    pred = dep
+
+                if not pred:
+                    continue
+
+                pred_id = pred.fullId if hasattr(pred, 'fullId') else id(pred)
+                if pred_id in processed:
+                    continue
+
+                # Mark predecessor as ALAP
+                # It should finish as late as possible while still allowing the anchor to start
+                self._markTaskALAP(pred, scIdx, processed, reverse_deps)
+
+    def _markTaskALAP(self, task, scIdx, processed, reverse_deps):
+        """
+        Mark a task as ALAP and propagate to its predecessors.
+
+        Args:
+            task: The task to mark as ALAP
+            scIdx: Scenario index
+            processed: Set of already processed task IDs
+            reverse_deps: Map of task ID -> list of successor tasks
+        """
+        task_id = task.fullId if hasattr(task, 'fullId') else id(task)
+        if task_id in processed:
+            return
+        processed.add(task_id)
+
+        # Only process leaf tasks
+        if not task.leaf():
+            return
+
+        # Check if task is already explicitly ASAP with a fixed start
+        # In that case, don't override
+        forward = task.get('forward', scIdx)
+        start = task.get('start', scIdx)
+        if forward is True and start:
+            # Explicitly ASAP with start date - don't change
+            return
+
+        # Mark as ALAP (forward=False)
+        task[('forward', scIdx)] = False
+
+        # Now propagate to predecessors of this task
+        deps = task.get('depends', scIdx) or []
+        for dep in deps:
+            if isinstance(dep, dict):
+                pred = dep.get('task')
+            elif hasattr(dep, 'task'):
+                pred = dep.task
+            else:
+                pred = dep
+
+            if pred:
+                self._markTaskALAP(pred, scIdx, processed, reverse_deps)
 
     def initScoreboards(self):
         if not self.attributes['start'] or not self.attributes['end']:

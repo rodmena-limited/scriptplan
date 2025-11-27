@@ -1,0 +1,47 @@
+/*
+ * Issue #54: Just-In-Time Supply Chain
+ * Tests ALAP + Resource Contention + Weekend handling
+ */
+
+project jit "Just_In_Time" 2025-07-01 +1m {
+  timezone "UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-07-01
+}
+
+shift factory_hours "Factory Hours" {
+  workinghours mon - fri 08:00 - 16:00
+}
+
+resource machine "Press" {
+  workinghours mon - fri 08:00 - 16:00
+}
+
+task delivery "Product Launch" {
+  task pack "Packaging" {
+    effort 8h
+    allocate machine
+    end 2025-07-18-16:00
+    scheduling alap
+  }
+
+  task assemble_b "Body Assembly" {
+    effort 16h
+    allocate machine
+    scheduling alap
+    precedes !pack
+  }
+
+  task assemble_a "Engine Assembly" {
+    effort 16h
+    allocate machine
+    scheduling alap
+    precedes !pack
+  }
+}
+
+taskreport jit_output "jit_output" {
+  formats csv
+  columns id, name, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}

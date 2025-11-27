@@ -7,6 +7,17 @@ for specific days of the week.
 
 from datetime import datetime, time, timedelta
 
+try:
+    import zoneinfo
+    HAS_ZONEINFO = True
+except ImportError:
+    HAS_ZONEINFO = False
+    try:
+        import pytz
+        HAS_PYTZ = True
+    except ImportError:
+        HAS_PYTZ = False
+
 
 class WorkingHours:
     """
@@ -84,12 +95,16 @@ class WorkingHours:
         minute = int(parts[1]) if len(parts) > 1 else 0
         return (hour, minute)
 
-    def onShift(self, slot_idx):
+    def onShift(self, slot_idx, timezone=None):
         """
         Check if a slot index is within working hours.
 
         Args:
             slot_idx: Scoreboard slot index
+            timezone: Optional timezone string (e.g., "Asia/Tokyo"). If provided,
+                     the UTC slot time is converted to local time before checking
+                     working hours. This enables resources in different timezones
+                     to have their shifts defined in local time.
 
         Returns:
             True if the slot is within working hours
@@ -98,10 +113,16 @@ class WorkingHours:
         if not self._custom_hours_set:
             return self.project.isWorkingTime(slot_idx)
 
-        # Get datetime for this slot
+        # Get datetime for this slot (in UTC)
         dt = self.project.idxToDate(slot_idx)
         if dt is None:
             return False
+
+        # Convert UTC time to resource's local timezone if specified
+        if timezone:
+            dt = self._convert_to_timezone(dt, timezone)
+            if dt is None:
+                return False
 
         weekday = dt.weekday()
 
@@ -173,3 +194,38 @@ class WorkingHours:
     def clear_all(self):
         """Clear all working hours."""
         self._hours = {}
+
+    def _convert_to_timezone(self, dt, timezone_str):
+        """
+        Convert a naive UTC datetime to the specified timezone.
+
+        Args:
+            dt: Naive datetime (assumed to be UTC)
+            timezone_str: Timezone string like "Asia/Tokyo" or "America/New_York"
+
+        Returns:
+            Datetime in the local timezone, or None if conversion fails
+        """
+        if not timezone_str:
+            return dt
+
+        try:
+            if HAS_ZONEINFO:
+                # Python 3.9+ with zoneinfo
+                from datetime import timezone as dt_timezone
+                utc_dt = dt.replace(tzinfo=dt_timezone.utc)
+                tz = zoneinfo.ZoneInfo(timezone_str)
+                return utc_dt.astimezone(tz)
+            elif HAS_PYTZ:
+                # Fallback to pytz
+                import pytz
+                utc = pytz.UTC
+                utc_dt = utc.localize(dt)
+                tz = pytz.timezone(timezone_str)
+                return utc_dt.astimezone(tz)
+            else:
+                # No timezone support - return as-is with a warning
+                return dt
+        except Exception:
+            # Invalid timezone - return original datetime
+            return dt

@@ -88,6 +88,11 @@ class TJPTransformer(Transformer):
     def project_attribute(self, items):
         return items[0] if items else None
 
+    def project_scheduling(self, items):
+        mode = self._get_value(items[0]).lower()
+        # forward=True means ASAP, forward=False means ALAP
+        return ('scheduling', mode)
+
     # Global attributes
     def global_attribute(self, items):
         return items[0] if items else None
@@ -210,6 +215,9 @@ class TJPTransformer(Transformer):
 
     def resource_efficiency(self, items):
         return ('efficiency', float(self._get_value(items[0])))
+
+    def resource_timezone(self, items):
+        return ('timezone', self._get_value(items[0]))
 
     def resource_managers(self, items):
         return ('managers', [self._get_value(i) for i in items])
@@ -961,6 +969,7 @@ class ModelBuilder:
 
     def __init__(self):
         self._pending_depends = []  # Store (task, depends_list) for later resolution
+        self._pending_precedes = []  # Store (task, precedes_list) for later resolution
 
     def build(self, data):
         """Build a Project from parsed data."""
@@ -1014,6 +1023,9 @@ class ModelBuilder:
 
         # Resolve dependencies after all tasks are created
         self._resolve_dependencies(project)
+
+        # Resolve precedes relationships (convert to dependencies on target tasks)
+        self._resolve_precedes(project)
 
         # Inherit attributes from parents for all tasks
         self._inherit_all_attributes(project)
@@ -1077,6 +1089,38 @@ class ModelBuilder:
                 # Set dependencies for all scenarios
                 for scIdx in range(project.scenarioCount()):
                     task[('depends', scIdx)] = resolved
+
+    def _resolve_precedes(self, project):
+        """Resolve precedes relationships by adding dependencies to target tasks.
+
+        If task A precedes task B, then B depends on A.
+        This is the inverse of the 'depends' relationship.
+        """
+        for source_task, precedes_list in self._pending_precedes:
+            for prec_item in precedes_list:
+                # prec_item can be a dict with 'ref' key or a string
+                if isinstance(prec_item, dict):
+                    prec_ref = prec_item.get('ref', '')
+                else:
+                    prec_ref = prec_item
+
+                target_task = self._resolve_task_reference(project, source_task, prec_ref)
+                if target_task:
+                    # Add source_task as a dependency of target_task
+                    for scIdx in range(project.scenarioCount()):
+                        existing_deps = target_task.get('depends', scIdx) or []
+                        if not isinstance(existing_deps, list):
+                            existing_deps = [existing_deps] if existing_deps else []
+                        # Check if source_task is already in dependencies
+                        already_exists = False
+                        for dep in existing_deps:
+                            dep_task = dep.get('task') if isinstance(dep, dict) else dep
+                            if dep_task is source_task:
+                                already_exists = True
+                                break
+                        if not already_exists:
+                            existing_deps.append(source_task)
+                            target_task[('depends', scIdx)] = existing_deps
 
     def _resolve_task_reference(self, project, from_task, ref):
         """Resolve a task reference string to a Task object.
@@ -1317,6 +1361,10 @@ class ModelBuilder:
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('efficiency', scIdx)] = value
+                elif key == 'timezone':
+                    # Set for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('timezone', scIdx)] = value
                 elif key == 'effort':
                     # Set for all scenarios (no prefix means apply to all)
                     for scIdx in range(obj.project.scenarioCount()):
@@ -1324,6 +1372,10 @@ class ModelBuilder:
                 elif key == 'depends':
                     # Store for later resolution (after all tasks created)
                     self._pending_depends.append((obj, value))
+                elif key == 'precedes':
+                    # Store for later resolution - precedes creates reverse dependencies
+                    # If A precedes B, then B depends on A
+                    self._pending_precedes.append((obj, value))
                 elif key == 'allocate':
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
@@ -1348,6 +1400,8 @@ class ModelBuilder:
                     # Set scheduling direction for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('forward', scIdx)] = value
+                    # Mark that this task has explicit scheduling (not inherited from project)
+                    obj._explicit_scheduling = True
                 elif key == 'scenario_attr':
                     # Handle scenario-specific attributes like ('delayed', ('effort', 320))
                     scenario_id, attr_data = value

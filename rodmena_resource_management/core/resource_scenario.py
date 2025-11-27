@@ -270,8 +270,9 @@ class ResourceScenario(ScenarioData):
         Check if resource is available at the given time slot.
 
         A slot is available if:
-        1. Not fully booked by another task, OR
-        2. Partially used and has remaining time
+        1. It's during working hours for this resource
+        2. Not fully booked by another task, OR
+        3. Partially used and has remaining time
 
         Args:
             sb_idx: Scoreboard index
@@ -280,6 +281,10 @@ class ResourceScenario(ScenarioData):
             True if available (fully or partially), False otherwise
         """
         if self.scoreboard is None:
+            return False
+
+        # Check if slot is during working hours for this resource
+        if not self.onShift(sb_idx):
             return False
 
         # Check if slot has any available time
@@ -479,14 +484,27 @@ class ResourceScenario(ScenarioData):
         Returns:
             True if on shift, False otherwise
         """
+        date = self.project.idxToDate(sb_idx)
+
         # First check global vacations - they override everything
         vacations = self.project.attributes.get('vacations', [])
         if vacations:
-            date = self.project.idxToDate(sb_idx)
             for vac in vacations:
                 if hasattr(vac, 'interval') and vac.interval:
                     if vac.interval.start <= date < vac.interval.end:
                         return False
+
+        # Check resource-level leaves/vacations
+        leaves = self.property.get('leaves', self.scenarioIdx)
+        if leaves:
+            for leave in leaves:
+                if hasattr(leave, 'interval') and leave.interval:
+                    if leave.interval.start <= date < leave.interval.end:
+                        return False
+
+        # Get resource's timezone for local time conversion
+        # Working hours are defined in local time, but slots are in UTC
+        resource_tz = self.property.get('timezone', self.scenarioIdx)
 
         # Check if resource has a shift reference
         shift = self.property.get('shifts', self.scenarioIdx)
@@ -494,12 +512,12 @@ class ResourceScenario(ScenarioData):
             # Use the shift's working hours
             shift_wh = shift.get('workinghours', self.scenarioIdx)
             if shift_wh and hasattr(shift_wh, 'onShift'):
-                return shift_wh.onShift(sb_idx)
+                return shift_wh.onShift(sb_idx, timezone=resource_tz)
 
         # Check if resource has direct working hours
         workinghours = self.property.get('workinghours', self.scenarioIdx)
         if workinghours and hasattr(workinghours, 'onShift'):
-            return workinghours.onShift(sb_idx)
+            return workinghours.onShift(sb_idx, timezone=resource_tz)
 
         # Default: use project's working time
         return self.project.isWorkingTime(sb_idx)

@@ -48,7 +48,7 @@ resource r_math "The Math Hazard" {
   workinghours tue, thu      09:00 - 10:30, 14:45 - 16:00
 
   # Leave specifically during a critical Tuesday slot
-  # vacation 2025-08-05 09:30 - 2025-08-05 10:00  # TJ doesn't support partial-day vacation like this
+  vacation 2025-08-05-09:30 - 2025-08-05-10:00
 }
 
 resource r_limit "The Bottleneck" {
