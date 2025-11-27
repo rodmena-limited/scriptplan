@@ -1,0 +1,51 @@
+/*
+ * Issue #57: The "Black Box" Protocol
+ * Tests timezone conversion, efficiency, disjoint calendars, day-boundary crossovers
+ */
+
+project "Black_Box_Protocol" 2025-01-01 +1m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-01-01
+}
+
+shift alpha_shift {
+  workinghours mon - wed 10:00 - 14:00
+}
+
+shift beta_shift {
+  workinghours thu - sun 18:00 - 22:00
+}
+
+resource agent_a "Alpha" {
+  timezone "Europe/Athens"
+  workinghours alpha_shift
+  efficiency 0.5
+}
+
+resource agent_b "Beta" {
+  timezone "America/Los_Angeles"
+  workinghours beta_shift
+  efficiency 2.0
+}
+
+task operations "Covert Ops" {
+
+  task phase_1 "Infiltration" {
+    effort 4h
+    allocate agent_a
+    start 2025-01-01-00:00
+  }
+
+  task phase_2 "Extraction" {
+    effort 4h
+    allocate agent_b
+    depends !phase_1
+  }
+}
+
+taskreport blackbox_output "blackbox_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}

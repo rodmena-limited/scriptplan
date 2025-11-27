@@ -1421,6 +1421,116 @@ class TestIssue56UnionContract:
         )
 
 
+class TestIssue57BlackBoxProtocol:
+    """
+    Issue #57: The "Black Box" Protocol
+
+    Tests timezone conversion, efficiency, disjoint calendars, day-boundary crossovers.
+    No logic hints - the only way to pass is correct simulation of:
+    1. Timezone Conversions (UTC vs Local)
+    2. Inverse Efficiency (0.5 = 2x slower, 2.0 = 2x faster)
+    3. Disjoint Calendars (Mon-Wed vs Thu-Sun)
+    4. Day-Boundary Crossovers
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'blackbox.tjp'
+
+    # Ground truth from judge script
+    TARGET_PHASE1_END = "2025-01-06-12:00"
+    TARGET_PHASE2_END = "2025-01-10-04:00"
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame (like judge script)."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        # Parse exactly like judge script
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def test_phase1_checksum(self, csv_dataframe):
+        """
+        Phase 1 verification - exact judge logic.
+        Agent A (UTC+2) works 10:00-14:00 Local = 08:00-12:00 UTC.
+        Efficiency 0.5 -> 4h Effort becomes 8h Duration.
+        Schedule: Mon-Wed only.
+        """
+        df = csv_dataframe
+        row_1 = df[df['id'] == 'operations.phase_1']
+
+        assert not row_1.empty, "FAIL: Phase 1 missing."
+
+        got = row_1.iloc[0]['end'].strip()
+        assert got == self.TARGET_PHASE1_END, (
+            f"FAIL: Phase 1.\n"
+            f"  Expected: {self.TARGET_PHASE1_END}\n"
+            f"  Got:      {got}"
+        )
+
+    def test_phase2_checksum(self, csv_dataframe):
+        """
+        Phase 2 verification - exact judge logic.
+        Agent B (UTC-8) works 18:00-22:00 Local = 02:00-06:00 UTC (Next Day).
+        Efficiency 2.0 -> 4h Effort becomes 2h Duration.
+        Schedule: Thu-Sun only.
+        """
+        df = csv_dataframe
+        row_2 = df[df['id'] == 'operations.phase_2']
+
+        assert not row_2.empty, "FAIL: Phase 2 missing."
+
+        got = row_2.iloc[0]['end'].strip()
+        assert got == self.TARGET_PHASE2_END, (
+            f"FAIL: Phase 2.\n"
+            f"  Expected: {self.TARGET_PHASE2_END}\n"
+            f"  Got:      {got}"
+        )
+
+    def test_full_judge_verification(self, csv_dataframe):
+        """
+        Run the complete judge script logic.
+        Both phases must pass for system integrity.
+        """
+        df = csv_dataframe
+        errors = 0
+
+        # Check Phase 1
+        row_1 = df[df['id'] == 'operations.phase_1']
+        if row_1.empty:
+            errors += 1
+        else:
+            got = row_1.iloc[0]['end'].strip()
+            if got != self.TARGET_PHASE1_END:
+                errors += 1
+
+        # Check Phase 2
+        row_2 = df[df['id'] == 'operations.phase_2']
+        if row_2.empty:
+            errors += 1
+        else:
+            got = row_2.iloc[0]['end'].strip()
+            if got != self.TARGET_PHASE2_END:
+                errors += 1
+
+        assert errors == 0, "FAIL: LOGIC MISMATCH - System integrity check failed"
+
+
 # Convenience function to run all validation tests
 def run_all_scheduling_validations():
     """Run all scheduling validation tests."""
