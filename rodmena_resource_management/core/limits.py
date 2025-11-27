@@ -242,8 +242,13 @@ class Limits:
         else:
             interval_start, interval_end = interval
 
-        # Determine period based on limit type
-        slot_duration = 3600  # 1 hour slots
+        # Determine period and slot duration based on project settings
+        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+
+        # Convert value from hours to slots
+        # e.g., 3.5h with 15-min (0.25h) slots = 14 slots
+        slot_duration_hours = slot_duration / 3600.0
+        value_in_slots = int(value / slot_duration_hours)
 
         if name == 'dailymax':
             period = 60 * 60 * 24  # 1 day in seconds
@@ -276,9 +281,9 @@ class Limits:
         self._limits = [l for l in self._limits
                        if not (l.name == name and l.resource == resource)]
 
-        # Add new limit
+        # Add new limit (using value_in_slots which is calculated from hours)
         self._limits.append(Limit(
-            name, interval_start, interval_end, period, value, upper, resource, slot_duration
+            name, interval_start, interval_end, period, value_in_slots, upper, resource, slot_duration
         ))
 
     def inc(self, index, resource=None):

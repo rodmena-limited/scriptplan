@@ -325,10 +325,13 @@ class Project(MessageHandler):
         for task in self.tasks:
             if not task.parent:
                 task.finishScheduling(scIdx)
-        
+
         for resource in self.resources:
             if not resource.parent:
                 resource.finishScheduling(scIdx)
+
+        # Apply partial slot corrections for precise timing
+        self._applyPartialSlotCorrections(scIdx)
 
     def scheduleScenario(self, scIdx):
         all_tasks = list(self.tasks)
@@ -606,3 +609,6 @@ class Project(MessageHandler):
             value: Attribute value
         """
         self.attributes[key] = value
+        # When timingresolution is set, also update scheduleGranularity
+        if key == 'timingresolution':
+            self.attributes['scheduleGranularity'] = value

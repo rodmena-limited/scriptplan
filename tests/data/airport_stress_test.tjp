@@ -1,0 +1,109 @@
+/*
+ * AIRPORT BAGGAGE SYSTEM UPGRADE - STRESS TEST
+ * Challenge: Mixed calendars, efficiency factors, resource constraints,
+ * and strict dependency chains.
+ */
+
+project acso "AirportStressTest" 2025-06-01 +2m {
+  timezone "UTC"
+  timeformat "%Y-%m-%d"
+  currency "USD"
+  dailyworkinghours 8
+  yearlyworkingdays 260
+}
+
+# ---------------------------------------------------------------------------
+# 1. RESOURCES WITH ATTRIBUTES
+# ---------------------------------------------------------------------------
+
+resource dev "IT Team" {
+  efficiency 0.8
+  rate 100.0
+
+  resource d1 "Senior Dev" {
+    leaves annual 2025-06-05 - 2025-06-06
+  }
+
+  resource d2 "Night Ops" {
+    limits { dailymax 8h }
+  }
+}
+
+resource elec "Electricians" {
+  efficiency 1.0
+  rate 80.0
+
+  resource e1 "Master Electrician" {
+    efficiency 1.2
+  }
+
+  resource e2 "Apprentice" {
+    efficiency 0.5
+  }
+}
+
+# ---------------------------------------------------------------------------
+# 2. TASKS - THE GAUNTLET
+# ---------------------------------------------------------------------------
+
+task airport "Terminal 5 Upgrade" {
+
+  # SCENARIO A: Efficiency & Leave Calculation
+  task t_software "Control Software" {
+    effort 2d
+    allocate d1
+    start 2025-06-02
+  }
+
+  # SCENARIO B: Dependency & Lag
+  task t_install "Hardware Install" {
+    depends !t_software { gapduration 4h }
+    effort 1d
+    allocate e1
+  }
+
+  # SCENARIO C: Resource contention & Priority
+  task t_crit "Critical Power Patch" {
+    priority 1000
+    effort 1d
+    allocate e1
+    depends !t_software
+  }
+
+  task t_low "Labeling Cables" {
+    priority 100
+    effort 4h
+    allocate e1
+    depends !t_software
+  }
+
+  # SCENARIO D: Night Shift Logic
+  task t_migration "Database Migration" {
+    depends !t_crit
+    effort 6h
+    allocate d2
+  }
+
+  # SCENARIO E: ALAP (As Late As Possible)
+  task t_audit "Safety Audit" {
+    scheduling alap
+    effort 2d
+    allocate e2
+    end 2025-06-25
+  }
+
+  # SCENARIO F: Milestone & Hierarchy
+  task deliver "Go Live" {
+    depends !t_migration, !t_audit, !t_low
+  }
+}
+
+# ---------------------------------------------------------------------------
+# 3. REPORT DEFINITION (CSV OUTPUT)
+# ---------------------------------------------------------------------------
+
+taskreport status_csv "status" {
+  columns bsi { title 'WBS' }, name, start, end, effort { title "Work" }, duration
+  timeformat "%Y-%m-%d"
+  loadunit days
+}

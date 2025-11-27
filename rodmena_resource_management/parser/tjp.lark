@@ -12,7 +12,8 @@ statement: project
          | report_definition
 
 // Project definition
-project: "project" project_id project_name project_timeframe "{" project_attributes "}"
+// project_name is optional in TaskJuggler syntax
+project: "project" project_id project_name? project_timeframe "{" project_attributes "}"
 
 project_id: STRING | ID
 project_name: STRING
@@ -35,6 +36,7 @@ project_attribute: timezone
                  | yearlyworkingdays
                  | weekstartsmonday
                  | workinghours
+                 | timingresolution
 
 // Global attributes (outside project block)
 global_attribute: copyright
@@ -69,8 +71,12 @@ now: "now" date
 dailyworkinghours: "dailyworkinghours" NUMBER
 yearlyworkingdays: "yearlyworkingdays" NUMBER
 weekstartsmonday: "weekstartsmonday"
+timingresolution: "timingresolution" duration_value
 workinghours: "workinghours" workinghours_spec
-workinghours_spec: ID ("," ID)* duration_range ("," duration_range)*
+workinghours_spec: day_list duration_range ("," duration_range)*
+day_list: day_spec ("," day_spec)*
+day_spec: DAY_NAME ("-" DAY_NAME)?  // Single day or day range like "mon - fri"
+DAY_NAME: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
 duration_range: TIME "-" TIME
 TIME: /\d{1,2}:\d{2}/
 
@@ -99,6 +105,9 @@ resource_attr: resource_email
              | resource_managers
              | resource_limits
              | resource_leaves
+             | resource_vacation
+             | resource_workinghours
+             | resource_chargeset
              | resource_flags
              | resource
              | extended_attr
@@ -109,6 +118,9 @@ resource_efficiency: "efficiency" NUMBER
 resource_managers: "managers" ID ("," ID)*
 resource_limits: "limits" "{" limits_body "}"
 resource_leaves: "leaves" leaves_type date ("-" date)?
+resource_vacation: "vacation" date ("-" date)?
+resource_workinghours: "workinghours" workinghours_spec
+resource_chargeset: "chargeset" ID
 resource_flags: "flags" ID ("," ID)*
 
 leaves_type: "annual" | "sick" | "holiday" | "special" | "unpaid"
@@ -142,9 +154,13 @@ task_attr: task_start
          | task_limits
          | task_journalentry
          | task_flags
+         | task_scheduling
          | scenario_attr
          | task
          | extended_attr
+
+task_scheduling: "scheduling" SCHEDULING_MODE
+SCHEDULING_MODE: "asap" | "alap"
 
 task_start: "start" (date | MACRO_REF)
 task_end: "end" date
@@ -173,7 +189,12 @@ duration_value: NUMBER DURATION_UNIT
 DURATION_UNIT: /[dwhminy]+/
 
 depends_list: depends_item ("," depends_item)*
-depends_item: DEPENDS_REF
+depends_item: DEPENDS_REF depends_options?
+depends_options: "{" depends_option* "}"
+depends_option: "gapduration" duration_value -> dep_gapduration
+              | "gaplength" duration_value -> dep_gaplength
+              | "onend" -> dep_onend
+              | "onstart" -> dep_onstart
 DEPENDS_REF: /[!.a-zA-Z_][!.a-zA-Z0-9_]*/
 
 allocate_spec: ID ("," ID)* allocate_options?

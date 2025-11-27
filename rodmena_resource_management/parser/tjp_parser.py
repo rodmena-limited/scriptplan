@@ -42,10 +42,23 @@ class TJPTransformer(Transformer):
 
     # Project definition
     def project(self, items):
+        # items[0] is always project_id
+        # items[1] might be project_name (if present) or project_timeframe
+        # We need to check the type to determine
         p_id = self._get_value(items[0])
-        p_name = self._get_value(items[1])
-        timeframe = items[2] if len(items) > 2 else {}
-        attrs = items[3] if len(items) > 3 else []
+
+        idx = 1
+        # Check if items[1] is a string (project_name) or a dict (timeframe)
+        if len(items) > idx and isinstance(items[idx], str):
+            p_name = items[idx]
+            idx += 1
+        else:
+            p_name = p_id  # Use id as name if not specified
+
+        timeframe = items[idx] if len(items) > idx else {}
+        idx += 1
+        attrs = items[idx] if len(items) > idx else []
+
         return {
             'type': 'project',
             'id': p_id,
@@ -200,8 +213,8 @@ class TJPTransformer(Transformer):
         """Parse dailymax limit."""
         duration = items[0] if items else '0h'
         resources = items[1] if len(items) > 1 else None
-        # TaskJuggler rounds limit values to integer slots
-        hours = self._parse_duration_to_hours(duration, round_to_slots=True) if isinstance(duration, str) else round(duration)
+        # Store value in hours - conversion to slots happens in Limits class
+        hours = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
         return {
             'type': 'dailymax',
             'value': hours,
@@ -212,8 +225,8 @@ class TJPTransformer(Transformer):
         """Parse weeklymax limit."""
         duration = items[0] if items else '0h'
         resources = items[1] if len(items) > 1 else None
-        # TaskJuggler rounds limit values to integer slots
-        hours = self._parse_duration_to_hours(duration, round_to_slots=True) if isinstance(duration, str) else round(duration)
+        # Store value in hours - conversion to slots happens in Limits class
+        hours = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
         return {
             'type': 'weeklymax',
             'value': hours,
@@ -272,6 +285,99 @@ class TJPTransformer(Transformer):
     def resource_flags(self, items):
         return ('flags', [self._get_value(i) for i in items])
 
+    def resource_vacation(self, items):
+        """Handle resource vacation: vacation start_date [- end_date]."""
+        start_date = items[0] if items else None
+        end_date = items[1] if len(items) > 1 else start_date
+        return ('vacation', {
+            'start': start_date,
+            'end': end_date
+        })
+
+    def resource_workinghours(self, items):
+        """Handle resource workinghours: workinghours mon, tue, ... 08:00 - 17:00."""
+        # Pass through to workinghours_spec handler
+        return ('workinghours', items[0] if items else [])
+
+    def resource_chargeset(self, items):
+        """Handle resource chargeset: chargeset account_id."""
+        return ('chargeset', self._get_value(items[0]))
+
+    def timingresolution(self, items):
+        """Handle timingresolution: timingresolution duration_value."""
+        # Parse duration to seconds
+        duration = items[0] if items else '1h'
+        import re
+        match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmymin]+)', str(duration))
+        if match:
+            value = float(match.group(1))
+            unit = match.group(2) or 'h'
+            if unit == 'min':
+                seconds = int(value * 60)
+            elif unit == 'h':
+                seconds = int(value * 3600)
+            elif unit == 'd':
+                seconds = int(value * 86400)
+            else:
+                seconds = 3600  # default 1 hour
+            return ('timingresolution', seconds)
+        return ('timingresolution', 3600)
+
+    def workinghours(self, items):
+        """Handle workinghours at project or shift level."""
+        return ('workinghours', items[0] if items else [])
+
+    def workinghours_spec(self, items):
+        """Parse workinghours specification: mon, tue, ... 08:00 - 17:00, 13:00 - 14:00.
+
+        Returns a dict mapping day names to list of (start_time, end_time) tuples.
+        """
+        # items[0] is day_list (list of days)
+        # items[1:] are duration_range tuples
+        days = items[0] if items else []
+        ranges = list(items[1:]) if len(items) > 1 else []
+
+        return {'days': days, 'ranges': ranges}
+
+    def day_list(self, items):
+        """Parse day list: day_spec, day_spec, ..."""
+        all_days = []
+        for item in items:
+            if isinstance(item, list):
+                all_days.extend(item)
+            else:
+                all_days.append(item)
+        return all_days
+
+    def day_spec(self, items):
+        """Parse day spec: single day or day range like mon - fri."""
+        day_order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+        if len(items) == 1:
+            # Single day
+            day = self._get_value(items[0]).lower()
+            return [day]
+        else:
+            # Day range like mon - fri
+            start_day = self._get_value(items[0]).lower()
+            end_day = self._get_value(items[1]).lower()
+
+            start_idx = day_order.index(start_day)
+            end_idx = day_order.index(end_day)
+
+            # Handle wrap-around if needed (e.g., fri - mon)
+            if start_idx <= end_idx:
+                return day_order[start_idx:end_idx + 1]
+            else:
+                # Wrap around (unusual but supported)
+                return day_order[start_idx:] + day_order[:end_idx + 1]
+
+    def duration_range(self, items):
+        """Parse duration range: TIME - TIME."""
+        start_time = self._get_value(items[0]) if items else '09:00'
+        end_time = self._get_value(items[1]) if len(items) > 1 else '17:00'
+        return (start_time, end_time)
+
     def leaves_type(self, items):
         """Handle leaves type: annual, sick, holiday, special, unpaid."""
         return self._get_value(items[0]) if items else 'annual'
@@ -312,6 +418,11 @@ class TJPTransformer(Transformer):
 
     def task_milestone(self, items):
         return ('milestone', True)
+
+    def task_scheduling(self, items):
+        mode = self._get_value(items[0]).lower()
+        # forward=True means ASAP, forward=False means ALAP
+        return ('forward', mode == 'asap')
 
     def task_depends(self, items):
         return items[0]  # depends_list returns a tuple
@@ -472,10 +583,35 @@ class TJPTransformer(Transformer):
         return f"{num}{unit}"
 
     def depends_list(self, items):
-        return ('depends', [self._get_value(i) for i in items])
+        # Items are now dependency dicts with ref and optional gap
+        return ('depends', list(items))
 
     def depends_item(self, items):
-        return self._get_value(items[0])
+        # First item is the DEPENDS_REF, optional second is depends_options dict
+        ref = self._get_value(items[0])
+        dep = {'ref': ref}
+        if len(items) > 1 and items[1]:
+            dep.update(items[1])
+        return dep
+
+    def depends_options(self, items):
+        result = {}
+        for item in items:
+            if isinstance(item, dict):
+                result.update(item)
+        return result
+
+    def dep_gapduration(self, items):
+        return {'gapduration': self._get_value(items[0])}
+
+    def dep_gaplength(self, items):
+        return {'gaplength': self._get_value(items[0])}
+
+    def dep_onend(self, items):
+        return {'onend': True}
+
+    def dep_onstart(self, items):
+        return {'onstart': True}
 
     def allocate_spec(self, items):
         resources = []
@@ -857,10 +993,28 @@ class ModelBuilder:
         """Resolve task dependency references to actual Task objects."""
         for task, depends_list in self._pending_depends:
             resolved = []
-            for dep_ref in depends_list:
+            for dep_item in depends_list:
+                # dep_item can be a dict with 'ref' key or a string (for backwards compat)
+                if isinstance(dep_item, dict):
+                    dep_ref = dep_item.get('ref', '')
+                    gapduration = dep_item.get('gapduration')
+                    gaplength = dep_item.get('gaplength')
+                else:
+                    dep_ref = dep_item
+                    gapduration = None
+                    gaplength = None
+
                 dep_task = self._resolve_task_reference(project, task, dep_ref)
                 if dep_task:
-                    resolved.append(dep_task)
+                    # Store as dict if we have gap info, else just the task
+                    if gapduration or gaplength:
+                        resolved.append({
+                            'task': dep_task,
+                            'gapduration': gapduration,
+                            'gaplength': gaplength
+                        })
+                    else:
+                        resolved.append(dep_task)
             if resolved:
                 # Set dependencies for all scenarios
                 for scIdx in range(project.scenarioCount()):
@@ -1073,6 +1227,10 @@ class ModelBuilder:
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('rate', scIdx)] = value
+                elif key == 'efficiency':
+                    # Set for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('efficiency', scIdx)] = value
                 elif key == 'effort':
                     # Set for all scenarios (no prefix means apply to all)
                     for scIdx in range(obj.project.scenarioCount()):
@@ -1100,6 +1258,10 @@ class ModelBuilder:
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('priority', scIdx)] = value
+                elif key == 'forward':
+                    # Set scheduling direction for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('forward', scIdx)] = value
                 elif key == 'scenario_attr':
                     # Handle scenario-specific attributes like ('delayed', ('effort', 320))
                     scenario_id, attr_data = value
@@ -1173,6 +1335,45 @@ class ModelBuilder:
                     # because they track usage counters independently
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('limits', scIdx)] = limits_obj.copy()
+                elif key == 'workinghours':
+                    # Resource working hours - extend existing or create new WorkingHours object
+                    from rodmena_resource_management.core.working_hours import WorkingHours
+
+                    # Check if working hours already exist for this resource
+                    existing_wh = obj.get('workinghours', 0)
+                    if existing_wh and hasattr(existing_wh, 'set_hours'):
+                        wh = existing_wh
+                    else:
+                        wh = WorkingHours(obj.project)
+
+                    if isinstance(value, dict):
+                        days = value.get('days', [])
+                        ranges = value.get('ranges', [])
+                        wh.set_hours(days, ranges)
+
+                    # Store working hours on resource for all scenarios
+                    for scIdx in range(obj.project.scenarioCount()):
+                        obj[('workinghours', scIdx)] = wh
+                elif key == 'vacation':
+                    # Resource vacation - similar to leaves but type is always vacation
+                    from rodmena_resource_management.core.leave import Leave
+                    from rodmena_resource_management.utils.time import TimeInterval
+
+                    start_date = value.get('start')
+                    end_date = value.get('end', start_date)
+
+                    if start_date and end_date:
+                        interval = TimeInterval(start_date, end_date)
+                        type_idx = Leave.Types.get('annual', 5)  # Vacation treated as annual leave
+                        leave = Leave(interval, type_idx)
+
+                        # Store leaves as a list for all scenarios
+                        for scIdx in range(obj.project.scenarioCount()):
+                            existing = obj.get('leaves', scIdx) or []
+                            if not isinstance(existing, list):
+                                existing = [existing]
+                            existing.append(leave)
+                            obj[('leaves', scIdx)] = existing
                 else:
                     try:
                         obj[key] = value
