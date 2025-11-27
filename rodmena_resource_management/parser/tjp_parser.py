@@ -200,7 +200,8 @@ class TJPTransformer(Transformer):
         """Parse dailymax limit."""
         duration = items[0] if items else '0h'
         resources = items[1] if len(items) > 1 else None
-        hours = self._parse_duration_to_hours(duration) if isinstance(duration, str) else duration
+        # TaskJuggler rounds limit values to integer slots
+        hours = self._parse_duration_to_hours(duration, round_to_slots=True) if isinstance(duration, str) else round(duration)
         return {
             'type': 'dailymax',
             'value': hours,
@@ -211,7 +212,8 @@ class TJPTransformer(Transformer):
         """Parse weeklymax limit."""
         duration = items[0] if items else '0h'
         resources = items[1] if len(items) > 1 else None
-        hours = self._parse_duration_to_hours(duration) if isinstance(duration, str) else duration
+        # TaskJuggler rounds limit values to integer slots
+        hours = self._parse_duration_to_hours(duration, round_to_slots=True) if isinstance(duration, str) else round(duration)
         return {
             'type': 'weeklymax',
             'value': hours,
@@ -222,23 +224,38 @@ class TJPTransformer(Transformer):
         """Parse limits resources: { resources id1, id2, ... }."""
         return [self._get_value(i) for i in items]
 
-    def _parse_duration_to_hours(self, duration_str):
-        """Parse duration string to hours."""
+    def _parse_duration_to_hours(self, duration_str, round_to_slots=False):
+        """Parse duration string to hours.
+
+        Args:
+            duration_str: Duration string like '6.4h', '2d', '1w'
+            round_to_slots: If True, round to integer hours (for limits)
+
+        Returns:
+            Duration in hours (float or int depending on round_to_slots)
+        """
         import re
         match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmy]?)', str(duration_str))
         if match:
             value = float(match.group(1))
             unit = match.group(2) or 'h'
             if unit == 'h':
-                return value
+                hours = value
             elif unit == 'd':
-                return value * 8  # 8 hours per day
+                hours = value * 8  # 8 hours per day
             elif unit == 'w':
-                return value * 40  # 40 hours per week
+                hours = value * 40  # 40 hours per week
             elif unit == 'm':
-                return value * 160  # ~160 hours per month
+                hours = value * 160  # ~160 hours per month
             elif unit == 'y':
-                return value * 2000  # ~2000 hours per year
+                hours = value * 2000  # ~2000 hours per year
+            else:
+                hours = 0
+
+            # TaskJuggler rounds limit values to integer slots
+            if round_to_slots:
+                return round(hours)
+            return hours
         return 0
 
     def resource_leaves(self, items):
@@ -1152,8 +1169,10 @@ class ModelBuilder:
                             limits_obj.setLimit(limit_type, limit_value)
 
                     # Store limits on task/resource for all scenarios
+                    # IMPORTANT: Each scenario needs its own copy of the limits
+                    # because they track usage counters independently
                     for scIdx in range(obj.project.scenarioCount()):
-                        obj[('limits', scIdx)] = limits_obj
+                        obj[('limits', scIdx)] = limits_obj.copy()
                 else:
                     try:
                         obj[key] = value

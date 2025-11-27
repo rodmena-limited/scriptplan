@@ -377,3 +377,62 @@ class TaskScenario(ScenarioData):
         attr = 'end' if atEnd else 'start'
         self.property[(attr, self.scenarioIdx)] = date
         # Propagate to dependencies?
+
+    def finishScheduling(self):
+        """
+        Finish scheduling for this task.
+        For container tasks, compute start/end from children.
+        """
+        # Recursively process children first
+        for child in self.property.children:
+            child_scenario = child.data[self.scenarioIdx] if child.data else None
+            if child_scenario and hasattr(child_scenario, 'finishScheduling'):
+                child_scenario.finishScheduling()
+
+        # For container tasks, set dates from children
+        if not self.property.leaf():
+            self.scheduleContainer()
+
+    def scheduleContainer(self):
+        """
+        Compute and set start/end dates for a container task based on its children.
+        """
+        if self.scheduled or self.property.leaf():
+            return
+
+        n_start = None
+        n_end = None
+
+        for child in self.property.children:
+            child_scenario = child.data[self.scenarioIdx] if child.data else None
+            if not child_scenario:
+                continue
+
+            # Abort if a child has not been scheduled
+            if not child.get('scheduled', self.scenarioIdx):
+                return
+
+            child_start = child.get('start', self.scenarioIdx)
+            child_end = child.get('end', self.scenarioIdx)
+
+            if child_start is None or child_end is None:
+                return
+
+            if n_start is None or child_start < n_start:
+                n_start = child_start
+            if n_end is None or child_end > n_end:
+                n_end = child_end
+
+        # Set the container dates
+        current_start = self.property.get('start', self.scenarioIdx)
+        current_end = self.property.get('end', self.scenarioIdx)
+
+        if n_start and (current_start is None or current_start > n_start):
+            self.property[('start', self.scenarioIdx)] = n_start
+
+        if n_end and (current_end is None or current_end < n_end):
+            self.property[('end', self.scenarioIdx)] = n_end
+
+        if n_start and n_end:
+            self.scheduled = True
+            self.property[('scheduled', self.scenarioIdx)] = True
