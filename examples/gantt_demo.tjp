@@ -1,0 +1,189 @@
+project "E-Commerce Platform Development" 2025-01-06 +3m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-01-06
+}
+
+shift standard "Standard Hours" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+resource pm "Project Manager" {
+  workinghours standard
+}
+
+resource designers "Design Team" {
+  workinghours standard
+}
+
+resource developers "Development Team" {
+  workinghours standard
+}
+
+resource qa "QA Team" {
+  workinghours standard
+}
+
+task project "E-Commerce Platform" {
+
+  task planning "Project Planning" {
+    task requirements "Requirements Gathering" {
+      start 2025-01-06-09:00
+      effort 40h
+      allocate pm
+    }
+
+    task architecture "System Architecture" {
+      depends !requirements
+      effort 24h
+      allocate pm, developers
+    }
+  }
+
+  task design "Design Phase" {
+    depends !planning
+
+    task wireframes "Create Wireframes" {
+      effort 32h
+      allocate designers
+    }
+
+    task mockups "UI/UX Mockups" {
+      depends !wireframes
+      effort 48h
+      allocate designers
+    }
+
+    task styleguide "Design System" {
+      depends !wireframes
+      effort 32h
+      allocate designers
+    }
+
+    task review "Design Review" {
+      depends !mockups, !styleguide
+      effort 16h
+      allocate pm, designers
+    }
+  }
+
+  task backend "Backend Development" {
+    depends !design.review
+
+    task database "Database Design" {
+      effort 24h
+      allocate developers
+    }
+
+    task api "REST API Development" {
+      depends !database
+      effort 80h
+      allocate developers
+    }
+
+    task auth "Authentication System" {
+      depends !database
+      effort 40h
+      allocate developers
+    }
+
+    task payment "Payment Integration" {
+      depends !api, !auth
+      effort 56h
+      allocate developers
+    }
+  }
+
+  task frontend "Frontend Development" {
+    depends !design.review
+
+    task setup "Project Setup" {
+      effort 16h
+      allocate developers
+    }
+
+    task components "UI Components" {
+      depends !setup
+      effort 64h
+      allocate developers
+    }
+
+    task pages "Page Implementation" {
+      depends !components, !backend.api
+      effort 96h
+      allocate developers
+    }
+
+    task integration "API Integration" {
+      depends !pages, !backend.payment
+      effort 48h
+      allocate developers
+    }
+  }
+
+  task testing "Testing & QA" {
+
+    task unit "Unit Testing" {
+      depends !backend.api, !frontend.components
+      effort 40h
+      allocate qa
+    }
+
+    task integration_test "Integration Testing" {
+      depends !frontend.integration
+      effort 56h
+      allocate qa
+    }
+
+    task e2e "End-to-End Testing" {
+      depends !integration_test
+      effort 40h
+      allocate qa
+    }
+
+    task performance "Performance Testing" {
+      depends !integration_test
+      effort 32h
+      allocate qa
+    }
+
+    task security "Security Audit" {
+      depends !integration_test
+      effort 24h
+      allocate qa
+    }
+  }
+
+  task deployment "Deployment" {
+    depends !testing.e2e, !testing.performance, !testing.security
+
+    task staging "Staging Deployment" {
+      effort 16h
+      allocate developers
+    }
+
+    task validation "Staging Validation" {
+      depends !staging
+      effort 24h
+      allocate qa, pm
+    }
+
+    task production "Production Deployment" {
+      depends !validation
+      effort 8h
+      allocate developers, pm
+    }
+
+    task monitoring "Post-Launch Monitoring" {
+      depends !production
+      effort 40h
+      allocate developers, qa
+    }
+  }
+}
+
+taskreport gantt "gantt" {
+  formats csv
+  columns id, name, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}

@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScriptPlan - Project Scheduling & Gantt Visualization</title>
+    <script src="https://code.jscharting.com/latest/jscharting.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f8f9fa;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 5px 15px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+
+        header p {
+            font-size: 14px;
+            margin-top: 4px;
+            opacity: 0.9;
+            font-weight: 400;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .input-section {
+            width: 30%;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 30px;
+            background: white;
+            border-right: 1px solid #e1e4e8;
+        }
+
+        .input-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .input-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #24292e;
+        }
+
+        .badge {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        #tjpInput {
+            flex: 1;
+            width: 100%;
+            padding: 16px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            border: 2px solid #e1e4e8;
+            border-radius: 8px;
+            resize: none;
+            background: #fafbfc;
+            transition: all 0.2s;
+        }
+
+        #tjpInput:focus {
+            outline: none;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            align-items: center;
+        }
+
+        #drawButton {
+            padding: 12px 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+
+        #drawButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        #drawButton:active {
+            transform: translateY(0);
+        }
+
+        #drawButton:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #message {
+            flex: 1;
+        }
+
+        .chart-section {
+            flex: 1;
+            padding: 24px 30px;
+            overflow: hidden;
+            background: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chart-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #24292e;
+        }
+
+
+        #ganttChart {
+            flex: 1;
+            width: 100%;
+            overflow: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            min-height: 500px;
+        }
+
+        #ganttWrapper {
+            min-height: 500px;
+            width: 100%;
+        }
+
+        .error {
+            background: #fee;
+            border-left: 4px solid #f87171;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: #991b1b;
+            margin-top: 12px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .success {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: #065f46;
+            margin-top: 12px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+
+        .loading::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 40px;
+            margin: 20px auto 0;
+            border: 4px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state svg {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 24px;
+            opacity: 0.4;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            color: #9ca3af;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ScriptPlan</h1>
+        <p>Precision Project Scheduling & Gantt Visualization</p>
+    </header>
+
+    <div class="container">
+        <div class="input-section">
+            <div class="input-header">
+                <h2>Project Definition</h2>
+                <span class="badge">TaskJuggler Format</span>
+            </div>
+            <textarea id="tjpInput">project "E-Commerce Platform Development" 2025-01-06 +3m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-01-06
+}
+
+shift standard "Standard Hours" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+resource pm "Project Manager" {
+  workinghours standard
+}
+
+resource designers "Design Team" {
+  workinghours standard
+}
+
+resource developers "Development Team" {
+  workinghours standard
+}
+
+resource qa "QA Team" {
+  workinghours standard
+}
+
+task project "E-Commerce Platform" {
+
+  task planning "Project Planning" {
+    task requirements "Requirements Gathering" {
+      start 2025-01-06-09:00
+      effort 40h
+      allocate pm
+    }
+
+    task architecture "System Architecture" {
+      depends !requirements
+      effort 24h
+      allocate pm, developers
+    }
+  }
+
+  task design "Design Phase" {
+    depends !planning
+
+    task wireframes "Create Wireframes" {
+      effort 32h
+      allocate designers
+    }
+
+    task mockups "UI/UX Mockups" {
+      depends !wireframes
+      effort 48h
+      allocate designers
+    }
+
+    task styleguide "Design System" {
+      depends !wireframes
+      effort 32h
+      allocate designers
+    }
+
+    task review "Design Review" {
+      depends !mockups, !styleguide
+      effort 16h
+      allocate pm, designers
+    }
+  }
+
+  task backend "Backend Development" {
+    depends !design.review
+
+    task database "Database Design" {
+      effort 24h
+      allocate developers
+    }
+
+    task api "REST API Development" {
+      depends !database
+      effort 80h
+      allocate developers
+    }
+
+    task auth "Authentication System" {
+      depends !database
+      effort 40h
+      allocate developers
+    }
+
+    task payment "Payment Integration" {
+      depends !api, !auth
+      effort 56h
+      allocate developers
+    }
+  }
+
+  task frontend "Frontend Development" {
+    depends !design.review
+
+    task setup "Project Setup" {
+      effort 16h
+      allocate developers
+    }
+
+    task components "UI Components" {
+      depends !setup
+      effort 64h
+      allocate developers
+    }
+
+    task pages "Page Implementation" {
+      depends !components, !backend.api
+      effort 96h
+      allocate developers
+    }
+
+    task integration "API Integration" {
+      depends !pages, !backend.payment
+      effort 48h
+      allocate developers
+    }
+  }
+
+  task testing "Testing & QA" {
+
+    task unit "Unit Testing" {
+      depends !backend.api, !frontend.components
+      effort 40h
+      allocate qa
+    }
+
+    task integration_test "Integration Testing" {
+      depends !frontend.integration
+      effort 56h
+      allocate qa
+    }
+
+    task e2e "End-to-End Testing" {
+      depends !integration_test
+      effort 40h
+      allocate qa
+    }
+
+    task performance "Performance Testing" {
+      depends !integration_test
+      effort 32h
+      allocate qa
+    }
+
+    task security "Security Audit" {
+      depends !integration_test
+      effort 24h
+      allocate qa
+    }
+  }
+
+  task deployment "Deployment" {
+    depends !testing.e2e, !testing.performance, !testing.security
+
+    task staging "Staging Deployment" {
+      effort 16h
+      allocate developers
+    }
+
+    task validation "Staging Validation" {
+      depends !staging
+      effort 24h
+      allocate qa, pm
+    }
+
+    task production "Production Deployment" {
+      depends !validation
+      effort 8h
+      allocate developers, pm
+    }
+
+    task monitoring "Post-Launch Monitoring" {
+      depends !production
+      effort 40h
+      allocate developers, qa
+    }
+  }
+}
+
+taskreport gantt "gantt" {
+  formats csv
+  columns id, name, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
+</textarea>
+            <div class="button-row">
+                <button id="drawButton">Draw Gantt Chart</button>
+                <div id="message"></div>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-header">
+                <h2>Gantt Chart</h2>
+            </div>
+            <div id="ganttChart" style="height: 100%; width: 100%;">
+                <div class="empty-state">
+                    <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="10" y="30" width="40" height="8" fill="#667eea" rx="2"/>
+                        <rect x="55" y="45" width="55" height="8" fill="#764ba2" rx="2"/>
+                        <rect x="20" y="60" width="65" height="8" fill="#667eea" rx="2"/>
+                        <rect x="15" y="75" width="45" height="8" fill="#764ba2" rx="2"/>
+                        <rect x="25" y="90" width="75" height="8" fill="#667eea" rx="2"/>
+                    </svg>
+                    <h3>Ready to Visualize</h3>
+                    <p>Click "Draw Gantt Chart" to generate your project timeline</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% raw %}
+    <script>
+        const tjpInput = document.getElementById('tjpInput');
+        const drawButton = document.getElementById('drawButton');
+        const ganttChart = document.getElementById('ganttChart');
+        const messageDiv = document.getElementById('message');
+
+        let ganttChartInstance = null;
+
+        drawButton.addEventListener('click', async () => {
+            const tjpContent = tjpInput.value.trim();
+
+            if (!tjpContent) {
+                showMessage('Please enter a project definition', 'error');
+                return;
+            }
+
+            drawButton.disabled = true;
+            drawButton.textContent = 'Processing...';
+            messageDiv.innerHTML = '';
+
+            ganttChart.innerHTML = '<div class="loading">Generating Gantt chart</div>';
+
+            if (ganttChartInstance) {
+                ganttChartInstance.dispose();
+                ganttChartInstance = null;
+            }
+
+            try {
+                const response = await fetch('/api/report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        tjp: tjpContent,
+                        format: 'json'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate report');
+                }
+
+                if (!data.data || data.data.length === 0) {
+                    showEmptyState('No tasks found', 'Your project definition contains no schedulable tasks');
+                    showMessage('Report generated but no tasks found', 'error');
+                    return;
+                }
+
+                // Convert ScriptPlan data to JSCharting format
+                const jsChartPoints = convertToJSChartingPoints(data.data);
+
+                if (jsChartPoints.length === 0) {
+                    showEmptyState('No valid tasks', 'No tasks with valid start/end dates found');
+                    showMessage('No tasks with start/end dates found', 'error');
+                    return;
+                }
+
+                renderGantt(jsChartPoints);
+                showMessage(`Successfully generated Gantt chart with ${jsChartPoints.length} tasks`, 'success');
+
+            } catch (error) {
+                console.error('Error:', error);
+                showEmptyState('Failed to generate chart', error.message);
+                showMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                drawButton.disabled = false;
+                drawButton.textContent = 'Draw Gantt Chart';
+            }
+        });
+
+        function renderGantt(points) {
+            ganttChart.innerHTML = '';
+
+            try {
+                ganttChartInstance = JSC.chart('ganttChart', {
+                    type: 'horizontal column solid',
+                    zAxis_scale_type: 'stacked',
+                    legend_visible: false,
+                    title: {
+                        label: {
+                            text: '',
+                            style: { fontSize: 18, fontWeight: 'bold' }
+                        }
+                    },
+                    yAxis: {
+                        scale: {
+                            interval_unit: 'week',
+                            type: 'time'
+                        },
+                        formatString: 'MMM dd, yyyy',
+                        line_width: 2,
+                        line_color: '#E0E0E0',
+                        defaultTick: {
+                            enabled: true,
+                            label: {
+                                style: { fontSize: 11, color: '#666' }
+                            },
+                            gridLine: {
+                                width: 1,
+                                color: '#F0F0F0'
+                            }
+                        },
+                        customTicks: [
+                            {
+                                value_pattern: 'week',
+                                label_text: '{%min:MMM dd}',
+                                gridLine_width: 2,
+                                gridLine_color: '#E0E0E0'
+                            },
+                            {
+                                value_pattern: 'month',
+                                label: {
+                                    text: '{%min:MMMM yyyy}',
+                                    style: { fontSize: 13, fontWeight: 'bold', color: '#333' }
+                                },
+                                gridLine: { width: 2, color: '#667eea', opacity: 0.3 }
+                            }
+                        ],
+                        markers: [
+                            {
+                                value: { pattern: { weekday: [0, 6] } },
+                                color: ['#F5F7FA', 0.7],
+                                legendEntry: { name: 'Weekend', value: '' }
+                            }
+                        ]
+                    },
+                    xAxis: {
+                        spacingPercentage: 0.3,
+                        defaultTick: {
+                            label: {
+                                maxWidth: 200,
+                                style: { fontSize: 12, color: '#333' }
+                            }
+                        },
+                        line: { width: 2, color: '#E0E0E0' }
+                    },
+                    defaultSeries: {
+                        opacity: 0.9,
+                        mouseTracking_enabled: true,
+                        defaultPoint: {
+                            color: '#667eea',
+                            outline: { width: 1, color: '#5568d3' },
+                            xAxisTick_label_text: '%name',
+                            radius: 3,
+                            tooltip: '<b>%name</b><br/><b>Start:</b> %low<br/><b>End:</b> %high<br/><b>Duration:</b> {days(%high-%low)} days',
+                            states: {
+                                hover: {
+                                    color: '#764ba2',
+                                    outline: { width: 2, color: '#5a3780' }
+                                },
+                                select: {
+                                    enabled: true,
+                                    color: '#764ba2'
+                                }
+                            }
+                        }
+                    },
+                    toolbar_visible: false,
+                    series: [{
+                        points: points
+                    }]
+                });
+
+                // Remove JSCharting branding logo after chart loads
+                setTimeout(() => {
+                    const brandingLogo = document.querySelector('#brandingLogo');
+                    if (brandingLogo) {
+                        brandingLogo.remove();
+                    }
+                    // Also remove any other branding elements
+                    document.querySelectorAll('a[href*="jscharting.com"]').forEach(el => el.remove());
+                }, 200);
+            } catch (err) {
+                console.error('JSCharting error:', err);
+                showEmptyState('Rendering Error', err.message);
+            }
+        }
+
+        function convertToJSChartingPoints(data) {
+            const points = [];
+            const taskMap = {};
+
+            // First pass: create all points and build task map
+            data.forEach((item, index) => {
+                if (!item.start || !item.end) {
+                    return;
+                }
+
+                const start = parseDate(item.start);
+                const end = parseDate(item.end);
+
+                if (!start || !end) {
+                    return;
+                }
+
+                // Use full name if available, otherwise use id
+                const displayName = item.name || item.id || `Task ${index + 1}`;
+                const taskId = item.id || `task-${index}`;
+
+                // Determine parent from id (e.g., "project.planning.requirements" -> parent is "project.planning")
+                let parentId = null;
+                if (item.id && item.id.includes('.')) {
+                    const parts = item.id.split('.');
+                    if (parts.length > 1) {
+                        parts.pop(); // Remove last part
+                        parentId = parts.join('.');
+                    }
+                }
+
+                const point = {
+                    name: displayName,
+                    y: [formatJSChartDate(start), formatJSChartDate(end)],
+                    id: taskId,
+                    attributes: {
+                        taskId: item.id,
+                        startDate: item.start,
+                        endDate: item.end
+                    }
+                };
+
+                // Add parent relationship if exists
+                if (parentId && parentId !== 'project') {
+                    point.parent = parentId;
+                }
+
+                points.push(point);
+                taskMap[taskId] = point;
+            });
+
+            console.log(`Converted ${points.length} tasks for JSCharting Gantt chart`);
+            return points;
+        }
+
+        function parseDate(dateStr) {
+            if (!dateStr) return null;
+            const normalized = dateStr.replace(/^(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})/, '$1 $2');
+            const date = new Date(normalized);
+            if (isNaN(date.getTime())) {
+                const dateOnly = normalized.split(/[\s-]/)[0];
+                return new Date(dateOnly);
+            }
+            return date;
+        }
+
+        function formatJSChartDate(date) {
+            // JSCharting accepts 'MM/DD/YYYY' format
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${month}/${day}/${year}`;
+        }
+
+        function showMessage(msg, type) {
+            messageDiv.className = type;
+            messageDiv.textContent = msg;
+        }
+
+        function showEmptyState(title, message) {
+            // Clear gantt container content but preserve the container
+            const container = document.getElementById('ganttContainer');
+            if (container) {
+                container.innerHTML = '<div class="empty-state"><h3>' + title + '</h3><p>' + message + '</p></div>';
+            } else {
+                ganttChart.innerHTML = '<div class="empty-state"><h3>' + title + '</h3><p>' + message + '</p></div>';
+            }
+        }
+    </script>
+    {% endraw %}
+</body>
+</html>

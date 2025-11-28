@@ -36,6 +36,7 @@ keywords = ["scheduling", "project-management", "resource-allocation", "gantt", 
 dependencies = [
     "lark>=1.0.0",
     "python-dateutil>=2.8.0",
+    "pytz>=2022.1.0",
     "click>=8.0.0",
 ]
 
@@ -50,6 +51,10 @@ dev = [
     "twine",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+]
+web = [
+    "flask>=2.0.0",
+    "waitress>=2.1.0",
 ]
 
 [project.scripts]
@@ -70,7 +75,13 @@ where = ["."]
 include = ["scriptplan*"]
 
 [tool.setuptools.package-data]
-scriptplan = ["py.typed", "parser/*.lark"]
+scriptplan = [
+    "py.typed",
+    "parser/*.lark",
+    "static/css/*.css",
+    "static/js/*.js",
+    "templates/*.html"
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

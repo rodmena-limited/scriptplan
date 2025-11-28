@@ -219,3 +219,5 @@ app/screenshot_tool.py
 .claude
 GEMINI.md
 CLAUDE.md
+screenshots/
+screenshot_tool.py

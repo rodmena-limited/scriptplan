@@ -489,6 +489,77 @@ def report(
 
 
 @cli.command()
+@click.argument('port', type=int, default=5000)
+@click.option(
+    '--host',
+    default='127.0.0.1',
+    help='Host to bind to (default: 127.0.0.1).'
+)
+@click.pass_context
+def web(ctx: click.Context, port: int, host: str) -> None:
+    """
+    Start the ScriptPlan web API server.
+
+    Launches a production-ready HTTP server that accepts TJP content
+    and generates reports via REST API.
+
+    \b
+    PORT: Port number to listen on (default: 5000)
+
+    \b
+    Examples:
+        # Start server on default port 5000
+        plan web
+
+        # Start server on custom port
+        plan web 8777
+
+        # Bind to all interfaces
+        plan web 5000 --host 0.0.0.0
+
+    \b
+    Endpoints:
+        GET  /              Homepage with API documentation
+        GET  /health        Health check endpoint
+        POST /api/report    Generate report from TJP content
+    """
+    verbose = ctx.obj.get('verbose', False)
+    quiet = ctx.obj.get('quiet', False)
+
+    try:
+        # Import flask and waitress
+        try:
+            from scriptplan.web import app
+            from waitress import serve
+        except ImportError as e:
+            click.secho(
+                "Error: Web dependencies not installed. "
+                "Install with: pip install scriptplan[web]",
+                fg='red',
+                err=True
+            )
+            sys.exit(1)
+
+        if not quiet:
+            click.secho(f"Starting ScriptPlan web server...", fg='green', err=True)
+            click.secho(f"Listening on http://{host}:{port}", fg='blue', err=True)
+            click.secho(f"Press Ctrl+C to stop", fg='yellow', err=True)
+
+        # Start the server using waitress
+        serve(app, host=host, port=port)
+
+    except KeyboardInterrupt:
+        if not quiet:
+            click.secho("\nServer stopped by user", fg='yellow', err=True)
+        sys.exit(0)
+    except Exception as e:
+        click.secho(f"Error starting server: {e}", fg='red', err=True)
+        if verbose:
+            logger.exception("Server startup failed")
+        sys.exit(1)
+
+
+@cli.command()
 def help() -> None:
     """
     Show detailed help and usage information.
