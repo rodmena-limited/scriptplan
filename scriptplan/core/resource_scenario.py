@@ -6,7 +6,7 @@ scenario-specific data for a Resource.
 """
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.scheduler.scoreboard import Scoreboard
@@ -73,7 +73,7 @@ class ResourceScenario(ScenarioData):
         # Track which tasks used which slots and how much
         # slot_idx -> list of (task, seconds_used)
         # This allows multiple tasks to share a slot
-        self.slotTaskUsage: dict[int, List[Tuple[Any, float]]] = {}
+        self.slotTaskUsage: dict[int, list[tuple[Any, float]]] = {}
 
         # Data cache
         self.dCache = DataCache.instance()
@@ -538,7 +538,7 @@ class ResourceScenario(ScenarioData):
         result3: bool = self.project.isWorkingTime(sb_idx)
         return result3
 
-    def setReports_i(self, reports: List[Any]) -> None:
+    def setReports_i(self, reports: list[Any]) -> None:
         """
         Internal method to set reports relationship.
 

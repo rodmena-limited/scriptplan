@@ -47,10 +47,7 @@ class TaskScenario(ScenarioData):
             AttributeBase.setMode(1)
 
             proj_scenario = self.project.scenario(self.scenarioIdx) if hasattr(self.project, 'scenario') else None
-            if proj_scenario:
-                proj_projection = proj_scenario.get('projection')
-            else:
-                proj_projection = None
+            proj_projection = proj_scenario.get('projection') if proj_scenario else None
             if proj_projection:
                  self.property[( 'projectionmode', self.scenarioIdx )] = proj_projection
 

@@ -240,14 +240,14 @@ class Journal:
         entries = self._entries_by_property.get(task.fullId, [])
         return self._filter_entries(entries, start, end, alert_level)
 
-    def entries_by_task_recursive(self, task: 'Task', start: Optional[datetime] = None,
+    def entries_by_task_recursive(self, task: Any, start: Optional[datetime] = None,
                                   end: Optional[datetime] = None,
                                   alert_level: Optional[AlertLevel] = None) -> JournalEntryList:
         """
         Get journal entries for a task and all its children.
 
         Args:
-            task: The root task
+            task: The root task (or any property-like object with fullId and children)
             start: Optional start date filter
             end: Optional end date filter
             alert_level: Optional minimum alert level filter
@@ -262,10 +262,8 @@ class Journal:
 
         # Get entries for all children recursively
         if hasattr(task, 'children'):
-            from scriptplan.core.task import Task
             for child in task.children:
-                if isinstance(child, Task):
-                    result.extend(self.entries_by_task_recursive(child, start, end, alert_level))
+                result.extend(self.entries_by_task_recursive(child, start, end, alert_level))
 
         return self._filter_entries(result, start, end, alert_level)
 

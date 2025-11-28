@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 from scriptplan.core.journal import Journal
 from scriptplan.core.property import (
@@ -53,7 +53,7 @@ class Project(MessageHandler):
         if hasattr(AttributeBase, 'setMode'):
              AttributeBase.setMode(0)
 
-        self.attributes: Dict[str, Any] = {
+        self.attributes: dict[str, Any] = {
             'alertLevels': AlertLevelDefinitions(),
             'auxdir': '',
             'copyright': None,
@@ -120,12 +120,12 @@ class Project(MessageHandler):
         self.scoreboard: Optional[Scoreboard] = None
         self.scoreboardNoLeaves: Optional[Scoreboard] = None
 
-        self.reportContexts: List[Any] = []
+        self.reportContexts: list[Any] = []
         self.outputDir: str = './'
         self.warnTsDeltas: bool = False
 
     def _define_scenario_attributes(self) -> None:
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             ['active', 'Enabled', BooleanAttribute, True, False, False, True],
             ['ownbookings', 'Own Bookings', BooleanAttribute, False, False, False, True],
             ['projection', 'Projection Mode', BooleanAttribute, True, False, False, False],
@@ -134,7 +134,7 @@ class Project(MessageHandler):
             self.scenarios.addAttributeType(AttributeDefinition(*a))
 
     def _define_account_attributes(self) -> None:
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             # ID           Name            Type                     Inh   InhPrj Scen  Default
             ['aggregate', 'Aggregate', SymbolAttribute, True, False, False, 'tasks'],
             ['bsi', 'BSI', StringAttribute, False, False, False, ''],
@@ -147,7 +147,7 @@ class Project(MessageHandler):
             self.accounts.addAttributeType(AttributeDefinition(*a))
 
     def _define_shift_attributes(self) -> None:
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             # ID           Name            Type                     Inh   InhPrj Scen  Default
             ['bsi', 'BSI', StringAttribute, False, False, False, ''],
             ['index', 'Index', IntegerAttribute, False, False, False, -1],
@@ -162,7 +162,7 @@ class Project(MessageHandler):
 
     def _define_resource_attributes(self) -> None:
         # Add attributes required by ResourceScenario
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             ['alloctdeffort', 'Allocated Effort', IntegerAttribute, True, False, True, 0],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
             ['bsi', 'BSI', StringAttribute, False, False, False, ""],
@@ -189,7 +189,7 @@ class Project(MessageHandler):
             self.resources.addAttributeType(AttributeDefinition(*a))
 
     def _define_task_attributes(self) -> None:
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             ['allocate', 'Allocate', ListAttribute, True, False, True, []],
             ['assignedresources', 'Assigned Resources', ListAttribute, False, False, True, []],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
@@ -230,7 +230,7 @@ class Project(MessageHandler):
             self.tasks.addAttributeType(AttributeDefinition(*a))
 
     def _define_report_attributes(self) -> None:
-        attrs: List[List[Any]] = [
+        attrs: list[list[Any]] = [
             # ID               Name                Type                     Inh    InhPrj  Scen   Default
             ['accountRoot', 'Account Root', StringAttribute, True, False, False, None],
             ['auxDir', 'Aux Directory', StringAttribute, True, True, False, ''],
@@ -374,8 +374,8 @@ class Project(MessageHandler):
         # First, identify which tasks have successors via normal (finish-to-start) dependencies
         # For onstart dependencies in ALAP, the dependent task (A) derives its END from
         # predecessor's START, so the predecessor (B) is the terminal task
-        has_fs_successor: Set[Any] = set()  # Tasks that are predecessors in finish-to-start deps
-        has_onstart_dep: Set[Any] = set()   # Tasks that have onstart dependencies (not terminal)
+        has_fs_successor: set[Any] = set()  # Tasks that are predecessors in finish-to-start deps
+        has_onstart_dep: set[Any] = set()   # Tasks that have onstart dependencies (not terminal)
 
         for task in self.tasks:
             if not task.leaf():
@@ -442,7 +442,7 @@ class Project(MessageHandler):
                 resource.finishScheduling(scIdx)  # type: ignore[attr-defined]
 
     def scheduleScenario(self, scIdx: int) -> bool:
-        all_tasks: List[Any] = list(self.tasks)
+        all_tasks: list[Any] = list(self.tasks)
 
         # First, handle milestones - they just need end=start (or start=end)
         # A milestone is either:
@@ -481,7 +481,7 @@ class Project(MessageHandler):
         self._propagateALAPMode(scIdx)
 
         # Only care about leaf tasks that aren't scheduled already
-        tasks: List[Any] = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
+        tasks: list[Any] = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
 
         # Sorting
         # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
@@ -494,7 +494,7 @@ class Project(MessageHandler):
 
         tasks.sort(key=sort_key)
 
-        failedTasks: List[Any] = []
+        failedTasks: list[Any] = []
 
         while tasks:
             taskToRemove: Optional[Any] = None
@@ -584,7 +584,7 @@ class Project(MessageHandler):
            to the dependent task's calculated start
         """
         # Build reverse dependency map: task -> list of tasks that depend on it
-        reverse_deps: Dict[Any, List[Any]] = {}  # predecessor_id -> [successor tasks]
+        reverse_deps: dict[Any, list[Any]] = {}  # predecessor_id -> [successor tasks]
         for task in self.tasks:
             if not task.leaf():
                 continue
@@ -605,7 +605,7 @@ class Project(MessageHandler):
                     reverse_deps[pred_id].append(task)
 
         # Find ALAP anchor tasks (ALAP with fixed end)
-        alap_anchors: List[Any] = []
+        alap_anchors: list[Any] = []
         for task in self.tasks:
             if not task.leaf():
                 continue
@@ -616,7 +616,7 @@ class Project(MessageHandler):
 
         # Propagate ALAP backward from each anchor
         # Use BFS to traverse dependency chains
-        processed: Set[Any] = set()
+        processed: set[Any] = set()
         for anchor in alap_anchors:
             anchor_id = anchor.fullId if hasattr(anchor, 'fullId') else id(anchor)
             processed.add(anchor_id)
@@ -642,7 +642,7 @@ class Project(MessageHandler):
                 # It should finish as late as possible while still allowing the anchor to start
                 self._markTaskALAP(pred, scIdx, processed, reverse_deps)
 
-    def _markTaskALAP(self, task: Any, scIdx: int, processed: Set[Any], reverse_deps: Dict[Any, List[Any]]) -> None:
+    def _markTaskALAP(self, task: Any, scIdx: int, processed: set[Any], reverse_deps: dict[Any, list[Any]]) -> None:
         """
         Mark a task as ALAP and propagate to its predecessors.
 
