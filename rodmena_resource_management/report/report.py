@@ -176,11 +176,11 @@ class Report(PropertyTreeNode, MessageHandler):
         This intermediate format can later be turned into the respective
         output formats (HTML, CSV, etc.).
         """
-        scenarios = self.get('scenarios') or []
-        if not scenarios:
-            self.warning('all_scenarios_disabled',
-                        f"The report {self.fullId} has only disabled scenarios. "
-                        "The report will possibly be empty.")
+        # scenarios = self.get('scenarios') or []
+        # if not scenarios:
+        #     self.warning('all_scenarios_disabled',
+        #                 f"The report {self.fullId} has only disabled scenarios. "
+        #                 "The report will possibly be empty.")
 
         self.content = None
 

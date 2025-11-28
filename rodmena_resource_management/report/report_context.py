@@ -27,6 +27,8 @@ class Query:
         self.property = None
         self.scope_property = None
         self.scenario_idx = None
+        self.attributeId = None  # Attribute ID to query
+        self.result = None       # Result of the query
         self.load_unit = 'days'
         self.number_format = None
         self.time_format = '%Y-%m-%d'
@@ -59,6 +61,8 @@ class Query:
         new_query.property = self.property
         new_query.scope_property = self.scope_property
         new_query.scenario_idx = self.scenario_idx
+        new_query.attributeId = self.attributeId
+        new_query.result = self.result
         new_query.load_unit = self.load_unit
         new_query.number_format = self.number_format
         new_query.time_format = self.time_format
@@ -80,11 +84,38 @@ class Query:
         This is the main entry point for executing a query against a property.
         """
         if not self.property:
+            self.result = None
             return None
 
-        # Delegate to the property's query handling
-        # This would typically call property-specific query methods
-        return None
+        # If attributeId is set, fetch the value from the property
+        if self.attributeId:
+            try:
+                # Use scenario_idx if available, otherwise just get the attribute
+                if self.scenario_idx is not None:
+                    # Ensure property supports scenario indexing
+                    # We pass scenario_idx as a tuple key if the property supports it
+                    # But property.get() usually takes (name, scIdx) or just name
+                    # Let's look at how PropertyTreeNode.get is implemented
+                    # It usually takes (attribute_name, scenario_idx)
+                    
+                    # Note: property.py logic sets self.scenarioIdx which maps to self.scenario_idx here
+                    # property.py calls self._query.process()
+                    
+                    val = self.property.get(self.attributeId, self.scenario_idx)
+                else:
+                    val = self.property.get(self.attributeId)
+                
+                self.result = val
+            except Exception:
+                self.result = None
+        
+        return self.result
+
+    def to_sort(self) -> Any:
+        """
+        Return a sortable representation of the query result.
+        """
+        return self.result
 
 
 class ReportContext:

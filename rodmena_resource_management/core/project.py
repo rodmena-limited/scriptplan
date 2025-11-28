@@ -278,8 +278,6 @@ class Project(MessageHandler):
             return self.scenarios[arg]
         return None
 
-# ...
-
     @staticmethod
     def maxScheduleGranularity():
         return 60 * 60
