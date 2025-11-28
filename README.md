@@ -14,14 +14,58 @@ A precise project scheduling engine with minute-level accuracy for resource allo
 pip install scriptplan
 ```
 
-## Usage
+## Quick Start
 
-### Command Line
+### Report Generation (Unix-style)
 
 ```bash
-scriptplan project.tjp
-scriptplan --output-dir ./reports project.tjp
+# Generate JSON report to stdout
+plan report project.tjp
+
+# Generate CSV report
+plan report --csv project.tjp
+
+# Save to file
+plan report project.tjp > output.json
+plan report --csv project.tjp > output.csv
+
+# Read from stdin
+cat project.tjp | plan report
+plan report - < project.tjp
+
+# Pipe to other tools
+plan report project.tjp | jq '.data[0]'
+plan report --csv project.tjp | csvkit
+
+# Process multiple files
+for f in projects/*.tjp; do
+  plan report "$f" | jq -r '.report_id'
+done
 ```
+
+**Output Format** (JSON):
+```json
+{
+  "data": [
+    {
+      "id": "project.task1",
+      "start": "2024-01-01-09:00",
+      "end": "2024-01-05-17:00"
+    }
+  ],
+  "columns": ["id", "start", "end"],
+  "report_id": "ea3f901dd6426dfa58288d945819c75485fd9ff1875db59def350f219e2d62ca"
+}
+```
+
+**Features**:
+- Output to stdout (Unix philosophy)
+- Messages to stderr
+- SHA256 report_id (content-based hash)
+- Lowercase column names
+- No HTML metadata
+- No file pollution (uses temp directories)
+- Safe for concurrent execution (100+ instances)
 
 ### Python API
 
@@ -141,3 +185,13 @@ delivery.assemble_b: 2025-07-16-08:00 -> 2025-07-17-16:00
 ## License
 
 Apache 2.0
+
+
+## Why?
+This scheduler is part of Highway Workflow Egnine's worker capacity management system.
+I decided to open-source it for the community to benefit from its precise scheduling capabilities.
+Thanks to TaskJuggler's established syntax, users can easily adopt ScriptPlan without learning a new format.
+Credits to TaskJuggler for the original project definition language and concepts.
+
+Yours,
+Farshid.
