@@ -281,6 +281,7 @@ def report(
     temp_file: Optional[Path] = None
     auto_report_id = ""
     stdin_temp_file: Optional[Path] = None
+    temp_output_dir: Optional[Path] = None
 
     try:
         # Check if reading from stdin
@@ -330,6 +331,13 @@ def report(
         # Determine output format
         output_format = 'csv' if output_csv else 'json'
 
+        # Create temp directory for report output
+        import tempfile
+        temp_output_dir = Path(tempfile.mkdtemp(prefix="plan_output_"))
+
+        if verbose:
+            logger.debug(f"Created temp output directory: {temp_output_dir}")
+
         # Create auto-report file (always, to ensure output in requested format)
         if verbose:
             logger.debug(f"Creating auto-report for {output_format} format...")
@@ -341,21 +349,23 @@ def report(
             logger.debug(f"Temporary file: {temp_file}")
             logger.debug(f"Auto-report ID: {auto_report_id}")
 
-        # Run scriptplan to generate reports
+        # Run scriptplan to generate reports in temp directory
         if verbose:
             logger.debug("Running ScriptPlan report generator...")
 
-        success, error_msg = run_scriptplan(str(temp_file))
+        success, error_msg = run_scriptplan(str(temp_file), str(temp_output_dir))
 
         if not success:
             raise ReportGenerationError(error_msg or "Report generation failed")
 
-        # Find generated output files
-        output_files = find_output_files(tjp_path, output_format, auto_report_id)
+        # Find ALL generated files in temp directory
+        if output_format == 'json':
+            output_files = list(temp_output_dir.glob("*.json"))
+        else:
+            output_files = list(temp_output_dir.glob("*.csv"))
 
-        if not output_files:
-            # Fallback: look for any files matching the base name
-            output_files = find_output_files(tjp_path, output_format)
+        if verbose:
+            logger.debug(f"Found {len(output_files)} output files: {[f.name for f in output_files]}")
 
         if not output_files:
             raise ReportGenerationError(
@@ -363,7 +373,7 @@ def report(
                 "This may indicate a scheduling issue with your project."
             )
 
-        # Get the primary output file
+        # Get the primary output file (first one)
         primary_output = output_files[0]
 
         if verbose:
@@ -411,11 +421,12 @@ def report(
             # Output to stdout (Unix way)
             click.echo(report_content)
 
-        # Clean up auto-generated file
-        if primary_output.exists():
-            primary_output.unlink()
+        # Clean up temp output directory (contains all generated files)
+        if temp_output_dir and temp_output_dir.exists():
+            import shutil
+            shutil.rmtree(temp_output_dir)
             if verbose:
-                logger.debug(f"Cleaned up: {primary_output}")
+                logger.debug(f"Cleaned up temp output directory: {temp_output_dir}")
 
         # Success message to stderr
         if not quiet:
@@ -439,11 +450,14 @@ def report(
         if verbose:
             logger.exception("File validation failed")
 
-        # Cleanup temp files
+        # Cleanup temp files and directories
         if temp_file and temp_file.exists():
             temp_file.unlink()
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
+        if temp_output_dir and temp_output_dir.exists():
+            import shutil
+            shutil.rmtree(temp_output_dir)
 
         sys.exit(1)
 
@@ -452,11 +466,14 @@ def report(
         if verbose:
             logger.exception("Report generation failed")
 
-        # Cleanup temp files
+        # Cleanup temp files and directories
         if temp_file and temp_file.exists():
             temp_file.unlink()
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
+        if temp_output_dir and temp_output_dir.exists():
+            import shutil
+            shutil.rmtree(temp_output_dir)
 
         sys.exit(2)
 
@@ -465,11 +482,14 @@ def report(
         if verbose:
             logger.exception("Unexpected error occurred")
 
-        # Cleanup temp files
+        # Cleanup temp files and directories
         if temp_file and temp_file.exists():
             temp_file.unlink()
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
+        if temp_output_dir and temp_output_dir.exists():
+            import shutil
+            shutil.rmtree(temp_output_dir)
 
         sys.exit(2)
 

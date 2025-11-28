@@ -521,7 +521,7 @@ class ScriptPlan:
             return False
 
 
-def run_scriptplan(tjp_file: str) -> tuple[bool, Optional[str]]:
+def run_scriptplan(tjp_file: str, output_dir: Optional[str] = None) -> tuple[bool, Optional[str]]:
     """
     Run ScriptPlan report generation on a .tjp file.
 
@@ -529,6 +529,7 @@ def run_scriptplan(tjp_file: str) -> tuple[bool, Optional[str]]:
 
     Args:
         tjp_file: Path to the .tjp file
+        output_dir: Optional output directory for reports (default: current directory)
 
     Returns:
         Tuple of (success, error_message)
@@ -543,7 +544,10 @@ def run_scriptplan(tjp_file: str) -> tuple[bool, Optional[str]]:
         with contextlib.redirect_stderr(stderr_capture):
             # Create minimal args
             parser = create_parser()
-            args = parser.parse_args([tjp_file])
+            args_list = [tjp_file]
+            if output_dir:
+                args_list.extend(['--output-dir', output_dir])
+            args = parser.parse_args(args_list)
 
             # Suppress logging for programmatic use
             logging.getLogger().setLevel(logging.ERROR)
