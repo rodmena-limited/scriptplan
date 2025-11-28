@@ -1,4 +1,4 @@
-project "Math_Torture" 2024-02-28-00:00 +6m {
+project "Math_Torture" 2024-02-28-00:00 +3m {
   timezone "Etc/UTC"
   timeformat "%Y-%m-%d %H:%M"
   numberformat "-" "" "," "." 2

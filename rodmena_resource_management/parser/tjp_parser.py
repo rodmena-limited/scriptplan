@@ -318,6 +318,17 @@ class TJPTransformer(Transformer):
             'end': end_date
         })
 
+    def resource_booking(self, items):
+        """Handle resource booking: booking STRING date duration_value."""
+        name = self._get_value(items[0])
+        start = items[1] if len(items) > 1 else None
+        duration = self._get_value(items[2]) if len(items) > 2 else '0h'
+        return ('booking', {
+            'name': name,
+            'start': start,
+            'duration': duration
+        })
+
     def resource_workinghours(self, items):
         """Handle resource workinghours: workinghours mon, tue, ... 08:00 - 17:00 or shift_id."""
         if not items:
@@ -641,6 +652,9 @@ class TJPTransformer(Transformer):
 
     def dep_gaplength(self, items):
         return {'gaplength': self._get_value(items[0])}
+
+    def dep_maxgapduration(self, items):
+        return {'maxgapduration': self._get_value(items[0])}
 
     def dep_onend(self, items):
         return {'onend': True}
@@ -1114,23 +1128,26 @@ class ModelBuilder:
                     dep_ref = dep_item.get('ref', '')
                     gapduration = dep_item.get('gapduration')
                     gaplength = dep_item.get('gaplength')
+                    maxgapduration = dep_item.get('maxgapduration')
                     onstart = dep_item.get('onstart', False)
                     onend = dep_item.get('onend', False)
                 else:
                     dep_ref = dep_item
                     gapduration = None
                     gaplength = None
+                    maxgapduration = None
                     onstart = False
                     onend = False
 
                 dep_task = self._resolve_task_reference(project, task, dep_ref)
                 if dep_task:
                     # Store as dict if we have gap info or onstart/onend, else just the task
-                    if gapduration or gaplength or onstart or onend:
+                    if gapduration or gaplength or maxgapduration or onstart or onend:
                         resolved.append({
                             'task': dep_task,
                             'gapduration': gapduration,
                             'gaplength': gaplength,
+                            'maxgapduration': maxgapduration,
                             'onstart': onstart,
                             'onend': onend
                         })
@@ -1572,6 +1589,47 @@ class ModelBuilder:
                         leave = Leave(interval, type_idx)
 
                         # Store leaves as a list for all scenarios
+                        for scIdx in range(obj.project.scenarioCount()):
+                            existing = obj.get('leaves', scIdx) or []
+                            if not isinstance(existing, list):
+                                existing = [existing]
+                            existing.append(leave)
+                            obj[('leaves', scIdx)] = existing
+                elif key == 'booking':
+                    # Resource booking - blocks resource during a time period
+                    # booking "name" date +duration (e.g., "Maintenance" 2025-05-12-09:00 +6h)
+                    from rodmena_resource_management.core.leave import Leave
+                    from rodmena_resource_management.utils.time import TimeInterval
+                    from datetime import timedelta
+                    import re
+
+                    start_date = value.get('start')
+                    duration_str = value.get('duration', '0h')
+
+                    if start_date:
+                        # Parse duration to compute end date
+                        match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmymin]+)', str(duration_str))
+                        if match:
+                            num = float(match.group(1))
+                            unit = match.group(2)
+                            if unit == 'h':
+                                delta = timedelta(hours=num)
+                            elif unit == 'min':
+                                delta = timedelta(minutes=num)
+                            elif unit == 'd':
+                                delta = timedelta(days=num)
+                            else:
+                                delta = timedelta(hours=num)
+                        else:
+                            delta = timedelta(hours=0)
+
+                        end_date = start_date + delta
+                        interval = TimeInterval(start_date, end_date)
+                        # Use special type to mark as booking (treated as unavailable)
+                        type_idx = Leave.Types.get('special', 3)
+                        leave = Leave(interval, type_idx)
+
+                        # Store as leaves (blocks resource availability)
                         for scIdx in range(obj.project.scenarioCount()):
                             existing = obj.get('leaves', scIdx) or []
                             if not isinstance(existing, list):

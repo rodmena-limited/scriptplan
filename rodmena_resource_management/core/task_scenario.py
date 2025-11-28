@@ -192,6 +192,204 @@ class TaskScenario(ScenarioData):
 
         return successors
 
+    def _getSuccessorsWithMaxGap(self):
+        """
+        Get successors that have maxgapduration constraint on this task.
+
+        Returns list of (task, maxgapduration, gapduration) tuples.
+        """
+        result = []
+        for task in self.project.tasks:
+            if not task.leaf():
+                continue
+            deps = task.get('depends', self.scenarioIdx) or []
+            for dep in deps:
+                if isinstance(dep, dict):
+                    pred = dep.get('task')
+                    maxgap = dep.get('maxgapduration')
+                    gap = dep.get('gapduration')
+                elif hasattr(dep, 'task'):
+                    pred = dep.task
+                    maxgap = getattr(dep, 'maxgapduration', None)
+                    gap = getattr(dep, 'gapduration', None)
+                else:
+                    pred = dep
+                    maxgap = None
+                    gap = None
+
+                if pred is self.property and maxgap:
+                    result.append((task, maxgap, gap))
+                    break
+        return result
+
+    def _getSuccessorEarliestStart(self, successor):
+        """
+        Find the earliest time a successor task can start based on its resource availability.
+
+        Returns datetime of earliest available slot.
+        """
+        from datetime import timedelta
+
+        # Get successor's allocations
+        allocations = successor.get('allocate', self.scenarioIdx)
+        if not allocations:
+            # No allocations - use project working time
+            start_idx = self.project.dateToIdx(self.project['start'])
+            end_idx = self.project.dateToIdx(self.project['end'])
+            for idx in range(start_idx, end_idx):
+                if self.project.isWorkingTime(idx):
+                    return self.project.idxToDate(idx)
+            return self.project['end']
+
+        # Normalize allocations
+        alloc_data = allocations
+        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
+            alloc_data = allocations[0]
+
+        if isinstance(alloc_data, dict):
+            resource_ids = alloc_data.get('resources', [])
+        elif isinstance(alloc_data, list):
+            resource_ids = alloc_data
+        else:
+            resource_ids = [alloc_data]
+
+        # Get the primary resource
+        resource = None
+        for res_id in resource_ids:
+            resource = self._resolve_resource(res_id)
+            if resource:
+                break
+
+        if not resource:
+            return self.project['start']
+
+        # Get resource's scenario data
+        res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+        if res_scenario is None:
+            return self.project['start']
+
+        # Initialize scoreboard if needed
+        if res_scenario.scoreboard is None:
+            res_scenario.prepareScheduling()
+
+        # Find earliest slot where resource is on shift
+        start_idx = self.project.dateToIdx(self.project['start'])
+        end_idx = self.project.dateToIdx(self.project['end'])
+        for idx in range(start_idx, end_idx):
+            if res_scenario.onShift(idx):
+                return self.project.idxToDate(idx)
+
+        return self.project['end']
+
+    def _computeMaxGapDelayedStart(self, earliest_start, effort):
+        """
+        Compute delayed start time based on maxgapduration constraints from successors.
+
+        If any successor has maxgapduration, we need to ensure this task ends
+        late enough that the gap doesn't exceed maxgapduration.
+
+        Args:
+            earliest_start: The earliest time this task could start (from dependencies)
+            effort: The effort required for this task
+
+        Returns:
+            Delayed start time (datetime), or earliest_start if no delay needed
+        """
+        from datetime import timedelta
+
+        successors_with_maxgap = self._getSuccessorsWithMaxGap()
+        if not successors_with_maxgap:
+            return earliest_start
+
+        delayed_start = earliest_start
+
+        for successor, maxgap_str, gap_str in successors_with_maxgap:
+            # Find when successor can start
+            successor_earliest = self._getSuccessorEarliestStart(successor)
+
+            # Parse maxgapduration
+            maxgap_hours = self._parse_duration(maxgap_str)
+            gap_hours = self._parse_duration(gap_str) if gap_str else 0
+
+            # This task must end no more than maxgap_hours before successor can start
+            # Required end time: successor_earliest - gap_hours (to satisfy gapduration)
+            # But end time must be >= successor_earliest - maxgap_hours (to satisfy maxgapduration)
+            # So we want end time between (successor_earliest - maxgap_hours) and (successor_earliest - gap_hours)
+            # Ideally, end exactly at successor_earliest - gap_hours to minimize gap
+
+            desired_end = successor_earliest - timedelta(hours=gap_hours)
+
+            # Work backwards from desired_end to find required start
+            # For effort-based tasks, we need 'effort' hours of work before desired_end
+            if effort > 0:
+                required_start = self._computeStartFromEnd(desired_end, effort)
+                if required_start > delayed_start:
+                    delayed_start = required_start
+
+        return delayed_start
+
+    def _computeStartFromEnd(self, end_time, effort):
+        """
+        Given an end time and required effort, compute when to start.
+
+        Walks backwards from end_time counting working hours until effort is met.
+
+        Args:
+            end_time: Desired end time (datetime)
+            effort: Required effort in hours
+
+        Returns:
+            Required start time (datetime)
+        """
+        from datetime import timedelta
+
+        # Get allocations to determine resource working hours
+        allocations = self.property.get('allocate', self.scenarioIdx)
+
+        # Normalize allocations
+        alloc_data = allocations
+        if allocations and isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
+            alloc_data = allocations[0]
+
+        resource = None
+        if alloc_data:
+            if isinstance(alloc_data, dict):
+                resource_ids = alloc_data.get('resources', [])
+            elif isinstance(alloc_data, list):
+                resource_ids = alloc_data
+            else:
+                resource_ids = [alloc_data]
+
+            for res_id in resource_ids:
+                resource = self._resolve_resource(res_id)
+                if resource:
+                    break
+
+        end_idx = self.project.dateToIdx(end_time)
+        start_idx = self.project.dateToIdx(self.project['start'])
+
+        # Count backwards from end_idx
+        working_slots = 0
+        current_idx = end_idx - 1  # Start from slot before end
+
+        while current_idx >= start_idx and working_slots < effort:
+            if resource:
+                res_scenario = resource.data[self.scenarioIdx] if resource.data else None
+                if res_scenario:
+                    if res_scenario.scoreboard is None:
+                        res_scenario.prepareScheduling()
+                    if res_scenario.onShift(current_idx):
+                        working_slots += 1
+                else:
+                    if self.project.isWorkingTime(current_idx):
+                        working_slots += 1
+            else:
+                if self.project.isWorkingTime(current_idx):
+                    working_slots += 1
+            current_idx -= 1
+
+        return self.project.idxToDate(current_idx + 1)
+
     def schedule(self):
         if self.scheduled:
             return True
@@ -258,6 +456,14 @@ class TaskScenario(ScenarioData):
                                 dep_time = self.project.idxToDate(dep_time_idx)
                             if dep_time > earliest_start:
                                 earliest_start = dep_time
+
+                    # Check for maxgapduration constraints from successors
+                    # If a successor has maxgapduration, we may need to delay our start
+                    # so that we end close enough for the successor to meet the constraint
+                    if effort > 0:
+                        delayed_start = self._computeMaxGapDelayedStart(earliest_start, effort)
+                        if delayed_start > earliest_start:
+                            earliest_start = delayed_start
 
                     # Convert earliest_start to slot index
                     # If earliest_start is mid-slot, track the offset so we don't

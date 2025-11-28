@@ -111,6 +111,7 @@ resource_attr: resource_email
              | resource_limits
              | resource_leaves
              | resource_vacation
+             | resource_booking
              | resource_workinghours
              | resource_timezone
              | resource_chargeset
@@ -125,6 +126,7 @@ resource_managers: "managers" ID ("," ID)*
 resource_limits: "limits" "{" limits_body "}"
 resource_leaves: "leaves" leaves_type date ("-" date)?
 resource_vacation: "vacation" date ("-" date)?
+resource_booking: "booking" STRING date ("+" duration_value | duration_value)
 resource_workinghours: "workinghours" (workinghours_spec | ID)
 resource_timezone: "timezone" STRING
 resource_chargeset: "chargeset" ID
@@ -200,6 +202,7 @@ depends_item: DEPENDS_REF depends_options?
 depends_options: "{" depends_option* "}"
 depends_option: "gapduration" duration_value -> dep_gapduration
               | "gaplength" duration_value -> dep_gaplength
+              | "maxgapduration" duration_value -> dep_maxgapduration
               | "onend" -> dep_onend
               | "onstart" -> dep_onstart
 DEPENDS_REF: /[!.a-zA-Z_][!.a-zA-Z0-9_]*/

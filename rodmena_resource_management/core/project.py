@@ -285,8 +285,11 @@ class Project(MessageHandler):
         return 60 * 60
 
     def schedule(self):
+        # Extend project end if tasks require more time
+        self._extendProjectEndIfNeeded()
+
         self.initScoreboards()
-        
+
         for p in [self.accounts, self.shifts, self.resources, self.tasks]:
             p.index()
             
@@ -667,6 +670,89 @@ class Project(MessageHandler):
 
             if pred:
                 self._markTaskALAP(pred, scIdx, processed, reverse_deps)
+
+    def _extendProjectEndIfNeeded(self):
+        """
+        Extend project end date if tasks require more time than the specified duration.
+        This prevents tasks from being truncated at the project boundary.
+        """
+        from datetime import timedelta
+
+        if not self.attributes.get('start') or not self.attributes.get('end'):
+            return
+
+        # Calculate total effort and gaps needed
+        total_effort_seconds = 0
+        total_gap_seconds = 0
+        task_count = 0
+
+        for task in self.tasks:
+            if task.leaf():
+                task_count += 1
+                # Get effort - stored in hours, convert to seconds
+                try:
+                    effort = task.get('effort', 0)
+                    if effort:
+                        if isinstance(effort, (int, float)):
+                            # Effort is in hours, convert to seconds
+                            total_effort_seconds += effort * 3600
+                        elif hasattr(effort, 'total_seconds'):
+                            total_effort_seconds += effort.total_seconds()
+                except Exception:
+                    pass
+
+                # Account for dependency gaps - use task.get() with scenario index 0
+                try:
+                    deps = task.get('depends', 0) or []
+                    for dep in deps:
+                        gap = None
+                        if isinstance(dep, dict):
+                            gap = dep.get('gapduration')
+                        elif hasattr(dep, 'gapduration'):
+                            gap = dep.gapduration
+                        if gap:
+                            if isinstance(gap, (int, float)):
+                                total_gap_seconds += gap
+                            elif isinstance(gap, str):
+                                # Parse duration string like '29min', '1h', '2d'
+                                import re
+                                match = re.match(r'(\d+)(min|h|d|w|m|y|s)', gap)
+                                if match:
+                                    val = int(match.group(1))
+                                    unit = match.group(2)
+                                    if unit == 's':
+                                        total_gap_seconds += val
+                                    elif unit == 'min':
+                                        total_gap_seconds += val * 60
+                                    elif unit == 'h':
+                                        total_gap_seconds += val * 3600
+                                    elif unit == 'd':
+                                        total_gap_seconds += val * 86400
+                                    elif unit == 'w':
+                                        total_gap_seconds += val * 86400 * 7
+                            elif hasattr(gap, 'total_seconds'):
+                                total_gap_seconds += gap.total_seconds()
+                except Exception:
+                    pass
+
+        if task_count == 0:
+            return
+
+        # Estimate daily working capacity (conservative: 6 hours/day to account for breaks)
+        daily_capacity_seconds = 6 * 3600
+        # Estimate days needed for effort
+        work_days_needed = total_effort_seconds / daily_capacity_seconds if daily_capacity_seconds > 0 else 0
+        # Add gap time (calendar days)
+        gap_days = total_gap_seconds / 86400
+        # Total calendar days (with 50% buffer for weekends/non-working days)
+        total_days_needed = int((work_days_needed + gap_days) * 1.5) + 7
+
+        # Calculate minimum required end date
+        min_end_date = self.attributes['start'] + timedelta(days=total_days_needed)
+
+        # Extend project end if needed
+        if min_end_date > self.attributes['end']:
+            self.attributes['end'] = min_end_date
 
     def initScoreboards(self):
         if not self.attributes['start'] or not self.attributes['end']:

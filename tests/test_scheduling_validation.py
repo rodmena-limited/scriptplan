@@ -2298,6 +2298,157 @@ class TestIssue64AtomicBooking:
         )
 
 
+class TestIssue65ThermalShock:
+    """
+    Issue #65: The "Thermal Shock" Protocol - maxgapduration constraint
+
+    Tests that the scheduler delays a predecessor task to respect maxgapduration
+    constraint when the successor's resource is blocked.
+
+    Scenario:
+    - Heat task (2h) on Heater (available 09:00-17:00)
+    - Forge task (2h) on Press (blocked 09:00-15:00 due to booking)
+    - Forge depends on Heat with gapduration 0min, maxgapduration 60min
+
+    Naive scheduling:
+    - Heat: 09:00-11:00
+    - Forge: 15:00-17:00 (earliest press available)
+    - Gap: 4h > maxgapduration (60min) -- FAIL
+
+    Smart scheduling:
+    - Heat: 13:00-15:00 (delayed)
+    - Forge: 15:00-17:00
+    - Gap: 0h <= maxgapduration (60min) -- PASS
+    """
+
+    TJP_FILE = Path(__file__).parent / 'data' / 'thermal.tjp'
+
+    @pytest.fixture
+    def csv_dataframe(self):
+        """Generate CSV output and return as pandas DataFrame."""
+        import io
+        import pandas as pd
+
+        parser = ProjectFileParser()
+        with open(self.TJP_FILE, 'r') as f:
+            content = f.read()
+        project = parser.parse(content)
+
+        csv_content = ''
+        for report in project.reports:
+            if not report.get('scenarios'):
+                report['scenarios'] = ['plan']
+            report.generate_intermediate_format()
+            csv_rows = report.to_csv()
+            for row in csv_rows:
+                csv_content += ','.join(str(x) for x in row) + '\n'
+
+        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+
+    def test_heat_delayed_for_maxgapduration(self, csv_dataframe):
+        """
+        Heat task must be delayed so it ends when forge can start.
+        Heat should NOT start at 09:00 (naive).
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'process.heat']
+        assert not row.empty, "FAIL: Task process.heat missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        # Heat should NOT start at 09:00 because that would create a 4h gap
+        assert '09:00' not in user_start, (
+            f"FAIL: Heat scheduled too early.\n"
+            f"  Start: {user_start}\n"
+            f"  A naive scheduler would start Heat at 09:00, but that creates\n"
+            f"  a 4h gap before Forge can start (press blocked until 15:00).\n"
+            f"  The scheduler should delay Heat to respect maxgapduration."
+        )
+
+    def test_gap_within_maxgapduration(self, csv_dataframe):
+        """
+        The gap between Heat ending and Forge starting must not exceed 60min.
+        """
+        from datetime import datetime
+
+        heat_row = csv_dataframe[csv_dataframe['id'] == 'process.heat']
+        forge_row = csv_dataframe[csv_dataframe['id'] == 'process.forge']
+
+        assert not heat_row.empty, "FAIL: Task process.heat missing."
+        assert not forge_row.empty, "FAIL: Task process.forge missing."
+
+        heat_end_str = heat_row.iloc[0]['end'].strip()
+        forge_start_str = forge_row.iloc[0]['start'].strip()
+
+        fmt = "%Y-%m-%d-%H:%M"
+        t_heat_end = datetime.strptime(heat_end_str, fmt)
+        t_forge_start = datetime.strptime(forge_start_str, fmt)
+
+        gap_seconds = (t_forge_start - t_heat_end).total_seconds()
+        gap_hours = gap_seconds / 3600.0
+
+        assert gap_hours >= 0, (
+            f"FAIL: TIME PARADOX - Forge started before Heat finished.\n"
+            f"  Heat End: {heat_end_str}\n"
+            f"  Forge Start: {forge_start_str}"
+        )
+
+        assert gap_hours <= 1.0, (
+            f"FAIL: THERMAL SHOCK - Gap exceeds maxgapduration.\n"
+            f"  Heat End: {heat_end_str}\n"
+            f"  Forge Start: {forge_start_str}\n"
+            f"  Gap: {gap_hours:.2f}h (max allowed: 1.0h)\n"
+            f"  The metal cooled down. The ingot cracked."
+        )
+
+    def test_forge_starts_when_press_available(self, csv_dataframe):
+        """
+        Forge should start at 15:00 when press becomes available.
+        """
+        row = csv_dataframe[csv_dataframe['id'] == 'process.forge']
+        assert not row.empty, "FAIL: Task process.forge missing."
+
+        user_start = row.iloc[0]['start'].strip()
+        assert '15:00' in user_start, (
+            f"FAIL: Forge should start when press is available.\n"
+            f"  Got: {user_start}\n"
+            f"  Expected start at 15:00 (after press maintenance ends)"
+        )
+
+    def test_smart_scheduling_achieved(self, csv_dataframe):
+        """
+        Full verification: Heat ends exactly when Forge starts (optimal).
+        This is the "smart" result from the judge:
+        - Heat: 13:00-15:00
+        - Forge: 15:00-17:00
+        - Gap: 0h
+        """
+        heat_row = csv_dataframe[csv_dataframe['id'] == 'process.heat']
+        forge_row = csv_dataframe[csv_dataframe['id'] == 'process.forge']
+
+        assert not heat_row.empty, "FAIL: Task process.heat missing."
+        assert not forge_row.empty, "FAIL: Task process.forge missing."
+
+        heat_start = heat_row.iloc[0]['start'].strip()
+        heat_end = heat_row.iloc[0]['end'].strip()
+        forge_start = forge_row.iloc[0]['start'].strip()
+        forge_end = forge_row.iloc[0]['end'].strip()
+
+        # Check for optimal scheduling
+        assert heat_start == "2025-05-12-13:00", (
+            f"Expected Heat start: 2025-05-12-13:00, got: {heat_start}"
+        )
+        assert heat_end == "2025-05-12-15:00", (
+            f"Expected Heat end: 2025-05-12-15:00, got: {heat_end}"
+        )
+        assert forge_start == "2025-05-12-15:00", (
+            f"Expected Forge start: 2025-05-12-15:00, got: {forge_start}"
+        )
+        assert forge_end == "2025-05-12-17:00", (
+            f"Expected Forge end: 2025-05-12-17:00, got: {forge_end}"
+        )
+
+
 # Convenience function to run all validation tests
 def run_all_scheduling_validations():
     """Run all scheduling validation tests."""
