@@ -1,7 +1,13 @@
 import contextlib
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.core.property import AttributeBase
 from scriptplan.core.scenario_data import ScenarioData
+
+if TYPE_CHECKING:
+    from scriptplan.core.property import PropertyTreeNode
+    from scriptplan.core.resource import Resource
 
 # Default working hours: 9am-5pm (0-indexed: hours 9-16 are working)
 DEFAULT_WORK_START_HOUR = 9
@@ -9,12 +15,19 @@ DEFAULT_WORK_END_HOUR = 17  # 5pm, so hours 9,10,11,12,13,14,15,16 are working (
 
 
 class TaskScenario(ScenarioData):
-    def __init__(self, task, scenarioIdx, attributes):
+    def __init__(self, task: 'PropertyTreeNode', scenarioIdx: int, attributes: dict[str, Any]) -> None:
         super().__init__(task, scenarioIdx, attributes)
-        self.isRunAway = False
-        self.hasDurationSpec = False
-        self.scheduled = False
-        self.currentSlotIdx = None
+        self.isRunAway: bool = False
+        self.hasDurationSpec: bool = False
+        self.scheduled: bool = False
+        self.currentSlotIdx: Optional[int] = None
+        self.doneDuration: int = 0
+        self.doneLength: int = 0
+        self.doneEffort: float = 0.0
+        self.slotStartOffset: float = 0.0
+        self._selectedResources: Optional[list[Any]] = None
+        self._lastBookedResource: Optional[Any] = None
+        self._lastBookedSlot: Optional[int] = None
 
         # Ensure required attributes exist
         required_attrs = [
@@ -34,13 +47,17 @@ class TaskScenario(ScenarioData):
             mode = AttributeBase.mode()
             AttributeBase.setMode(1)
 
-            proj_projection = self.project.scenario(self.scenarioIdx).get('projection') if hasattr(self.project, 'scenario') else None
+            proj_scenario = self.project.scenario(self.scenarioIdx) if hasattr(self.project, 'scenario') else None
+            if proj_scenario:
+                proj_projection = proj_scenario.get('projection')
+            else:
+                proj_projection = None
             if proj_projection:
                  self.property[( 'projectionmode', self.scenarioIdx )] = proj_projection
 
             AttributeBase.setMode(mode)
 
-    def prepareScheduling(self):
+    def prepareScheduling(self) -> None:
         """
         Reset all scheduling related data prior to scheduling.
         Called once per scenario before scheduling begins.
@@ -65,7 +82,7 @@ class TaskScenario(ScenarioData):
         if limits:
             limits.reset()
 
-    def getAllDependencies(self):
+    def getAllDependencies(self) -> list[Any]:
         """
         Get all dependencies including inherited ones from parent containers.
 
@@ -73,7 +90,7 @@ class TaskScenario(ScenarioData):
         containers. For example, if a container 'software' depends on 'spec',
         all children of 'software' (database, gui, backend) also depend on 'spec'.
         """
-        all_deps = []
+        all_deps: list[Any] = []
 
         # Get own dependencies
         own_deps = self.property.get('depends', self.scenarioIdx) or []
@@ -88,7 +105,7 @@ class TaskScenario(ScenarioData):
 
         return all_deps
 
-    def readyForScheduling(self):
+    def readyForScheduling(self) -> bool:
         """
         Check if task is ready for scheduling.
 
@@ -107,7 +124,7 @@ class TaskScenario(ScenarioData):
             # ASAP scheduling - check dependencies
             return self._asapReadyForScheduling()
 
-    def _asapReadyForScheduling(self):
+    def _asapReadyForScheduling(self) -> bool:
         """Check if all dependencies are scheduled (for ASAP mode)."""
         for dep in self.getAllDependencies():
             if isinstance(dep, dict):
@@ -122,7 +139,7 @@ class TaskScenario(ScenarioData):
 
         return True
 
-    def _alapReadyForScheduling(self):
+    def _alapReadyForScheduling(self) -> bool:
         """
         Check if task is ready for ALAP scheduling.
 
@@ -163,7 +180,7 @@ class TaskScenario(ScenarioData):
 
         return all(successor.get('scheduled', self.scenarioIdx) for successor in successors)
 
-    def _getSuccessors(self):
+    def _getSuccessors(self) -> list[Any]:
         """
         Get all tasks that depend on this task (successors).
 
@@ -188,7 +205,7 @@ class TaskScenario(ScenarioData):
 
         return successors
 
-    def _getSuccessorsWithMaxGap(self):
+    def _getSuccessorsWithMaxGap(self) -> list[tuple[Any, Any, Any]]:
         """
         Get successors that have maxgapduration constraint on this task.
 
@@ -218,7 +235,7 @@ class TaskScenario(ScenarioData):
                     break
         return result
 
-    def _getSuccessorEarliestStart(self, successor):
+    def _getSuccessorEarliestStart(self, successor: Any) -> datetime:
         """
         Find the earliest time a successor task can start based on its resource availability.
 
@@ -233,8 +250,12 @@ class TaskScenario(ScenarioData):
             end_idx = self.project.dateToIdx(self.project['end'])
             for idx in range(start_idx, end_idx):
                 if self.project.isWorkingTime(idx):
-                    return self.project.idxToDate(idx)
-            return self.project['end']
+                    result = self.project.idxToDate(idx)
+                    if result is not None:
+                        result_dt: datetime = result
+                        return result_dt
+            result_end: datetime = self.project['end']
+            return result_end
 
         # Normalize allocations
         alloc_data = allocations
@@ -256,12 +277,14 @@ class TaskScenario(ScenarioData):
                 break
 
         if not resource:
-            return self.project['start']
+            result_start_1: datetime = self.project['start']
+            return result_start_1
 
         # Get resource's scenario data
         res_scenario = resource.data[self.scenarioIdx] if resource.data else None
         if res_scenario is None:
-            return self.project['start']
+            result_start_2: datetime = self.project['start']
+            return result_start_2
 
         # Initialize scoreboard if needed
         if res_scenario.scoreboard is None:
@@ -272,11 +295,15 @@ class TaskScenario(ScenarioData):
         end_idx = self.project.dateToIdx(self.project['end'])
         for idx in range(start_idx, end_idx):
             if res_scenario.onShift(idx):
-                return self.project.idxToDate(idx)
+                result = self.project.idxToDate(idx)
+                if result is not None:
+                    result_shift: datetime = result
+                    return result_shift
 
-        return self.project['end']
+        result_end_2: datetime = self.project['end']
+        return result_end_2
 
-    def _computeMaxGapDelayedStart(self, earliest_start, effort):
+    def _computeMaxGapDelayedStart(self, earliest_start: datetime, effort: float) -> datetime:
         """
         Compute delayed start time based on maxgapduration constraints from successors.
 
@@ -323,7 +350,7 @@ class TaskScenario(ScenarioData):
 
         return delayed_start
 
-    def _computeStartFromEnd(self, end_time, effort):
+    def _computeStartFromEnd(self, end_time: datetime, effort: float) -> datetime:
         """
         Given an end time and required effort, compute when to start.
 
@@ -382,9 +409,12 @@ class TaskScenario(ScenarioData):
                     working_slots += 1
             current_idx -= 1
 
-        return self.project.idxToDate(current_idx + 1)
+        result = self.project.idxToDate(current_idx + 1)
+        assert result is not None
+        result_dt_4: datetime = result
+        return result_dt_4
 
-    def schedule(self):
+    def schedule(self) -> bool:
         if self.scheduled:
             return True
 
@@ -609,7 +639,7 @@ class TaskScenario(ScenarioData):
         self.property[('scheduled', self.scenarioIdx)] = True
         return True
 
-    def scheduleSlot(self):
+    def scheduleSlot(self) -> bool:
         # Determine duration type
         # :effortTask, :lengthTask, :durationTask, :startEndTask, or milestone
 
@@ -641,14 +671,16 @@ class TaskScenario(ScenarioData):
                     self.property[('end', self.scenarioIdx)] = start_date
                 else:
                     # No start date - use current slot (set by dependency calculation)
-                    date = self.project.idxToDate(self.currentSlotIdx)
+                    slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                    date = self.project.idxToDate(slot_idx)
                     self.property[('start', self.scenarioIdx)] = date
                     self.property[('end', self.scenarioIdx)] = date
             else:
                 if end_date:
                     self.property[('start', self.scenarioIdx)] = end_date
                 else:
-                    date = self.project.idxToDate(self.currentSlotIdx)
+                    slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                    date = self.project.idxToDate(slot_idx)
                     self.property[('start', self.scenarioIdx)] = date
                     self.property[('end', self.scenarioIdx)] = date
             return False
@@ -670,13 +702,16 @@ class TaskScenario(ScenarioData):
                 end_date, _seconds_used = self._calculatePreciseEndTimeAndRelease(
                     effort, effort_before, forward
                 )
+                assert end_date is not None
                 self.propagateDate(end_date, forward)
                 return False
         elif duration > 0:
             self.bookResources() # Even if just duration, might use resources?
             self.doneDuration += 1
             if self.doneDuration >= duration:
-                date = self.project.idxToDate(self.currentSlotIdx + (1 if forward else 0))
+                slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                date = self.project.idxToDate(slot_idx + (1 if forward else 0))
+                assert date is not None
                 self.propagateDate(date, forward)
                 return False
         else:
@@ -684,12 +719,13 @@ class TaskScenario(ScenarioData):
             self.bookResources()
             # Check if reached end/start
             target_date = end_date if forward else start_date
-            if target_date and ((forward and self.currentSlotIdx >= self.project.dateToIdx(target_date)) or (not forward and self.currentSlotIdx <= self.project.dateToIdx(target_date))):
+            slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+            if target_date and ((forward and slot_idx >= self.project.dateToIdx(target_date)) or (not forward and slot_idx <= self.project.dateToIdx(target_date))):
                 return False
 
         return True
 
-    def _calculatePreciseEndTimeAndRelease(self, required_effort, effort_before_slot, forward):
+    def _calculatePreciseEndTimeAndRelease(self, required_effort: float, effort_before_slot: float, forward: bool) -> tuple[datetime, float]:
         """
         Calculate the precise end time within the final slot and release unused time.
 
@@ -710,7 +746,8 @@ class TaskScenario(ScenarioData):
 
         # Get slot parameters
         slot_duration_seconds = self.project.attributes.get('scheduleGranularity', 3600)
-        slot_start = self.project.idxToDate(self.currentSlotIdx)
+        slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+        slot_start = self.project.idxToDate(slot_idx)
 
         # Get the resource and its efficiency for this slot
         resource = getattr(self, '_lastBookedResource', None)
@@ -759,14 +796,20 @@ class TaskScenario(ScenarioData):
 
         if forward:
             # For forward scheduling, end time is offset from slot start
-            precise_end = slot_start + timedelta(seconds=seconds_rounded)
+            if slot_start is not None:
+                precise_end = slot_start + timedelta(seconds=seconds_rounded)
+            else:
+                precise_end = self.project['start'] + timedelta(seconds=seconds_rounded)
         else:
             # For backward scheduling, we're calculating the START time
             # The start is at the END of the slot minus unused time
             # If we used the whole slot, start is at slot_start
             # If we used part of it, start is later in the slot
-            slot_end = slot_start + timedelta(seconds=slot_duration_seconds)
-            precise_end = slot_end - timedelta(seconds=seconds_rounded)
+            if slot_start is not None:
+                slot_end = slot_start + timedelta(seconds=slot_duration_seconds)
+                precise_end = slot_end - timedelta(seconds=seconds_rounded)
+            else:
+                precise_end = self.project['start']
 
         # Release unused portion of the slot back to the resource
         seconds_unused = slot_duration_seconds - seconds_into_slot
@@ -789,7 +832,7 @@ class TaskScenario(ScenarioData):
 
         return precise_end, seconds_into_slot
 
-    def _calculatePreciseEndTime(self, required_effort, effort_before_slot, forward):
+    def _calculatePreciseEndTime(self, required_effort: float, effort_before_slot: float, forward: bool) -> datetime:
         """
         Calculate the precise end time within the final slot based on fractional effort.
         (Legacy method - calls the new implementation)
@@ -797,7 +840,7 @@ class TaskScenario(ScenarioData):
         end_time, _ = self._calculatePreciseEndTimeAndRelease(required_effort, effort_before_slot, forward)
         return end_time
 
-    def _parse_duration(self, duration_str):
+    def _parse_duration(self, duration_str: Any) -> float:
         """
         Parse a duration string like '4h', '2d', '1w', '30min' into hours.
         """
@@ -813,7 +856,7 @@ class TaskScenario(ScenarioData):
         multipliers = {'min': 1/60, 'h': 1, 'd': 8, 'w': 40, 'm': 160, 'y': 1920}
         return num * multipliers.get(unit, 1)
 
-    def isWorkingTime(self, slotIdx):
+    def isWorkingTime(self, slotIdx: int) -> bool:
         """
         Check if a slot index falls within working hours.
 
@@ -825,9 +868,10 @@ class TaskScenario(ScenarioData):
 
         Returns True if the slot is during working time.
         """
-        return self.project.isWorkingTime(slotIdx)
+        result: bool = self.project.isWorkingTime(slotIdx)
+        return result
 
-    def _isResourceAvailable(self, slotIdx):
+    def _isResourceAvailable(self, slotIdx: int) -> bool:
         """
         Check if any allocated resource is available at the given slot.
 
@@ -844,7 +888,8 @@ class TaskScenario(ScenarioData):
         allocations = self.property.get('allocate', self.scenarioIdx)
         if not allocations:
             # No allocations - fall back to project working time
-            return self.project.isWorkingTime(slotIdx)
+            result: bool = self.project.isWorkingTime(slotIdx)
+            return result
 
         # Parse allocations - handle both simple list and dict with alternatives
         resource_ids = []
@@ -885,7 +930,7 @@ class TaskScenario(ScenarioData):
 
         return False
 
-    def _hasContiguousBlock(self, effort):
+    def _hasContiguousBlock(self, effort: float) -> bool:
         """
         Check if there's a contiguous block of working time starting from current slot
         that can fit the required effort.
@@ -953,7 +998,7 @@ class TaskScenario(ScenarioData):
 
         # Check if we have that many consecutive working slots starting from current
         consecutive_count = 0
-        current_slot = self.currentSlotIdx
+        current_slot = self.currentSlotIdx if self.currentSlotIdx is not None else 0
         max_slots = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
 
         while current_slot < max_slots and consecutive_count < slots_needed:
@@ -972,9 +1017,10 @@ class TaskScenario(ScenarioData):
                     # Haven't found starting slot yet - not available at current
                     return False
 
-        return consecutive_count >= slots_needed
+        result_bool: bool = consecutive_count >= slots_needed
+        return result_bool
 
-    def _checkProjectContiguousBlock(self, effort):
+    def _checkProjectContiguousBlock(self, effort: float) -> bool:
         """
         Fallback check for contiguous block using project working time.
         """
@@ -983,7 +1029,7 @@ class TaskScenario(ScenarioData):
         slots_needed = effort / slot_duration_hours
 
         consecutive_count = 0
-        current_slot = self.currentSlotIdx
+        current_slot = self.currentSlotIdx if self.currentSlotIdx is not None else 0
         max_slots = 1000
 
         while current_slot < max_slots and consecutive_count < slots_needed:
@@ -998,9 +1044,10 @@ class TaskScenario(ScenarioData):
                 else:
                     return False
 
-        return consecutive_count >= slots_needed
+        result_bool: bool = consecutive_count >= slots_needed
+        return result_bool
 
-    def _resolve_resource(self, alloc):
+    def _resolve_resource(self, alloc: Any) -> Optional[Any]:
         """
         Resolve a resource allocation to an actual Resource object.
 
@@ -1021,7 +1068,7 @@ class TaskScenario(ScenarioData):
             return resource
         return alloc
 
-    def _selectBestResources(self, primary_resources, alternative_resources, effort):
+    def _selectBestResources(self, primary_resources: list[Any], alternative_resources: list[Any], effort: float) -> list[Any]:
         """
         Select the best resources for this task using smart routing.
 
@@ -1067,7 +1114,7 @@ class TaskScenario(ScenarioData):
                 self._selectedAlternative = False
             return primary_resources
 
-    def _estimateCompletionTime(self, resources, effort):
+    def _estimateCompletionTime(self, resources: list[Any], effort: float) -> Optional[datetime]:
         """
         Estimate when a task would complete using the given resources.
 
@@ -1103,7 +1150,7 @@ class TaskScenario(ScenarioData):
         effort_per_slot = (slot_duration / 3600.0) * efficiency
 
         remaining_effort = effort
-        current_slot = self.currentSlotIdx
+        current_slot = self.currentSlotIdx if self.currentSlotIdx is not None else 0
 
         # Safety limit to prevent infinite loops
         max_slots = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
@@ -1119,11 +1166,14 @@ class TaskScenario(ScenarioData):
         # Calculate the end time
         # current_slot is now one past the last booked slot
         end_slot = current_slot - 1
-        end_time = self.project.idxToDate(end_slot) + timedelta(seconds=slot_duration)
+        end_date_result = self.project.idxToDate(end_slot)
+        if end_date_result is not None:
+            result: Optional[datetime] = end_date_result + timedelta(seconds=slot_duration)
+            return result
+        else:
+            return None
 
-        return end_time
-
-    def bookResources(self):
+    def bookResources(self) -> None:
         """
         Book resources for the current slot and accumulate effort.
 
@@ -1204,11 +1254,12 @@ class TaskScenario(ScenarioData):
                     break
                 if res_scenario.scoreboard is None:
                     res_scenario.prepareScheduling()
-                if not res_scenario.available(self.currentSlotIdx):
+                slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                if not res_scenario.available(slot_idx):
                     all_available = False
                     break
                 # Also check task limits
-                if not self.limitsOk(self.currentSlotIdx, resource):
+                if not self.limitsOk(slot_idx, resource):
                     all_available = False
                     break
 
@@ -1241,21 +1292,22 @@ class TaskScenario(ScenarioData):
                 if forward:
                     # Use exact start time (including mid-slot offset from dependency)
                     from datetime import timedelta
-                    start_date = self.project.idxToDate(self.currentSlotIdx)
-                    if hasattr(self, 'slotStartOffset') and self.slotStartOffset > 0:
+                    slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                    start_date = self.project.idxToDate(slot_idx)
+                    if start_date is not None and hasattr(self, 'slotStartOffset') and self.slotStartOffset > 0:
                         start_date = start_date + timedelta(seconds=self.slotStartOffset)
                     self.property[('start', self.scenarioIdx)] = start_date
 
             # Accumulate effort (counted once per slot, not per resource)
             self.doneEffort += total_effort_this_slot
 
-    def getAllLimits(self):
+    def getAllLimits(self) -> list[Any]:
         """
         Collect limits from this task and all parent tasks.
         Returns a list of Limits objects.
         """
         all_limits = []
-        task = self.property
+        task: Optional[Any] = self.property
         while task is not None:
             limits = task.get('limits', self.scenarioIdx)
             if limits:
@@ -1263,7 +1315,7 @@ class TaskScenario(ScenarioData):
             task = task.parent
         return all_limits
 
-    def limitsOk(self, sbIdx, resource=None):
+    def limitsOk(self, sbIdx: int, resource: Optional[Any] = None) -> bool:
         """
         Check if all task limits (including parent limits) are satisfied.
 
@@ -1279,7 +1331,7 @@ class TaskScenario(ScenarioData):
                 return False
         return True
 
-    def incLimits(self, sbIdx, resource=None):
+    def incLimits(self, sbIdx: int, resource: Optional[Any] = None) -> None:
         """
         Increment all task limit counters (including parent limits).
 
@@ -1290,7 +1342,7 @@ class TaskScenario(ScenarioData):
         for limits in self.getAllLimits():
             limits.inc(sbIdx, resource=resource.id if resource else None)
 
-    def bookResource(self, resource):
+    def bookResource(self, resource: Any) -> float:
         """
         Try to book a single resource for the current slot.
 
@@ -1319,22 +1371,24 @@ class TaskScenario(ScenarioData):
                 res_scenario.slotSecondsUsed[self.currentSlotIdx] = self.slotStartOffset
 
         # Check if resource is available
-        if not res_scenario.available(self.currentSlotIdx):
+        slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+        if not res_scenario.available(slot_idx):
             return 0.0
 
         # Check task limits for this resource (including parent limits)
-        if not self.limitsOk(self.currentSlotIdx, resource):
+        if not self.limitsOk(slot_idx, resource):
             return 0.0
 
         # Book the resource - returns effort gained (accounts for partial slots)
-        return res_scenario.book(self.currentSlotIdx, self.property)
+        result_float: float = res_scenario.book(slot_idx, self.property)
+        return result_float
 
-    def propagateDate(self, date, atEnd):
+    def propagateDate(self, date: datetime, atEnd: bool) -> None:
         attr = 'end' if atEnd else 'start'
         self.property[(attr, self.scenarioIdx)] = date
         # Propagate to dependencies?
 
-    def finishScheduling(self):
+    def finishScheduling(self) -> None:
         """
         Finish scheduling for this task.
         For container tasks, compute start/end from children.
@@ -1349,7 +1403,7 @@ class TaskScenario(ScenarioData):
         if not self.property.leaf():
             self.scheduleContainer()
 
-    def scheduleContainer(self):
+    def scheduleContainer(self) -> None:
         """
         Compute and set start/end dates for a container task based on its children.
         """
@@ -1393,7 +1447,7 @@ class TaskScenario(ScenarioData):
             self.scheduled = True
             self.property[('scheduled', self.scenarioIdx)] = True
 
-    def _getResourcesForTask(self):
+    def _getResourcesForTask(self) -> list[Any]:
         """
         Get the actual Resource objects for this task.
 
@@ -1425,7 +1479,7 @@ class TaskScenario(ScenarioData):
 
         return resources
 
-    def getCost(self):
+    def getCost(self) -> float:
         """
         Calculate the cost for this task based on allocated time and resource rates.
 
@@ -1466,7 +1520,7 @@ class TaskScenario(ScenarioData):
 
         return total_cost
 
-    def getAllocatedTime(self):
+    def getAllocatedTime(self) -> float:
         """
         Calculate the total allocated time (duration) for this task.
 

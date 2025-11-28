@@ -1,3 +1,6 @@
+from typing import Any, Dict, List, Optional, Set, Union
+from datetime import datetime, timedelta
+
 from scriptplan.core.journal import Journal
 from scriptplan.core.property import (
     AlertLevelDefinitions,
@@ -42,15 +45,15 @@ class Project(MessageHandler):
     properties.
     """
 
-    def __init__(self, id, name, version):
-        self.id = id
-        self.name = name
-        self.version = version
+    def __init__(self, id: Optional[str], name: str, version: str) -> None:
+        self.id: Optional[str] = id
+        self.name: str = name
+        self.version: str = version
 
         if hasattr(AttributeBase, 'setMode'):
              AttributeBase.setMode(0)
 
-        self.attributes = {
+        self.attributes: Dict[str, Any] = {
             'alertLevels': AlertLevelDefinitions(),
             'auxdir': '',
             'copyright': None,
@@ -90,39 +93,39 @@ class Project(MessageHandler):
             'yresolution': 1
         }
 
-        self.accounts = PropertySet(self, True)
+        self.accounts: PropertySet = PropertySet(self, True)
         self._define_account_attributes()
 
-        self.shifts = PropertySet(self, True)
+        self.shifts: PropertySet = PropertySet(self, True)
         self._define_shift_attributes()
 
-        self.resources = PropertySet(self, False)
+        self.resources: PropertySet = PropertySet(self, False)
         self._define_resource_attributes()
 
-        self.tasks = PropertySet(self, False)
+        self.tasks: PropertySet = PropertySet(self, False)
         self._define_task_attributes()
 
-        self.reports = PropertySet(self, False)
+        self.reports: PropertySet = PropertySet(self, False)
         self._define_report_attributes()
 
-        self.scenarios = PropertySet(self, True)
+        self.scenarios: PropertySet = PropertySet(self, True)
         self._define_scenario_attributes()
 
         # Scenario needs to be added AFTER attributes are defined
         Scenario(self, 'plan', 'Plan Scenario', None)
 
-        self.inputFiles = FileList()
-        self.timeSheets = TimeSheets()
+        self.inputFiles: FileList = FileList()
+        self.timeSheets: TimeSheets = TimeSheets()
 
-        self.scoreboard = None
-        self.scoreboardNoLeaves = None
+        self.scoreboard: Optional[Scoreboard] = None
+        self.scoreboardNoLeaves: Optional[Scoreboard] = None
 
-        self.reportContexts = []
-        self.outputDir = './'
-        self.warnTsDeltas = False
+        self.reportContexts: List[Any] = []
+        self.outputDir: str = './'
+        self.warnTsDeltas: bool = False
 
-    def _define_scenario_attributes(self):
-        attrs = [
+    def _define_scenario_attributes(self) -> None:
+        attrs: List[List[Any]] = [
             ['active', 'Enabled', BooleanAttribute, True, False, False, True],
             ['ownbookings', 'Own Bookings', BooleanAttribute, False, False, False, True],
             ['projection', 'Projection Mode', BooleanAttribute, True, False, False, False],
@@ -130,8 +133,8 @@ class Project(MessageHandler):
         for a in attrs:
             self.scenarios.addAttributeType(AttributeDefinition(*a))
 
-    def _define_account_attributes(self):
-        attrs = [
+    def _define_account_attributes(self) -> None:
+        attrs: List[List[Any]] = [
             # ID           Name            Type                     Inh   InhPrj Scen  Default
             ['aggregate', 'Aggregate', SymbolAttribute, True, False, False, 'tasks'],
             ['bsi', 'BSI', StringAttribute, False, False, False, ''],
@@ -143,8 +146,8 @@ class Project(MessageHandler):
         for a in attrs:
             self.accounts.addAttributeType(AttributeDefinition(*a))
 
-    def _define_shift_attributes(self):
-        attrs = [
+    def _define_shift_attributes(self) -> None:
+        attrs: List[List[Any]] = [
             # ID           Name            Type                     Inh   InhPrj Scen  Default
             ['bsi', 'BSI', StringAttribute, False, False, False, ''],
             ['index', 'Index', IntegerAttribute, False, False, False, -1],
@@ -157,9 +160,9 @@ class Project(MessageHandler):
         for a in attrs:
             self.shifts.addAttributeType(AttributeDefinition(*a))
 
-    def _define_resource_attributes(self):
+    def _define_resource_attributes(self) -> None:
         # Add attributes required by ResourceScenario
-        attrs = [
+        attrs: List[List[Any]] = [
             ['alloctdeffort', 'Allocated Effort', IntegerAttribute, True, False, True, 0],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
             ['bsi', 'BSI', StringAttribute, False, False, False, ""],
@@ -185,8 +188,8 @@ class Project(MessageHandler):
         for a in attrs:
             self.resources.addAttributeType(AttributeDefinition(*a))
 
-    def _define_task_attributes(self):
-        attrs = [
+    def _define_task_attributes(self) -> None:
+        attrs: List[List[Any]] = [
             ['allocate', 'Allocate', ListAttribute, True, False, True, []],
             ['assignedresources', 'Assigned Resources', ListAttribute, False, False, True, []],
             ['booking', 'Booking', ResourceListAttribute, True, False, True, []],
@@ -226,8 +229,8 @@ class Project(MessageHandler):
         for a in attrs:
             self.tasks.addAttributeType(AttributeDefinition(*a))
 
-    def _define_report_attributes(self):
-        attrs = [
+    def _define_report_attributes(self) -> None:
+        attrs: List[List[Any]] = [
             # ID               Name                Type                     Inh    InhPrj  Scen   Default
             ['accountRoot', 'Account Root', StringAttribute, True, False, False, None],
             ['auxDir', 'Aux Directory', StringAttribute, True, True, False, ''],
@@ -280,10 +283,10 @@ class Project(MessageHandler):
         for a in attrs:
             self.reports.addAttributeType(AttributeDefinition(*a))
 
-    def scenarioCount(self):
+    def scenarioCount(self) -> Any:
         return self.scenarios.items()
 
-    def scenario(self, arg):
+    def scenario(self, arg: Union[int, str]) -> Optional[Any]:
         if isinstance(arg, int):
              for sc in self.scenarios:
                  if sc.sequenceNo - 1 == arg:
@@ -293,10 +296,10 @@ class Project(MessageHandler):
         return None
 
     @staticmethod
-    def maxScheduleGranularity():
+    def maxScheduleGranularity() -> int:
         return 60 * 60
 
-    def schedule(self):
+    def schedule(self) -> bool:
         # Extend project end if tasks require more time
         self._extendProjectEndIfNeeded()
 
@@ -314,7 +317,7 @@ class Project(MessageHandler):
             if not sc.get('active') and sc.get('active') is not None:
                 continue
 
-            scIdx = sc.sequenceNo - 1
+            scIdx: int = sc.sequenceNo - 1
 
             # Propagate inherited values
             AttributeBase.setMode(1)
@@ -329,19 +332,19 @@ class Project(MessageHandler):
 
         return True
 
-    def prepareScenario(self, scIdx):
+    def prepareScenario(self, scIdx: int) -> None:
         # Simplified preparation
         # In Ruby: computes criticalness, propagates initial values, checks loops
 
         # Apply project-level scheduling mode (alap/asap) to all tasks
         # Note: task-level 'scheduling asap/alap' overrides project-level
         # We track which tasks have explicit scheduling via _explicit_scheduling attr
-        project_scheduling = self.attributes.get('scheduling')
+        project_scheduling: Optional[str] = self.attributes.get('scheduling')
         if project_scheduling == 'alap':
             for task in self.tasks:
                 # Only override if task doesn't have explicit scheduling attribute
                 if task.leaf() and not getattr(task, '_explicit_scheduling', False):
-                    task[('forward', scIdx)] = False  # ALAP mode
+                    task[('forward', scIdx)] = False # ALAP mode
 
         # Propagate container end dates to leaf children for ALAP mode
         # In ALAP, container end dates act as constraints for children
@@ -349,12 +352,12 @@ class Project(MessageHandler):
 
         # We need to ensure tasks are ready
         for task in self.tasks:
-            task.prepareScheduling(scIdx)
+            task.prepareScheduling(scIdx)  # type: ignore[attr-defined]
 
         for resource in self.resources:
-            resource.prepareScheduling(scIdx)
+            resource.prepareScheduling(scIdx)  # type: ignore[attr-defined]
 
-    def _propagateContainerEndDates(self, scIdx):
+    def _propagateContainerEndDates(self, scIdx: int) -> None:
         """
         Propagate container task end dates to their leaf children as constraints.
 
@@ -371,8 +374,8 @@ class Project(MessageHandler):
         # First, identify which tasks have successors via normal (finish-to-start) dependencies
         # For onstart dependencies in ALAP, the dependent task (A) derives its END from
         # predecessor's START, so the predecessor (B) is the terminal task
-        has_fs_successor = set()  # Tasks that are predecessors in finish-to-start deps
-        has_onstart_dep = set()   # Tasks that have onstart dependencies (not terminal)
+        has_fs_successor: Set[Any] = set()  # Tasks that are predecessors in finish-to-start deps
+        has_onstart_dep: Set[Any] = set()   # Tasks that have onstart dependencies (not terminal)
 
         for task in self.tasks:
             if not task.leaf():
@@ -398,7 +401,7 @@ class Project(MessageHandler):
                         # Normal finish-to-start: predecessor has a successor
                         has_fs_successor.add(pred.fullId)
 
-        def propagate_end_to_children(task, container_end):
+        def propagate_end_to_children(task: Any, container_end: Optional[Any]) -> None:
             """Recursively propagate end constraint down the task tree."""
             task_end = task.get('end', scIdx)
             # Use the most restrictive (earliest) end date
@@ -429,17 +432,17 @@ class Project(MessageHandler):
                 if task_end:
                     propagate_end_to_children(task, task_end)
 
-    def finishScenario(self, scIdx):
+    def finishScenario(self, scIdx: int) -> None:
         for task in self.tasks:
             if not task.parent:
-                task.finishScheduling(scIdx)
+                task.finishScheduling(scIdx)  # type: ignore[attr-defined]
 
         for resource in self.resources:
             if not resource.parent:
-                resource.finishScheduling(scIdx)
+                resource.finishScheduling(scIdx)  # type: ignore[attr-defined]
 
-    def scheduleScenario(self, scIdx):
-        all_tasks = list(self.tasks)
+    def scheduleScenario(self, scIdx: int) -> bool:
+        all_tasks: List[Any] = list(self.tasks)
 
         # First, handle milestones - they just need end=start (or start=end)
         # A milestone is either:
@@ -478,12 +481,12 @@ class Project(MessageHandler):
         self._propagateALAPMode(scIdx)
 
         # Only care about leaf tasks that aren't scheduled already
-        tasks = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
+        tasks: List[Any] = [t for t in all_tasks if t.leaf() and not t.get('scheduled', scIdx)]
 
         # Sorting
         # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
         # Note: attributes might return None, need safe access for sorting
-        def sort_key(t):
+        def sort_key(t: Any) -> tuple[int, float, int]:
             prio = t.get('priority', scIdx) or 500
             crit = t.get('pathcriticalness', scIdx) or 0.0
             seq = t.get('seqno') or 0
@@ -491,10 +494,10 @@ class Project(MessageHandler):
 
         tasks.sort(key=sort_key)
 
-        failedTasks = []
+        failedTasks: List[Any] = []
 
         while tasks:
-            taskToRemove = None
+            taskToRemove: Optional[Any] = None
             for task in tasks:
                 # Task not ready? Ignore it.
                 if not task.readyForScheduling(scIdx):
@@ -527,7 +530,7 @@ class Project(MessageHandler):
 
         return True
 
-    def _updateContainerTaskStatus(self, scIdx):
+    def _updateContainerTaskStatus(self, scIdx: int) -> None:
         """Mark container tasks as scheduled when all their children are scheduled.
 
         Also compute start/end dates for container tasks based on children.
@@ -550,8 +553,8 @@ class Project(MessageHandler):
 
             # All children scheduled - mark container as scheduled
             # Compute start/end from children
-            min_start = None
-            max_end = None
+            min_start: Optional[Any] = None
+            max_end: Optional[Any] = None
             for child in children:
                 child_start = child.get('start', scIdx)
                 child_end = child.get('end', scIdx)
@@ -566,7 +569,7 @@ class Project(MessageHandler):
                 task[('end', scIdx)] = max_end
             task[('scheduled', scIdx)] = True
 
-    def _propagateALAPMode(self, scIdx):
+    def _propagateALAPMode(self, scIdx: int) -> None:
         """
         Propagate ALAP scheduling mode backward through dependency chains.
 
@@ -581,7 +584,7 @@ class Project(MessageHandler):
            to the dependent task's calculated start
         """
         # Build reverse dependency map: task -> list of tasks that depend on it
-        reverse_deps = {}  # predecessor_id -> [successor tasks]
+        reverse_deps: Dict[Any, List[Any]] = {}  # predecessor_id -> [successor tasks]
         for task in self.tasks:
             if not task.leaf():
                 continue
@@ -602,7 +605,7 @@ class Project(MessageHandler):
                     reverse_deps[pred_id].append(task)
 
         # Find ALAP anchor tasks (ALAP with fixed end)
-        alap_anchors = []
+        alap_anchors: List[Any] = []
         for task in self.tasks:
             if not task.leaf():
                 continue
@@ -613,7 +616,7 @@ class Project(MessageHandler):
 
         # Propagate ALAP backward from each anchor
         # Use BFS to traverse dependency chains
-        processed = set()
+        processed: Set[Any] = set()
         for anchor in alap_anchors:
             anchor_id = anchor.fullId if hasattr(anchor, 'fullId') else id(anchor)
             processed.add(anchor_id)
@@ -639,7 +642,7 @@ class Project(MessageHandler):
                 # It should finish as late as possible while still allowing the anchor to start
                 self._markTaskALAP(pred, scIdx, processed, reverse_deps)
 
-    def _markTaskALAP(self, task, scIdx, processed, reverse_deps):
+    def _markTaskALAP(self, task: Any, scIdx: int, processed: Set[Any], reverse_deps: Dict[Any, List[Any]]) -> None:
         """
         Mark a task as ALAP and propagate to its predecessors.
 
@@ -682,20 +685,18 @@ class Project(MessageHandler):
             if pred:
                 self._markTaskALAP(pred, scIdx, processed, reverse_deps)
 
-    def _extendProjectEndIfNeeded(self):
+    def _extendProjectEndIfNeeded(self) -> None:
         """
         Extend project end date if tasks require more time than the specified duration.
         This prevents tasks from being truncated at the project boundary.
         """
-        from datetime import timedelta
-
         if not self.attributes.get('start') or not self.attributes.get('end'):
             return
 
         # Calculate total effort and gaps needed
-        total_effort_seconds = 0
-        total_gap_seconds = 0
-        task_count = 0
+        total_effort_seconds: float = 0
+        total_gap_seconds: float = 0
+        task_count: int = 0
 
         for task in self.tasks:
             if task.leaf():
@@ -716,7 +717,7 @@ class Project(MessageHandler):
                 try:
                     deps = task.get('depends', 0) or []
                     for dep in deps:
-                        gap = None
+                        gap: Optional[Any] = None
                         if isinstance(dep, dict):
                             gap = dep.get('gapduration')
                         elif hasattr(dep, 'gapduration'):
@@ -750,13 +751,13 @@ class Project(MessageHandler):
             return
 
         # Estimate daily working capacity (conservative: 6 hours/day to account for breaks)
-        daily_capacity_seconds = 6 * 3600
+        daily_capacity_seconds: float = 6 * 3600
         # Estimate days needed for effort
-        work_days_needed = total_effort_seconds / daily_capacity_seconds if daily_capacity_seconds > 0 else 0
+        work_days_needed: float = total_effort_seconds / daily_capacity_seconds if daily_capacity_seconds > 0 else 0
         # Add gap time (calendar days)
-        gap_days = total_gap_seconds / 86400
+        gap_days: float = total_gap_seconds / 86400
         # Total calendar days (with 50% buffer for weekends/non-working days)
-        total_days_needed = int((work_days_needed + gap_days) * 1.5) + 7
+        total_days_needed: int = int((work_days_needed + gap_days) * 1.5) + 7
 
         # Calculate minimum required end date
         min_end_date = self.attributes['start'] + timedelta(days=total_days_needed)
@@ -765,7 +766,7 @@ class Project(MessageHandler):
         if min_end_date > self.attributes['end']:
             self.attributes['end'] = min_end_date
 
-    def initScoreboards(self):
+    def initScoreboards(self) -> None:
         if not self.attributes['start'] or not self.attributes['end']:
             return
 
@@ -784,7 +785,7 @@ class Project(MessageHandler):
 
         # Initialize working time slots - mark working hours as None
         # Default working hours: Mon-Fri, 9am-5pm
-        size = self.scoreboardSize()
+        size: int = self.scoreboardSize()
         self.attributes['scheduleGranularity']
 
         for i in range(size):
@@ -793,7 +794,7 @@ class Project(MessageHandler):
                 self.scoreboard[i] = None
                 self.scoreboardNoLeaves[i] = None
 
-    def _isDefaultWorkingTime(self, date):
+    def _isDefaultWorkingTime(self, date: Optional[Any]) -> bool:
         """Check if a date/time falls within default working hours."""
         if date is None:
             return False
@@ -805,50 +806,51 @@ class Project(MessageHandler):
                     return False
             elif hasattr(vac, 'contains') and vac.contains(date):
                 return False
-        weekday = date.weekday()
+        weekday: int = date.weekday()
         if weekday >= 5:  # Saturday or Sunday
             return False
-        hour = date.hour
-        return 9 <= hour < 17  # Within 9am-5pm
+        hour: int = date.hour
+        result: bool = 9 <= hour < 17  # Within 9am-5pm
+        return result
 
-    def isWorkingTime(self, sbIdx):
+    def isWorkingTime(self, sbIdx: int) -> bool:
         """Check if a scoreboard slot is working time."""
         if self.scoreboard is None:
             return self._isDefaultWorkingTime(self.idxToDate(sbIdx))
-        return self.scoreboard[sbIdx] is None
+        result: Any = self.scoreboard[sbIdx]
+        return result is None
 
-    def scoreboardSize(self):
+    def scoreboardSize(self) -> int:
         if self.scoreboard:
             return self.scoreboard.size
         if self.attributes['start'] and self.attributes['end']:
              try:
-                diff = (self.attributes['end'] - self.attributes['start']).total_seconds()
+                diff_seconds: float = (self.attributes['end'] - self.attributes['start']).total_seconds()
              except AttributeError:
-                diff = self.attributes['end'] - self.attributes['start']
-             return int(diff / self.attributes['scheduleGranularity']) + 1
+                diff_seconds = float(self.attributes['end'] - self.attributes['start'])
+             return int(diff_seconds / self.attributes['scheduleGranularity']) + 1
         return 0
 
-    def dateToIdx(self, date, forceIntoProject=True):
+    def dateToIdx(self, date: Any, forceIntoProject: bool = True) -> int:
          if not self.attributes['start']:
              return 0
          try:
-            diff = (date - self.attributes['start']).total_seconds()
+            diff_seconds: float = (date - self.attributes['start']).total_seconds()
          except AttributeError:
-            diff = date - self.attributes['start']
+            diff_seconds = float(date - self.attributes['start'])
 
-         idx = int(diff / self.attributes['scheduleGranularity'])
+         idx: int = int(diff_seconds / self.attributes['scheduleGranularity'])
          return idx
 
-    def idxToDate(self, idx):
+    def idxToDate(self, idx: int) -> Optional[Any]:
         if not self.attributes['start']:
             return None
 
-        from datetime import timedelta
         # Assuming idx is integer steps of scheduleGranularity from start
-        seconds = idx * self.attributes['scheduleGranularity']
+        seconds: int = idx * self.attributes['scheduleGranularity']
         return self.attributes['start'] + timedelta(seconds=seconds)
 
-    def addReport(self, report):
+    def addReport(self, report: Any) -> None:
         """
         Add a report to the project's report list.
         This is called automatically by Report.__init__.
@@ -860,7 +862,7 @@ class Project(MessageHandler):
         # This method exists for compatibility with TaskJuggler's API
         pass
 
-    def addAccount(self, account):
+    def addAccount(self, account: Any) -> None:
         """
         Add an account to the project's account list.
         This is called automatically by Account.__init__.
@@ -872,7 +874,7 @@ class Project(MessageHandler):
         # This method exists for compatibility with TaskJuggler's API
         pass
 
-    def addShift(self, shift):
+    def addShift(self, shift: Any) -> None:
         """
         Add a shift to the project's shift list.
         This is called automatically by Shift.__init__.
@@ -884,7 +886,7 @@ class Project(MessageHandler):
         # This method exists for compatibility with TaskJuggler's API
         pass
 
-    def addResource(self, resource):
+    def addResource(self, resource: Any) -> None:
         """
         Add a resource to the project's resource list.
         This is called automatically by Resource.__init__.
@@ -896,7 +898,7 @@ class Project(MessageHandler):
         # This method exists for compatibility with TaskJuggler's API
         pass
 
-    def addTask(self, task):
+    def addTask(self, task: Any) -> None:
         """
         Add a task to the project's task list.
         This is called automatically by Task.__init__.
@@ -908,7 +910,7 @@ class Project(MessageHandler):
         # This method exists for compatibility with TaskJuggler's API
         pass
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         """
         Get a project attribute.
 
@@ -920,7 +922,7 @@ class Project(MessageHandler):
         """
         return self.attributes.get(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any) -> None:
         """
         Set a project attribute.
 

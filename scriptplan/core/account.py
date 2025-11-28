@@ -69,33 +69,42 @@ class AccountScenario(ScenarioData):
                     if hasattr(credit, 'date') and hasattr(credit, 'amount') and startDate <= credit.date < endDate:
                         amount += credit.amount
 
-        if self.property.container():
+        # Note: PropertyTreeNode doesn't have container() method by default, using hasattr check
+        if hasattr(self.property, 'container') and self.property.container():
             if not self.property.adoptees:
                 # Normal case: accumulate turnover of child accounts
                 for child in self.property.children:
-                    amount += child.scenario(self.scenarioIdx).turnover(startIdx, endIdx)
+                    child_scenario = child.scenario(self.scenarioIdx)  # type: ignore[attr-defined]
+                    if child_scenario:
+                        amount += child_scenario.turnover(startIdx, endIdx)
             else:
                 # Special case for meta account (balance calculation)
                 # First adoptee is cost account, second is revenue account
                 if len(self.property.adoptees) >= 2:
-                    amount += (
-                        -self.property.adoptees[0].scenario(self.scenarioIdx).turnover(startIdx, endIdx) +
-                        self.property.adoptees[1].scenario(self.scenarioIdx).turnover(startIdx, endIdx)
-                    )
+                    adoptee0_scenario = self.property.adoptees[0].scenario(self.scenarioIdx)  # type: ignore[attr-defined]
+                    adoptee1_scenario = self.property.adoptees[1].scenario(self.scenarioIdx)  # type: ignore[attr-defined]
+                    if adoptee0_scenario and adoptee1_scenario:
+                        amount += (
+                            -adoptee0_scenario.turnover(startIdx, endIdx) +
+                            adoptee1_scenario.turnover(startIdx, endIdx)
+                        )
         else:
             aggregate = self.property.get('aggregate')
             if aggregate == 'tasks' or aggregate == ':tasks':
                 for task in self.project.tasks:
-                    if hasattr(task.scenario(self.scenarioIdx), 'turnover'):
-                        amount += task.scenario(self.scenarioIdx).turnover(
+                    task_scenario = task.scenario(self.scenarioIdx)  # type: ignore[attr-defined]
+                    if task_scenario and hasattr(task_scenario, 'turnover'):
+                        amount += task_scenario.turnover(
                             startIdx, endIdx, self.property, None, False
                         )
             elif aggregate == 'resources' or aggregate == ':resources':
                 for resource in self.project.resources:
-                    if resource.leaf() and hasattr(resource.scenario(self.scenarioIdx), 'turnover'):
-                        amount += resource.scenario(self.scenarioIdx).turnover(
-                            startIdx, endIdx, self.property, None, False
-                        )
+                    if resource.leaf():
+                        resource_scenario = resource.scenario(self.scenarioIdx)  # type: ignore[attr-defined]
+                        if resource_scenario and hasattr(resource_scenario, 'turnover'):
+                            amount += resource_scenario.turnover(
+                                startIdx, endIdx, self.property, None, False
+                            )
         return amount
 
 

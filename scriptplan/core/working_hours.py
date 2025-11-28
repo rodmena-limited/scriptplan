@@ -6,7 +6,7 @@ for specific days of the week.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 try:
     import zoneinfo
@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_ZONEINFO = False
     try:
-        import pytz  # noqa: F401 - used dynamically in _convert_to_timezone
+        import pytz  # noqa: F401 - used dynamically in _convert_to_timezone  # type: ignore[import-not-found]
         HAS_PYTZ = True
     except ImportError:
         HAS_PYTZ = False
@@ -224,8 +224,9 @@ class WorkingHours:
                 import pytz
                 utc = pytz.UTC
                 utc_dt = utc.localize(dt)
-                tz = pytz.timezone(timezone_str)
-                return utc_dt.astimezone(tz)
+                pytz_tz: Any = pytz.timezone(timezone_str)
+                result = utc_dt.astimezone(pytz_tz)
+                return result.replace(tzinfo=None) if result else None
             else:
                 # No timezone support - return as-is with a warning
                 return dt

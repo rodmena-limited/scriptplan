@@ -95,7 +95,7 @@ class JournalEntry:
                 f"property={self.property.fullId if self.property else None})")
 
 
-class JournalEntryList(list):
+class JournalEntryList(list[JournalEntry]):
     """
     A list of JournalEntry objects with sorting capabilities.
 
@@ -107,7 +107,7 @@ class JournalEntryList(list):
         """Initialize with optional list of entries."""
         super().__init__(entries or [])
 
-    def sort_by(self, criteria: list[tuple]) -> 'JournalEntryList':
+    def sort_by(self, criteria: list[tuple[str, bool]]) -> 'JournalEntryList':
         """
         Sort entries by multiple criteria.
 
@@ -117,7 +117,7 @@ class JournalEntryList(list):
         Returns:
             Self for chaining
         """
-        def sort_key(entry: JournalEntry):
+        def sort_key(entry: JournalEntry) -> tuple[Any, ...]:
             key_parts = []
             for attr, ascending in criteria:
                 val = getattr(entry, attr, None)
@@ -218,7 +218,7 @@ class Journal:
         """Return the number of entries."""
         return len(self._entries)
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         """Iterate over entries."""
         return iter(self._entries)
 
@@ -262,8 +262,10 @@ class Journal:
 
         # Get entries for all children recursively
         if hasattr(task, 'children'):
+            from scriptplan.core.task import Task
             for child in task.children:
-                result.extend(self.entries_by_task_recursive(child, start, end, alert_level))
+                if isinstance(child, Task):
+                    result.extend(self.entries_by_task_recursive(child, start, end, alert_level))
 
         return self._filter_entries(result, start, end, alert_level)
 

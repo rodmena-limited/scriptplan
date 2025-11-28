@@ -166,7 +166,9 @@ class TextReport(ReportBase):
         if text is None:
             return ''
         if hasattr(text, 'to_text'):
-            return text.to_text()
+            result = text.to_text()
+            return str(result) if result is not None else ''
         if hasattr(text, 'to_s'):
-            return text.to_s()
+            result = text.to_s()
+            return str(result) if result is not None else ''
         return str(text)

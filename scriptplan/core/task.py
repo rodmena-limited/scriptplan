@@ -33,8 +33,9 @@ class Task(PropertyTreeNode):
             TaskScenario(self, i, self._scenarioAttributes[i])
 
     def readyForScheduling(self, scenarioIdx: int) -> bool:
-        if self.data[scenarioIdx]:
-            return self.data[scenarioIdx].readyForScheduling()
+        scenario = self.data[scenarioIdx]
+        if scenario:
+            return scenario.readyForScheduling()
         return False
 
     def prepareScheduling(self, scenarioIdx: int) -> None:
@@ -51,8 +52,9 @@ class Task(PropertyTreeNode):
             scenario.finishScheduling()
 
     def schedule(self, scenarioIdx: int) -> bool:
-        if self.data[scenarioIdx]:
-            return self.data[scenarioIdx].schedule()
+        scenario = self.data[scenarioIdx]
+        if scenario:
+            return scenario.schedule()
         return False
 
     def journalText(self, query: Any, longVersion: bool, recursive: bool) -> Optional[str]:

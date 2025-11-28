@@ -71,7 +71,8 @@ class Resource(PropertyTreeNode):
         """
         scenario = self.data[scenario_idx]
         if scenario:
-            return scenario.book(sb_idx, task)
+            result = scenario.book(sb_idx, task)
+            return bool(result) if result is not None else False
         return False
 
     def __getattr__(self, name: str) -> Callable[..., Any]:

@@ -3,8 +3,9 @@
 import contextlib
 import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from lark import Lark, Token, Transformer, Tree
+from lark import Lark, Token, Transformer, Tree  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
@@ -12,14 +13,14 @@ from scriptplan.core.task import Task
 from scriptplan.parser.macro_processor import preprocess_tjp
 
 
-class TJPTransformer(Transformer):
+class TJPTransformer(Transformer[Any, Any]):
     """Transform the parse tree into a dictionary structure."""
 
-    def start(self, items):
+    def start(self, items: List[Any]) -> Dict[str, Any]:
         return items[0] if items else {}
 
-    def statements(self, items):
-        result = {
+    def statements(self, items: List[Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
             'project': None,
             'global_attributes': [],
             'property_declarations': [],
@@ -40,27 +41,28 @@ class TJPTransformer(Transformer):
                 result['global_attributes'].append(item)
         return result
 
-    def statement(self, items):
+    def statement(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
     # Project definition
-    def project(self, items):
+    def project(self, items: List[Any]) -> Dict[str, Any]:
         # items[0] is always project_id
         # items[1] might be project_name (if present) or project_timeframe
         # We need to check the type to determine
-        p_id = self._get_value(items[0])
+        p_id: str = self._get_value(items[0])
 
-        idx = 1
+        idx: int = 1
         # Check if items[1] is a string (project_name) or a dict (timeframe)
+        p_name: str
         if len(items) > idx and isinstance(items[idx], str):
             p_name = items[idx]
             idx += 1
         else:
             p_name = p_id  # Use id as name if not specified
 
-        timeframe = items[idx] if len(items) > idx else {}
+        timeframe: Any = items[idx] if len(items) > idx else {}
         idx += 1
-        attrs = items[idx] if len(items) > idx else []
+        attrs: Any = items[idx] if len(items) > idx else []
 
         return {
             'type': 'project',
@@ -70,43 +72,43 @@ class TJPTransformer(Transformer):
             'attributes': attrs
         }
 
-    def project_id(self, items):
+    def project_id(self, items: List[Any]) -> Any:
         return self._get_value(items[0])
 
-    def project_name(self, items):
+    def project_name(self, items: List[Any]) -> Any:
         return self._get_value(items[0])
 
-    def project_timeframe(self, items):
-        result = {'start': items[0]}
+    def project_timeframe(self, items: List[Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {'start': items[0]}
         if len(items) > 1 and items[1]:
             result['duration'] = items[1]
         return result
 
-    def duration_spec(self, items):
+    def duration_spec(self, items: List[Any]) -> Optional[str]:
         return self._get_value(items[0]) if items else None
 
-    def project_attributes(self, items):
+    def project_attributes(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def project_attribute(self, items):
+    def project_attribute(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def project_scheduling(self, items):
-        mode = self._get_value(items[0]).lower()
+    def project_scheduling(self, items: List[Any]) -> Tuple[str, str]:
+        mode: str = self._get_value(items[0]).lower()
         # forward=True means ASAP, forward=False means ALAP
         return ('scheduling', mode)
 
     # Global attributes
-    def global_attribute(self, items):
+    def global_attribute(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def copyright(self, items):
+    def copyright(self, items: List[Any]) -> Tuple[str, str]:
         return ('copyright', self._get_value(items[0]))
 
-    def rate(self, items):
+    def rate(self, items: List[Any]) -> Tuple[str, float]:
         return ('rate', float(self._get_value(items[0])))
 
-    def leaves_global(self, items):
+    def leaves_global(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         return ('leaves', {
             'type': self._get_value(items[0]),
             'name': self._get_value(items[1]),
@@ -114,18 +116,18 @@ class TJPTransformer(Transformer):
             'end': items[3] if len(items) > 3 else None
         })
 
-    def flags_global(self, items):
+    def flags_global(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('flags', [self._get_value(i) for i in items])
 
-    def balance(self, items):
+    def balance(self, items: List[Any]) -> Tuple[str, Tuple[str, str]]:
         return ('balance', (self._get_value(items[0]), self._get_value(items[1])))
 
-    def vacation_global(self, items):
+    def vacation_global(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         # vacation_global: "vacation" STRING? date ("-" date)?
         # After transformation, items contains: optional string name, datetime(s) from date rule
-        name = None
-        start_date = None
-        end_date = None
+        name: Optional[str] = None
+        start_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None
         for item in items:
             if isinstance(item, datetime):
                 if start_date is None:
@@ -137,50 +139,50 @@ class TJPTransformer(Transformer):
         return ('vacation', {'name': name, 'start': start_date, 'end': end_date or start_date})
 
     # Project attribute handlers
-    def timezone(self, items):
+    def timezone(self, items: List[Any]) -> Tuple[str, str]:
         return ('timezone', self._get_value(items[0]))
 
-    def timeformat(self, items):
+    def timeformat(self, items: List[Any]) -> Tuple[str, str]:
         return ('timeformat', self._get_value(items[0]))
 
-    def numberformat(self, items):
+    def numberformat(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('numberformat', [self._get_value(i) for i in items])
 
-    def currencyformat(self, items):
+    def currencyformat(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('currencyformat', [self._get_value(i) for i in items])
 
-    def currency(self, items):
+    def currency(self, items: List[Any]) -> Tuple[str, str]:
         return ('currency', self._get_value(items[0]))
 
-    def now(self, items):
+    def now(self, items: List[Any]) -> Tuple[str, Any]:
         return ('now', items[0])
 
-    def dailyworkinghours(self, items):
+    def dailyworkinghours(self, items: List[Any]) -> Tuple[str, float]:
         return ('dailyworkinghours', float(self._get_value(items[0])))
 
-    def yearlyworkingdays(self, items):
+    def yearlyworkingdays(self, items: List[Any]) -> Tuple[str, float]:
         return ('yearlyworkingdays', float(self._get_value(items[0])))
 
     # Scenario
-    def scenario_def(self, items):
-        s_id = self._get_value(items[0])
-        s_name = self._get_value(items[1])
-        body = items[2] if len(items) > 2 else []
+    def scenario_def(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
+        s_id: str = self._get_value(items[0])
+        s_name: str = self._get_value(items[1])
+        body: Any = items[2] if len(items) > 2 else []
         return ('scenario', {'id': s_id, 'name': s_name, 'children': body})
 
-    def scenario_body(self, items):
+    def scenario_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
     # Extend
-    def extend(self, items):
-        e_type = self._get_value(items[0])
-        attrs = items[1] if len(items) > 1 else []
+    def extend(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
+        e_type: str = self._get_value(items[0])
+        attrs: Any = items[1] if len(items) > 1 else []
         return ('extend', {'type': e_type, 'attributes': attrs})
 
-    def extend_body(self, items):
+    def extend_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def extend_attribute(self, items):
+    def extend_attribute(self, items: List[Any]) -> Dict[str, str]:
         # Grammar: "text" ID STRING - "text" is literal, so only ID and STRING in items
         return {
             'type': 'text',
@@ -189,14 +191,14 @@ class TJPTransformer(Transformer):
         }
 
     # Property declarations
-    def property_declaration(self, items):
+    def property_declaration(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
     # Resource
-    def resource(self, items):
-        r_id = self._get_value(items[0])
-        r_name = self._get_value(items[1])
-        body = items[2] if len(items) > 2 else []
+    def resource(self, items: List[Any]) -> Dict[str, Any]:
+        r_id: str = self._get_value(items[0])
+        r_name: str = self._get_value(items[1])
+        body: Any = items[2] if len(items) > 2 else []
         return {
             'type': 'resource',
             'id': r_id,
@@ -204,67 +206,67 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def resource_body(self, items):
+    def resource_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def resource_attr(self, items):
+    def resource_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def resource_email(self, items):
+    def resource_email(self, items: List[Any]) -> Tuple[str, str]:
         return ('email', self._get_value(items[0]))
 
-    def resource_rate(self, items):
+    def resource_rate(self, items: List[Any]) -> Tuple[str, float]:
         return ('rate', float(self._get_value(items[0])))
 
-    def resource_efficiency(self, items):
+    def resource_efficiency(self, items: List[Any]) -> Tuple[str, float]:
         return ('efficiency', float(self._get_value(items[0])))
 
-    def resource_timezone(self, items):
+    def resource_timezone(self, items: List[Any]) -> Tuple[str, str]:
         return ('timezone', self._get_value(items[0]))
 
-    def resource_managers(self, items):
+    def resource_managers(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('managers', [self._get_value(i) for i in items])
 
-    def resource_limits(self, items):
+    def resource_limits(self, items: List[Any]) -> Tuple[str, Any]:
         return ('limits', items[0] if items else [])
 
-    def limits_body(self, items):
+    def limits_body(self, items: List[Any]) -> List[Any]:
         """Parse limits body containing limit_attr items."""
         return list(items) if items else []
 
-    def limit_attr(self, items):
+    def limit_attr(self, items: List[Any]) -> Any:
         """Parse a single limit attribute - pass through the dailymax/weeklymax result."""
         return items[0] if items else None
 
-    def limit_dailymax(self, items):
+    def limit_dailymax(self, items: List[Any]) -> Dict[str, Any]:
         """Parse dailymax limit."""
-        duration = items[0] if items else '0h'
-        resources = items[1] if len(items) > 1 else None
+        duration: Any = items[0] if items else '0h'
+        resources: Optional[Any] = items[1] if len(items) > 1 else None
         # Store value in hours - conversion to slots happens in Limits class
-        hours = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
+        hours: Union[float, int] = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
         return {
             'type': 'dailymax',
             'value': hours,
             'resources': resources
         }
 
-    def limit_weeklymax(self, items):
+    def limit_weeklymax(self, items: List[Any]) -> Dict[str, Any]:
         """Parse weeklymax limit."""
-        duration = items[0] if items else '0h'
-        resources = items[1] if len(items) > 1 else None
+        duration: Any = items[0] if items else '0h'
+        resources: Optional[Any] = items[1] if len(items) > 1 else None
         # Store value in hours - conversion to slots happens in Limits class
-        hours = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
+        hours: Union[float, int] = self._parse_duration_to_hours(duration, round_to_slots=False) if isinstance(duration, str) else float(duration)
         return {
             'type': 'weeklymax',
             'value': hours,
             'resources': resources
         }
 
-    def limits_resources(self, items):
+    def limits_resources(self, items: List[Any]) -> List[str]:
         """Parse limits resources: { resources id1, id2, ... }."""
         return [self._get_value(i) for i in items]
 
-    def _parse_duration_to_hours(self, duration_str, round_to_slots=False):
+    def _parse_duration_to_hours(self, duration_str: str, round_to_slots: bool = False) -> Union[float, int]:
         """Parse duration string to hours.
 
         Args:
@@ -277,8 +279,9 @@ class TJPTransformer(Transformer):
         import re
         match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmy]?)', str(duration_str))
         if match:
-            value = float(match.group(1))
-            unit = match.group(2) or 'h'
+            value: float = float(match.group(1))
+            unit: str = match.group(2) or 'h'
+            hours: float
             if unit == 'h':
                 hours = value
             elif unit == 'd':
@@ -298,46 +301,46 @@ class TJPTransformer(Transformer):
             return hours
         return 0
 
-    def resource_leaves(self, items):
+    def resource_leaves(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         """Handle resource leaves: leaves type start_date [- end_date]."""
-        leave_type = items[0] if items else 'annual'
-        start_date = items[1] if len(items) > 1 else None
-        end_date = items[2] if len(items) > 2 else start_date
+        leave_type: Any = items[0] if items else 'annual'
+        start_date: Any = items[1] if len(items) > 1 else None
+        end_date: Any = items[2] if len(items) > 2 else start_date
         return ('leaves', {
             'type': leave_type,
             'start': start_date,
             'end': end_date
         })
 
-    def resource_flags(self, items):
+    def resource_flags(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('flags', [self._get_value(i) for i in items])
 
-    def resource_vacation(self, items):
+    def resource_vacation(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         """Handle resource vacation: vacation start_date [- end_date]."""
-        start_date = items[0] if items else None
-        end_date = items[1] if len(items) > 1 else start_date
+        start_date: Any = items[0] if items else None
+        end_date: Any = items[1] if len(items) > 1 else start_date
         return ('vacation', {
             'start': start_date,
             'end': end_date
         })
 
-    def resource_booking(self, items):
+    def resource_booking(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         """Handle resource booking: booking STRING date duration_value."""
-        name = self._get_value(items[0])
-        start = items[1] if len(items) > 1 else None
-        duration = self._get_value(items[2]) if len(items) > 2 else '0h'
+        name: str = self._get_value(items[0])
+        start: Any = items[1] if len(items) > 1 else None
+        duration: str = self._get_value(items[2]) if len(items) > 2 else '0h'
         return ('booking', {
             'name': name,
             'start': start,
             'duration': duration
         })
 
-    def resource_workinghours(self, items):
+    def resource_workinghours(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle resource workinghours: workinghours mon, tue, ... 08:00 - 17:00 or shift_id."""
         if not items:
             return ('workinghours', [])
         # Check if it's a shift reference (ID) or a workinghours_spec (list)
-        item = items[0]
+        item: Any = items[0]
         if isinstance(item, str):
             # It's a shift ID reference
             return ('workinghours_shift', item)
@@ -348,19 +351,20 @@ class TJPTransformer(Transformer):
             # It's a workinghours_spec
             return ('workinghours', item)
 
-    def resource_chargeset(self, items):
+    def resource_chargeset(self, items: List[Any]) -> Tuple[str, str]:
         """Handle resource chargeset: chargeset account_id."""
         return ('chargeset', self._get_value(items[0]))
 
-    def timingresolution(self, items):
+    def timingresolution(self, items: List[Any]) -> Tuple[str, int]:
         """Handle timingresolution: timingresolution duration_value."""
         # Parse duration to seconds
-        duration = items[0] if items else '1h'
+        duration: Any = items[0] if items else '1h'
         import re
         match = re.match(r'(\d+(?:\.\d+)?)\s*([hdwmymin]+)', str(duration))
         if match:
-            value = float(match.group(1))
-            unit = match.group(2) or 'h'
+            value: float = float(match.group(1))
+            unit: str = match.group(2) or 'h'
+            seconds: int
             if unit == 'min':
                 seconds = int(value * 60)
             elif unit == 'h':
@@ -372,25 +376,25 @@ class TJPTransformer(Transformer):
             return ('timingresolution', seconds)
         return ('timingresolution', 3600)
 
-    def workinghours(self, items):
+    def workinghours(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle workinghours at project or shift level."""
         return ('workinghours', items[0] if items else [])
 
-    def workinghours_spec(self, items):
+    def workinghours_spec(self, items: List[Any]) -> Dict[str, Any]:
         """Parse workinghours specification: mon, tue, ... 08:00 - 17:00, 13:00 - 14:00.
 
         Returns a dict mapping day names to list of (start_time, end_time) tuples.
         """
         # items[0] is day_list (list of days)
         # items[1:] are duration_range tuples
-        days = items[0] if items else []
-        ranges = list(items[1:]) if len(items) > 1 else []
+        days: Any = items[0] if items else []
+        ranges: List[Any] = list(items[1:]) if len(items) > 1 else []
 
         return {'days': days, 'ranges': ranges}
 
-    def day_list(self, items):
+    def day_list(self, items: List[Any]) -> List[str]:
         """Parse day list: day_spec, day_spec, ..."""
-        all_days = []
+        all_days: List[str] = []
         for item in items:
             if isinstance(item, list):
                 all_days.extend(item)
@@ -398,21 +402,21 @@ class TJPTransformer(Transformer):
                 all_days.append(item)
         return all_days
 
-    def day_spec(self, items):
+    def day_spec(self, items: List[Any]) -> List[str]:
         """Parse day spec: single day or day range like mon - fri."""
-        day_order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+        day_order: List[str] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
         if len(items) == 1:
             # Single day
-            day = self._get_value(items[0]).lower()
+            day: str = self._get_value(items[0]).lower()
             return [day]
         else:
             # Day range like mon - fri
-            start_day = self._get_value(items[0]).lower()
-            end_day = self._get_value(items[1]).lower()
+            start_day: str = self._get_value(items[0]).lower()
+            end_day: str = self._get_value(items[1]).lower()
 
-            start_idx = day_order.index(start_day)
-            end_idx = day_order.index(end_day)
+            start_idx: int = day_order.index(start_day)
+            end_idx: int = day_order.index(end_day)
 
             # Handle wrap-around if needed (e.g., fri - mon)
             if start_idx <= end_idx:
@@ -421,21 +425,21 @@ class TJPTransformer(Transformer):
                 # Wrap around (unusual but supported)
                 return day_order[start_idx:] + day_order[:end_idx + 1]
 
-    def duration_range(self, items):
+    def duration_range(self, items: List[Any]) -> Tuple[str, str]:
         """Parse duration range: TIME - TIME."""
-        start_time = self._get_value(items[0]) if items else '09:00'
-        end_time = self._get_value(items[1]) if len(items) > 1 else '17:00'
+        start_time: str = self._get_value(items[0]) if items else '09:00'
+        end_time: str = self._get_value(items[1]) if len(items) > 1 else '17:00'
         return (start_time, end_time)
 
-    def leaves_type(self, items):
+    def leaves_type(self, items: List[Any]) -> str:
         """Handle leaves type: annual, sick, holiday, special, unpaid."""
         return self._get_value(items[0]) if items else 'annual'
 
     # Task
-    def task(self, items):
-        t_id = self._get_value(items[0])
-        t_name = self._get_value(items[1])
-        body = items[2] if len(items) > 2 else []
+    def task(self, items: List[Any]) -> Dict[str, Any]:
+        t_id: str = self._get_value(items[0])
+        t_name: str = self._get_value(items[1])
+        body: Any = items[2] if len(items) > 2 else []
         return {
             'type': 'task',
             'id': t_id,
@@ -443,74 +447,74 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def task_body(self, items):
+    def task_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def task_attr(self, items):
+    def task_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
     # Named task attribute rules
-    def task_start(self, items):
+    def task_start(self, items: List[Any]) -> Tuple[str, Any]:
         return ('start', items[0])
 
-    def task_end(self, items):
+    def task_end(self, items: List[Any]) -> Tuple[str, Any]:
         return ('end', items[0])
 
-    def task_effort(self, items):
+    def task_effort(self, items: List[Any]) -> Any:
         return items[0]  # effort_value returns a tuple
 
-    def task_duration(self, items):
+    def task_duration(self, items: List[Any]) -> Tuple[str, Any]:
         return ('duration', items[0])
 
-    def task_length(self, items):
+    def task_length(self, items: List[Any]) -> Tuple[str, Any]:
         return ('length', items[0])
 
-    def task_milestone(self, items):
+    def task_milestone(self, items: List[Any]) -> Tuple[str, bool]:
         return ('milestone', True)
 
-    def task_scheduling(self, items):
-        mode = self._get_value(items[0]).lower()
+    def task_scheduling(self, items: List[Any]) -> Tuple[str, bool]:
+        mode: str = self._get_value(items[0]).lower()
         # forward=True means ASAP, forward=False means ALAP
         return ('forward', mode == 'asap')
 
-    def task_depends(self, items):
+    def task_depends(self, items: List[Any]) -> Any:
         return items[0]  # depends_list returns a tuple
 
-    def task_precedes(self, items):
+    def task_precedes(self, items: List[Any]) -> Tuple[str, Any]:
         return ('precedes', items[0][1] if isinstance(items[0], tuple) else items[0])
 
-    def task_allocate(self, items):
+    def task_allocate(self, items: List[Any]) -> Any:
         return items[0]  # allocate_spec returns a tuple
 
-    def task_responsible(self, items):
+    def task_responsible(self, items: List[Any]) -> Tuple[str, str]:
         return ('responsible', self._get_value(items[0]))
 
-    def task_priority(self, items):
+    def task_priority(self, items: List[Any]) -> Tuple[str, int]:
         return ('priority', int(self._get_value(items[0])))
 
-    def task_complete(self, items):
+    def task_complete(self, items: List[Any]) -> Tuple[str, float]:
         return ('complete', float(self._get_value(items[0])))
 
-    def task_note(self, items):
+    def task_note(self, items: List[Any]) -> Tuple[str, str]:
         return ('note', self._get_value(items[0]))
 
-    def task_chargeset(self, items):
+    def task_chargeset(self, items: List[Any]) -> Tuple[str, str]:
         return ('chargeset', self._get_value(items[0]))
 
-    def task_purge_chargeset(self, items):
+    def task_purge_chargeset(self, items: List[Any]) -> Tuple[str, bool]:
         return ('purge_chargeset', True)
 
-    def task_charge(self, items):
+    def task_charge(self, items: List[Any]) -> Tuple[str, Tuple[float, Optional[str]]]:
         return ('charge', (float(self._get_value(items[0])), self._get_value(items[1]) if len(items) > 1 else None))
 
-    def task_limits(self, items):
+    def task_limits(self, items: List[Any]) -> Tuple[str, Any]:
         return ('limits', items[0] if items else [])
 
-    def task_journalentry(self, items):
+    def task_journalentry(self, items: List[Any]) -> Tuple[str, Dict[str, Any]]:
         # items: date, optional headline (STRING), journal_body
-        date = items[0] if items else None
-        headline = None
-        body = {}
+        date: Any = items[0] if items else None
+        headline: Optional[str] = None
+        body: Dict[str, Any] = {}
 
         for item in items[1:]:
             if isinstance(item, str) or (hasattr(item, 'type') and item.type == 'STRING'):
@@ -520,38 +524,40 @@ class TJPTransformer(Transformer):
 
         return ('journalentry', {'date': date, 'headline': headline, 'body': body})
 
-    def journal_body(self, items):
+    def journal_body(self, items: List[Any]) -> Dict[str, Any]:
         # Collect all journal attributes into a dict
-        result = {'author': None, 'alert': 'green', 'summary': None, 'details': None}
+        result: Dict[str, Any] = {'author': None, 'alert': 'green', 'summary': None, 'details': None}
         for item in items:
             if isinstance(item, tuple):
+                key: str
+                value: Any
                 key, value = item
                 result[key] = value
         return result
 
-    def journal_attr(self, items):
+    def journal_attr(self, items: List[Any]) -> Any:
         # Pass through the inner journal_* rule result
         return items[0] if items else None
 
-    def journal_author(self, items):
+    def journal_author(self, items: List[Any]) -> Tuple[str, str]:
         return ('author', self._get_value(items[0]))
 
-    def journal_alert(self, items):
+    def journal_alert(self, items: List[Any]) -> Tuple[str, Any]:
         return ('alert', items[0] if items else 'green')
 
-    def journal_summary(self, items):
-        value = items[0] if items else None
+    def journal_summary(self, items: List[Any]) -> Tuple[str, Optional[str]]:
+        value: Any = items[0] if items else None
         return ('summary', self._extract_text(value))
 
-    def journal_details(self, items):
-        value = items[0] if items else None
+    def journal_details(self, items: List[Any]) -> Tuple[str, Optional[str]]:
+        value: Any = items[0] if items else None
         return ('details', self._extract_text(value))
 
-    def rich_text(self, items):
+    def rich_text(self, items: List[Any]) -> str:
         # Rich text is wrapped in -8<- ... ->8-
         # The RICH_TEXT_BLOCK token contains the delimiters and content
         if items:
-            text = self._get_value(items[0])
+            text: str = self._get_value(items[0])
             # Strip the -8<- and ->8- markers
             if text.startswith('-8<-'):
                 text = text[4:]
@@ -560,62 +566,63 @@ class TJPTransformer(Transformer):
             return text.strip()
         return ''
 
-    def _extract_text(self, value):
+    def _extract_text(self, value: Any) -> Optional[str]:
         """Extract text from a string or rich_text result."""
         if value is None:
             return None
         if isinstance(value, str):
             return value
         if hasattr(value, 'type') and value.type == 'STRING':
-            return self._get_value(value)
+            result: Any = self._get_value(value)
+            return str(result) if result else None
         # If it's already processed rich_text
         return str(value) if value else None
 
-    def alert_level(self, items):
+    def alert_level(self, items: List[Any]) -> str:
         # items[0] is a Token with the alert level value (green/yellow/red)
         return self._get_value(items[0]) if items else 'green'
 
-    def task_flags(self, items):
+    def task_flags(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('flags', [self._get_value(i) for i in items])
 
-    def scenario_attr(self, items):
+    def scenario_attr(self, items: List[Any]) -> Tuple[str, Tuple[str, Any]]:
         """Handle scenario-specific attribute like 'delayed:effort 40d'."""
-        scenario_id = self._get_value(items[0])
-        attr_data = items[1]  # scenario_specific_attr result
+        scenario_id: str = self._get_value(items[0])
+        attr_data: Any = items[1]  # scenario_specific_attr result
         return ('scenario_attr', (scenario_id, attr_data))
 
-    def scenario_specific_attr(self, items):
+    def scenario_specific_attr(self, items: List[Any]) -> Any:
         """Handle the attribute part of scenario-specific attribute."""
         # items[0] is the result from scenario_start/end/effort/etc
         return items[0] if items else None
 
-    def scenario_start(self, items):
+    def scenario_start(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle scenario-specific start attribute."""
         return ('start', items[0])  # items[0] is the date
 
-    def scenario_end(self, items):
+    def scenario_end(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle scenario-specific end attribute."""
         return ('end', items[0])
 
-    def scenario_effort(self, items):
+    def scenario_effort(self, items: List[Any]) -> Any:
         """Handle scenario-specific effort attribute."""
         return items[0]  # effort_value already returns ('effort', value)
 
-    def scenario_duration(self, items):
+    def scenario_duration(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle scenario-specific duration attribute."""
         return ('duration', items[0])
 
-    def scenario_length(self, items):
+    def scenario_length(self, items: List[Any]) -> Tuple[str, Any]:
         """Handle scenario-specific length attribute."""
         return ('length', items[0])
 
     # Task attribute helpers
-    def effort_value(self, items):
-        num = float(self._get_value(items[0]))
-        unit = self._get_value(items[1])
+    def effort_value(self, items: List[Any]) -> Tuple[str, float]:
+        num: float = float(self._get_value(items[0]))
+        unit: str = self._get_value(items[1])
         # Convert to hours (the base unit internally)
         # d=day (8h), w=week (40h), h=hour, m=minute, y=year (2080h)
-        multipliers = {
+        multipliers: Dict[str, float] = {
             'd': 8,
             'w': 40,
             'h': 1,
@@ -623,49 +630,49 @@ class TJPTransformer(Transformer):
             'y': 2080,
             'min': 1/60
         }
-        hours = num * multipliers.get(unit.lower(), 1)
+        hours: float = num * multipliers.get(unit.lower(), 1)
         return ('effort', hours)
 
-    def duration_value(self, items):
-        num = self._get_value(items[0])
-        unit = self._get_value(items[1])
+    def duration_value(self, items: List[Any]) -> str:
+        num: str = self._get_value(items[0])
+        unit: str = self._get_value(items[1])
         return f"{num}{unit}"
 
-    def depends_list(self, items):
+    def depends_list(self, items: List[Any]) -> Tuple[str, List[Any]]:
         # Items are now dependency dicts with ref and optional gap
         return ('depends', list(items))
 
-    def depends_item(self, items):
+    def depends_item(self, items: List[Any]) -> Dict[str, Any]:
         # First item is the DEPENDS_REF, optional second is depends_options dict
-        ref = self._get_value(items[0])
-        dep = {'ref': ref}
+        ref: str = self._get_value(items[0])
+        dep: Dict[str, Any] = {'ref': ref}
         if len(items) > 1 and items[1]:
             dep.update(items[1])
         return dep
 
-    def depends_options(self, items):
-        result = {}
+    def depends_options(self, items: List[Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
         for item in items:
             if isinstance(item, dict):
                 result.update(item)
         return result
 
-    def dep_gapduration(self, items):
+    def dep_gapduration(self, items: List[Any]) -> Dict[str, str]:
         return {'gapduration': self._get_value(items[0])}
 
-    def dep_gaplength(self, items):
+    def dep_gaplength(self, items: List[Any]) -> Dict[str, str]:
         return {'gaplength': self._get_value(items[0])}
 
-    def dep_maxgapduration(self, items):
+    def dep_maxgapduration(self, items: List[Any]) -> Dict[str, str]:
         return {'maxgapduration': self._get_value(items[0])}
 
-    def dep_onend(self, items):
+    def dep_onend(self, items: List[Any]) -> Dict[str, bool]:
         return {'onend': True}
 
-    def dep_onstart(self, items):
+    def dep_onstart(self, items: List[Any]) -> Dict[str, bool]:
         return {'onstart': True}
 
-    def allocate_spec(self, items):
+    def allocate_spec(self, items: List[Any]) -> Tuple[str, Any]:
         resources = []
         options = {}
         for item in items:
@@ -679,7 +686,7 @@ class TJPTransformer(Transformer):
             return ('allocate', {'resources': resources, 'options': options})
         return ('allocate', resources)
 
-    def allocate_options(self, items):
+    def allocate_options(self, items: List[Any]) -> Dict[str, Any]:
         """Process allocation options like persistent, mandatory, alternative."""
         result = {}
         for item in items:
@@ -692,7 +699,7 @@ class TJPTransformer(Transformer):
                         result.update(subitem)
         return result
 
-    def allocate_option(self, items):
+    def allocate_option(self, items: List[Any]) -> Dict[str, Any]:
         """
         Process a single allocation option.
 
@@ -724,7 +731,7 @@ class TJPTransformer(Transformer):
         return {}
 
     # Account
-    def account(self, items):
+    def account(self, items: List[Any]) -> Dict[str, Any]:
         a_id = self._get_value(items[0])
         a_name = self._get_value(items[1])
         body = items[2] if len(items) > 2 else []
@@ -735,14 +742,14 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def account_body(self, items):
+    def account_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def account_attr(self, items):
+    def account_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
     # Shift
-    def shift(self, items):
+    def shift(self, items: List[Any]) -> Dict[str, Any]:
         s_id = self._get_value(items[0])
         # Name is optional (STRING?)
         # Body is the last item (a list)
@@ -759,10 +766,10 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def shift_body(self, items):
+    def shift_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def shift_attr(self, items):
+    def shift_attr(self, items: List[Any]) -> Any:
         # shift_attr comes from workinghours workinghours_spec or leaves
         # The workinghours handler returns ('workinghours', spec)
         # But for shifts, the grammar directly uses workinghours_spec
@@ -772,19 +779,19 @@ class TJPTransformer(Transformer):
         return items[0] if items else None
 
     # Reports
-    def report_definition(self, items):
+    def report_definition(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def textreport(self, items):
+    def textreport(self, items: List[Any]) -> Dict[str, Any]:
         return self._parse_report('textreport', items)
 
-    def taskreport(self, items):
+    def taskreport(self, items: List[Any]) -> Dict[str, Any]:
         return self._parse_report('taskreport', items)
 
-    def resourcereport(self, items):
+    def resourcereport(self, items: List[Any]) -> Dict[str, Any]:
         return self._parse_report('resourcereport', items)
 
-    def _parse_report(self, report_type, items):
+    def _parse_report(self, report_type: str, items: List[Any]) -> Dict[str, Any]:
         r_id = None
         r_name = None
         body = []
@@ -803,146 +810,146 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def textreport_body(self, items):
+    def textreport_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def textreport_attr(self, items):
+    def textreport_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def textreport_header(self, items):
+    def textreport_header(self, items: List[Any]) -> Tuple[str, str]:
         return ('header', self._get_value(items[0]))
 
-    def textreport_footer(self, items):
+    def textreport_footer(self, items: List[Any]) -> Tuple[str, str]:
         return ('footer', self._get_value(items[0]))
 
-    def textreport_center(self, items):
+    def textreport_center(self, items: List[Any]) -> Tuple[str, str]:
         return ('center', self._get_value(items[0]))
 
-    def textreport_left(self, items):
+    def textreport_left(self, items: List[Any]) -> Tuple[str, str]:
         return ('left', self._get_value(items[0]))
 
-    def textreport_right(self, items):
+    def textreport_right(self, items: List[Any]) -> Tuple[str, str]:
         return ('right', self._get_value(items[0]))
 
-    def textreport_formats(self, items):
+    def textreport_formats(self, items: List[Any]) -> Any:
         # items[0] is the result from format_list which is already ('formats', [...])
         return items[0] if items else ('formats', [])
 
-    def textreport_title(self, items):
+    def textreport_title(self, items: List[Any]) -> Tuple[str, str]:
         return ('title', self._get_value(items[0]))
 
-    def taskreport_body(self, items):
+    def taskreport_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def taskreport_attr(self, items):
+    def taskreport_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def taskreport_header(self, items):
+    def taskreport_header(self, items: List[Any]) -> Tuple[str, str]:
         return ('header', self._get_value(items[0]))
 
-    def taskreport_footer(self, items):
+    def taskreport_footer(self, items: List[Any]) -> Tuple[str, str]:
         return ('footer', self._get_value(items[0]))
 
-    def taskreport_headline(self, items):
+    def taskreport_headline(self, items: List[Any]) -> Tuple[str, str]:
         return ('headline', self._get_value(items[0]))
 
-    def taskreport_caption(self, items):
+    def taskreport_caption(self, items: List[Any]) -> Tuple[str, str]:
         return ('caption', self._get_value(items[0]))
 
-    def taskreport_columns(self, items):
+    def taskreport_columns(self, items: List[Any]) -> Any:
         return items[0] if items else ('columns', [])
 
-    def taskreport_timeformat(self, items):
+    def taskreport_timeformat(self, items: List[Any]) -> Tuple[str, str]:
         return ('timeFormat', self._get_value(items[0]))
 
-    def taskreport_loadunit(self, items):
+    def taskreport_loadunit(self, items: List[Any]) -> Tuple[str, str]:
         return ('loadUnit', self._get_value(items[0]))
 
-    def taskreport_hideresource(self, items):
+    def taskreport_hideresource(self, items: List[Any]) -> Tuple[str, str]:
         return ('hideResource', self._get_value(items[0]))
 
-    def taskreport_hidetask(self, items):
+    def taskreport_hidetask(self, items: List[Any]) -> Tuple[str, str]:
         return ('hideTask', self._get_value(items[0]))
 
-    def taskreport_sorttasks(self, items):
+    def taskreport_sorttasks(self, items: List[Any]) -> Any:
         return items[0] if items else ('sort', [])
 
-    def taskreport_sortresources(self, items):
+    def taskreport_sortresources(self, items: List[Any]) -> Any:
         return items[0] if items else ('sort', [])
 
-    def taskreport_scenarios(self, items):
+    def taskreport_scenarios(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('scenarios', [self._get_value(i) for i in items])
 
-    def taskreport_taskroot(self, items):
+    def taskreport_taskroot(self, items: List[Any]) -> Tuple[str, str]:
         return ('taskRoot', self._get_value(items[0]))
 
-    def taskreport_period(self, items):
+    def taskreport_period(self, items: List[Any]) -> Any:
         return items[0] if items else ('period', None)
 
-    def taskreport_balance(self, items):
+    def taskreport_balance(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('balance', [self._get_value(i) for i in items])
 
-    def taskreport_journalmode(self, items):
+    def taskreport_journalmode(self, items: List[Any]) -> Tuple[str, str]:
         return ('journalMode', self._get_value(items[0]))
 
-    def taskreport_journalattributes(self, items):
+    def taskreport_journalattributes(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('journalAttributes', [self._get_value(i) for i in items])
 
-    def taskreport_formats(self, items):
+    def taskreport_formats(self, items: List[Any]) -> Any:
         # items[0] is the result from format_list: ('formats', [...])
         if items and isinstance(items[0], tuple) and items[0][0] == 'formats':
             return items[0]  # Already a properly formatted tuple
         return ('formats', [self._get_value(i) for i in items])
 
-    def taskreport_leaftasksonly(self, items):
+    def taskreport_leaftasksonly(self, items: List[Any]) -> Tuple[str, bool]:
         val = self._get_value(items[0])
         # Convert string to boolean
         if isinstance(val, str):
             val = val.lower() in ('true', 'yes', '1')
         return ('leafTasksOnly', val)
 
-    def resourcereport_body(self, items):
+    def resourcereport_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def resourcereport_attr(self, items):
+    def resourcereport_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
-    def resourcereport_header(self, items):
+    def resourcereport_header(self, items: List[Any]) -> Tuple[str, str]:
         return ('header', self._get_value(items[0]))
 
-    def resourcereport_footer(self, items):
+    def resourcereport_footer(self, items: List[Any]) -> Tuple[str, str]:
         return ('footer', self._get_value(items[0]))
 
-    def resourcereport_headline(self, items):
+    def resourcereport_headline(self, items: List[Any]) -> Tuple[str, str]:
         return ('headline', self._get_value(items[0]))
 
-    def resourcereport_columns(self, items):
+    def resourcereport_columns(self, items: List[Any]) -> Any:
         return items[0] if items else ('columns', [])
 
-    def resourcereport_loadunit(self, items):
+    def resourcereport_loadunit(self, items: List[Any]) -> Tuple[str, str]:
         return ('loadUnit', self._get_value(items[0]))
 
-    def resourcereport_hideresource(self, items):
+    def resourcereport_hideresource(self, items: List[Any]) -> Tuple[str, str]:
         return ('hideResource', self._get_value(items[0]))
 
-    def resourcereport_hidetask(self, items):
+    def resourcereport_hidetask(self, items: List[Any]) -> Tuple[str, str]:
         return ('hideTask', self._get_value(items[0]))
 
-    def resourcereport_sorttasks(self, items):
+    def resourcereport_sorttasks(self, items: List[Any]) -> Any:
         return items[0] if items else ('sort', [])
 
-    def resourcereport_sortresources(self, items):
+    def resourcereport_sortresources(self, items: List[Any]) -> Any:
         return items[0] if items else ('sort', [])
 
-    def resourcereport_scenarios(self, items):
+    def resourcereport_scenarios(self, items: List[Any]) -> Tuple[str, List[str]]:
         return ('scenarios', [self._get_value(i) for i in items])
 
     # Column specifications
-    def column_list(self, items):
+    def column_list(self, items: List[Any]) -> Tuple[str, List[Any]]:
         """Parse column list into list of column specs."""
         return ('columns', [item for item in items if item])
 
-    def column_spec(self, items):
+    def column_spec(self, items: List[Any]) -> Dict[str, Any]:
         """Parse a single column specification."""
         col_id = self._get_value(items[0])
         options = {}
@@ -950,7 +957,7 @@ class TJPTransformer(Transformer):
             options = items[1]
         return {'id': col_id, 'options': options}
 
-    def column_options(self, items):
+    def column_options(self, items: List[Any]) -> Dict[str, Any]:
         """Parse column options into a dict."""
         result = {}
         for item in items:
@@ -961,7 +968,7 @@ class TJPTransformer(Transformer):
                 result['macro'] = self._get_value(item)
         return result
 
-    def column_option(self, items):
+    def column_option(self, items: List[Any]) -> Optional[Tuple[str, Any]]:
         """Parse a single column option."""
         if not items:
             return None
@@ -976,26 +983,26 @@ class TJPTransformer(Transformer):
         return items[0] if items else None
 
     # Sort specifications
-    def sort_list(self, items):
+    def sort_list(self, items: List[Any]) -> Tuple[str, List[Any]]:
         """Parse sort list."""
         return ('sort', [item for item in items if item])
 
-    def sort_item(self, items):
+    def sort_item(self, items: List[Any]) -> Optional[str]:
         """Parse a single sort item."""
         return self._get_value(items[0]) if items else None
 
     # Format list
-    def format_list(self, items):
+    def format_list(self, items: List[Any]) -> Tuple[str, List[str]]:
         """Parse formats list."""
         return ('formats', [self._get_value(i) for i in items])
 
     # Period specification
-    def period_spec(self, items):
+    def period_spec(self, items: List[Any]) -> Tuple[str, Optional[str]]:
         """Parse period specification."""
         return ('period', self._get_value(items[0]) if items else None)
 
     # Navigator
-    def navigator(self, items):
+    def navigator(self, items: List[Any]) -> Dict[str, Any]:
         n_id = self._get_value(items[0])
         body = items[1] if len(items) > 1 else []
         return {
@@ -1004,21 +1011,21 @@ class TJPTransformer(Transformer):
             'attributes': body
         }
 
-    def navigator_body(self, items):
+    def navigator_body(self, items: List[Any]) -> List[Any]:
         return list(items)
 
-    def navigator_attr(self, items):
+    def navigator_attr(self, items: List[Any]) -> Any:
         return items[0] if items else None
 
     # Common
-    def date(self, items):
+    def date(self, items: List[Any]) -> datetime:
         val = self._get_value(items[0])
         try:
             return datetime.strptime(val, "%Y-%m-%d")
         except ValueError:
             return datetime.strptime(val, "%Y-%m-%d-%H:%M")
 
-    def _get_value(self, item):
+    def _get_value(self, item: Any) -> Any:
         """Extract value from Token or string."""
         if isinstance(item, Token):
             val = item.value
@@ -1035,11 +1042,11 @@ class TJPTransformer(Transformer):
 class ModelBuilder:
     """Build the Project model from the parsed data."""
 
-    def __init__(self):
-        self._pending_depends = []  # Store (task, depends_list) for later resolution
-        self._pending_precedes = []  # Store (task, precedes_list) for later resolution
+    def __init__(self) -> None:
+        self._pending_depends: List[Tuple[Task, List[Any]]] = []  # Store (task, depends_list) for later resolution
+        self._pending_precedes: List[Tuple[Task, List[Any]]] = []  # Store (task, precedes_list) for later resolution
 
-    def build(self, data):
+    def build(self, data: Dict[str, Any]) -> Project:
         """Build a Project from parsed data."""
         if not data or not data.get('project'):
             raise ValueError("No project definition found")
@@ -1053,7 +1060,7 @@ class ModelBuilder:
         project = Project(
             proj_data['id'],
             proj_data['name'],
-            None  # version is not used like this
+            ""  # version is not used like this
         )
 
         # Set project start and end dates
@@ -1105,10 +1112,10 @@ class ModelBuilder:
 
         return project
 
-    def _inherit_all_attributes(self, project):
+    def _inherit_all_attributes(self, project: Project) -> None:
         """Inherit attributes from parent nodes for all tasks and resources."""
         # Process tasks in tree order (parents before children)
-        def inherit_recursive(node):
+        def inherit_recursive(node: Any) -> None:
             node.inheritAttributes()
             for child in node.children:
                 inherit_recursive(child)
@@ -1122,10 +1129,10 @@ class ModelBuilder:
             if not resource.parent:
                 inherit_recursive(resource)
 
-    def _resolve_dependencies(self, project):
+    def _resolve_dependencies(self, project: Project) -> None:
         """Resolve task dependency references to actual Task objects."""
         for task, depends_list in self._pending_depends:
-            resolved = []
+            resolved: List[Any] = []
             for dep_item in depends_list:
                 # dep_item can be a dict with 'ref' key or a string (for backwards compat)
                 if isinstance(dep_item, dict):
@@ -1162,7 +1169,7 @@ class ModelBuilder:
                 for scIdx in range(project.scenarioCount()):
                     task[('depends', scIdx)] = resolved
 
-    def _resolve_precedes(self, project):
+    def _resolve_precedes(self, project: Project) -> None:
         """Resolve precedes relationships by adding dependencies to target tasks.
 
         If task A precedes task B, then B depends on A.
@@ -1191,7 +1198,7 @@ class ModelBuilder:
                             existing_deps.append(source_task)
                             target_task[('depends', scIdx)] = existing_deps
 
-    def _resolve_task_reference(self, project, from_task, ref):
+    def _resolve_task_reference(self, project: Project, from_task: Task, ref: str) -> Optional[Task]:
         """Resolve a task reference string to a Task object.
 
         Reference formats:
@@ -1239,13 +1246,13 @@ class ModelBuilder:
                     current = found
                 else:
                     return None
-            return current
+            return current  # type: ignore[return-value]
         else:
             # Search from project root
             for task in project.tasks:
                 if task.id == parts[0]:
                     if len(parts) == 1:
-                        return task
+                        return task  # type: ignore[return-value]
                     # Navigate path
                     current = task
                     for part in parts[1:]:
@@ -1258,10 +1265,10 @@ class ModelBuilder:
                             current = found
                         else:
                             return None
-                    return current
+                    return current  # type: ignore[return-value]
         return None
 
-    def _apply_project_attributes(self, project, attributes):
+    def _apply_project_attributes(self, project: Project, attributes: List[Any]) -> None:
         """Apply attributes to the project."""
         for attr in attributes:
             if attr is None:
@@ -1276,7 +1283,7 @@ class ModelBuilder:
                     with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
 
-    def _apply_global_attributes(self, project, attributes):
+    def _apply_global_attributes(self, project: Project, attributes: List[Any]) -> None:
         """Apply global attributes to the project."""
         from scriptplan.core.leave import Leave
         from scriptplan.utils.time import TimeInterval
@@ -1332,7 +1339,7 @@ class ModelBuilder:
                     with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
 
-    def _create_scenario(self, project, scenario_data, parent=None):
+    def _create_scenario(self, project: Project, scenario_data: Dict[str, Any], parent: Optional[Any] = None) -> None:
         """Create a scenario in the project.
 
         Args:
@@ -1342,8 +1349,8 @@ class ModelBuilder:
         """
         from scriptplan.core.scenario import Scenario
 
-        s_id = scenario_data.get('id')
-        s_name = scenario_data.get('name', '').strip('"')
+        s_id = str(scenario_data.get('id', ''))
+        s_name = str(scenario_data.get('name', '')).strip('"')
         children = scenario_data.get('children', [])
 
         # Clear default scenario on first scenario definition
@@ -1362,31 +1369,32 @@ class ModelBuilder:
             if isinstance(child, tuple) and child[0] == 'scenario':
                 self._create_scenario(project, child[1], scenario)
 
-    def _create_property(self, parent, prop_data):
+    def _create_property(self, parent: Union[Project, Task, Resource], prop_data: Any) -> None:
         """Create a property (resource, task, account) in the parent."""
         if not isinstance(prop_data, dict):
             return
 
         prop_type = prop_data.get('type')
-        prop_id = prop_data.get('id')
-        prop_name = prop_data.get('name')
+        prop_id = prop_data.get('id', '')
+        prop_name = prop_data.get('name', '')
         attributes = prop_data.get('attributes', [])
 
         # Determine project reference
         project = parent if isinstance(parent, Project) else parent.project
 
+        obj: Union[Task, Resource, Any]
         if prop_type == 'task':
             obj = Task(
                 project,
-                prop_id,
-                prop_name,
+                str(prop_id),
+                str(prop_name),
                 parent if isinstance(parent, Task) else None
             )
         elif prop_type == 'resource':
             obj = Resource(
                 project,
-                prop_id,
-                prop_name,
+                str(prop_id),
+                str(prop_name),
                 parent if isinstance(parent, Resource) else None
             )
         elif prop_type == 'account':
@@ -1396,8 +1404,8 @@ class ModelBuilder:
             from scriptplan.core.shift import Shift
             obj = Shift(
                 project,
-                prop_id,
-                prop_name,
+                str(prop_id),
+                str(prop_name),
                 parent if isinstance(parent, Shift) else None
             )
         else:
@@ -1406,7 +1414,7 @@ class ModelBuilder:
         # Apply attributes to the created object
         self._apply_property_attributes(obj, attributes, prop_type)
 
-    def _apply_property_attributes(self, obj, attributes, prop_type):
+    def _apply_property_attributes(self, obj: Union[Task, Resource, Any], attributes: List[Any], prop_type: str) -> None:
         """Apply attributes to a property object."""
         for attr in attributes:
             if attr is None:
@@ -1436,11 +1444,11 @@ class ModelBuilder:
                         obj[('effort', scIdx)] = value
                 elif key == 'depends':
                     # Store for later resolution (after all tasks created)
-                    self._pending_depends.append((obj, value))
+                    self._pending_depends.append((obj, value))  # type: ignore[arg-type]
                 elif key == 'precedes':
                     # Store for later resolution - precedes creates reverse dependencies
                     # If A precedes B, then B depends on A
-                    self._pending_precedes.append((obj, value))
+                    self._pending_precedes.append((obj, value))  # type: ignore[arg-type]
                 elif key == 'allocate':
                     # Set for all scenarios
                     for scIdx in range(obj.project.scenarioCount()):
@@ -1470,7 +1478,7 @@ class ModelBuilder:
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('forward', scIdx)] = value
                     # Mark that this task has explicit scheduling (not inherited from project)
-                    obj._explicit_scheduling = True
+                    obj._explicit_scheduling = True  # type: ignore[union-attr]
                 elif key == 'scenario_attr':
                     # Handle scenario-specific attributes like ('delayed', ('effort', 320))
                     scenario_id, attr_data = value
@@ -1480,7 +1488,7 @@ class ModelBuilder:
                         obj[(attr_key, scenario_idx)] = attr_value
                 elif key == 'journalentry':
                     # Create a journal entry for this task
-                    self._create_journal_entry(obj, value)
+                    self._create_journal_entry(obj, value)  # type: ignore[arg-type]
                 elif key == 'charge':
                     # charge is a tuple (amount, mode) where mode is 'onstart', 'onend', or 'perday'
                     amount, _mode = value
@@ -1634,14 +1642,14 @@ class ModelBuilder:
                     with contextlib.suppress(ValueError, KeyError, AttributeError):
                         obj[key] = value
 
-    def _get_scenario_index(self, project, scenario_id):
+    def _get_scenario_index(self, project: Project, scenario_id: str) -> Optional[int]:
         """Get the index of a scenario by its ID."""
         for i, scenario in enumerate(project.scenarios):
             if scenario.id == scenario_id:
                 return i
         return None
 
-    def _create_journal_entry(self, task, entry_data):
+    def _create_journal_entry(self, task: Task, entry_data: Dict[str, Any]) -> None:
         """Create a journal entry for a task.
 
         Args:
@@ -1679,7 +1687,7 @@ class ModelBuilder:
         entry.summary = body.get('summary')
         entry.details = body.get('details')
 
-    def _create_report(self, project, report_data, parent=None):
+    def _create_report(self, project: Project, report_data: Dict[str, Any], parent: Optional[Any] = None) -> Any:
         """Create a Report from parsed data.
 
         Args:
@@ -1720,7 +1728,7 @@ class ModelBuilder:
 
         return report
 
-    def _apply_report_attribute(self, report, attr, default_formats):
+    def _apply_report_attribute(self, report: Any, attr: Any, default_formats: List[Any]) -> None:
         """Apply a single attribute to a report.
 
         Args:
@@ -1822,7 +1830,7 @@ class ModelBuilder:
                 for child in attr.children:
                     if isinstance(child, Tree) and child.data == 'column_spec':
                         col_id = None
-                        col_opts = {}
+                        col_opts: Dict[str, Any] = {}
                         for cc in child.children:
                             if isinstance(cc, Token) and cc.type == 'ID':
                                 col_id = cc.value
@@ -1862,13 +1870,13 @@ class ModelBuilder:
 class ProjectFileParser:
     """Parser for TJP project files."""
 
-    def __init__(self):
-        grammar_path = os.path.join(os.path.dirname(__file__), 'tjp.lark')
+    def __init__(self) -> None:
+        grammar_path: str = os.path.join(os.path.dirname(__file__), 'tjp.lark')
         with open(grammar_path) as f:
-            self.grammar = f.read()
-        self.parser = Lark(self.grammar, start='start', parser='lalr')
+            self.grammar: str = f.read()
+        self.parser: Lark = Lark(self.grammar, start='start', parser='lalr')
 
-    def parse(self, text, preprocess_macros=True, schedule=True):
+    def parse(self, text: str, preprocess_macros: bool = True, schedule: bool = True) -> Project:
         """Parse TJP text and return a Project object.
 
         Args:

@@ -142,7 +142,7 @@ class ReportBase(ABC):
         """
         from scriptplan.core.property import PropertyList
 
-        result = PropertyList(account_list)
+        result: PropertyList = PropertyList(account_list)
 
         account_root = self.a('accountRoot')
         if account_root:
@@ -177,7 +177,7 @@ class ReportBase(ABC):
         """
         from scriptplan.core.property import PropertyList
 
-        result = PropertyList(task_list)
+        result: PropertyList = PropertyList(task_list)
 
         task_root = self.a('taskRoot')
         if task_root:
@@ -225,7 +225,7 @@ class ReportBase(ABC):
         """
         from scriptplan.core.property import PropertyList
 
-        result = PropertyList(resource_list)
+        result: PropertyList = PropertyList(resource_list)
 
         resource_root = self.a('resourceRoot')
         if resource_root:
@@ -303,7 +303,7 @@ class ReportBase(ABC):
 
         # Re-add parents in tree mode (if applicable)
         if hasattr(items, 'tree_mode') and items.tree_mode():
-            parents = []
+            parents: list[Any] = []
             for prop in items:
                 parent = prop.parent
                 while parent:
@@ -312,7 +312,9 @@ class ReportBase(ABC):
                     if parent == root:
                         break
                     parent = parent.parent
-            items.extend(parents)
+            # Manually add parents since extend() is not typed
+            for parent in parents:
+                items.append(parent)
 
         return items
 
@@ -328,7 +330,8 @@ class ReportBase(ABC):
             True if node is a descendant of parent
         """
         if hasattr(node, 'isChildOf'):
-            return node.isChildOf(parent)
+            result: Any = node.isChildOf(parent)
+            return bool(result)
 
         # Manual check
         current = node
@@ -350,9 +353,11 @@ class ReportBase(ABC):
             Boolean result of expression evaluation
         """
         if hasattr(expr, 'eval'):
-            return expr.eval(query)
+            result: Any = expr.eval(query)
+            return bool(result)
         if callable(expr):
-            return expr(query)
+            result = expr(query)
+            return bool(result)
         return bool(expr)
 
     def _generate_html_table_frame(self) -> str:
@@ -387,5 +392,6 @@ class ReportBase(ABC):
         if text is None:
             return ''
         if hasattr(text, 'to_html'):
-            return text.to_html()
+            result: Any = text.to_html()
+            return str(result)
         return str(text)

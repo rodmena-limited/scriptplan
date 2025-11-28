@@ -28,7 +28,7 @@ class ShiftScenario(ScenarioData):
         """Returns True if the shift has working time defined for the date."""
         workinghours = self._get('workinghours')
         if workinghours:
-            return workinghours.onShift(date)
+            return workinghours.onShift(date)  # type: ignore[no-any-return]
         return False
 
     def replace(self) -> Any:

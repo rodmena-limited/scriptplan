@@ -35,9 +35,11 @@ class TaskReport(TableReport):
             report: The parent Report object
         """
         super().__init__(report)
-        self.table = ReportTable()
-        self.table.self_contained = report.get('selfContained') if report.get('selfContained') is not None else True
-        self.table.aux_dir = report.get('auxDir') or ''
+        self.table: ReportTable = ReportTable()
+        self_contained = report.get('selfContained')
+        self.table.self_contained = self_contained if self_contained is not None else True
+        aux_dir = report.get('auxDir')
+        self.table.aux_dir = aux_dir or ''
 
     def generate_intermediate_format(self) -> None:
         """
@@ -69,7 +71,7 @@ class TaskReport(TableReport):
         Returns:
             Filtered and sorted PropertyList of tasks
         """
-        task_list = PropertyList(self.project.tasks)
+        task_list: PropertyList = PropertyList(self.project.tasks)
 
         # Include adopted tasks
         if hasattr(task_list, 'includeAdopted'):
@@ -98,7 +100,7 @@ class TaskReport(TableReport):
 
         # Filter to only leaf tasks if leafTasksOnly is set
         if self.a('leafTasksOnly'):
-            leaf_tasks = PropertyList(task_list, copyItems=False)
+            leaf_tasks: PropertyList = PropertyList(task_list, copyItems=False)
             for task in task_list:
                 if hasattr(task, 'leaf') and task.leaf():
                     leaf_tasks.append(task)
@@ -113,7 +115,7 @@ class TaskReport(TableReport):
         Returns:
             Sorted PropertyList of resources
         """
-        resource_list = PropertyList(self.project.resources)
+        resource_list: PropertyList = PropertyList(self.project.resources)
 
         for resource in self.project.resources:
             resource_list.append(resource)

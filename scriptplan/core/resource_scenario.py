@@ -6,7 +6,7 @@ scenario-specific data for a Resource.
 """
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
 
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.scheduler.scoreboard import Scoreboard
@@ -63,7 +63,7 @@ class ResourceScenario(ScenarioData):
         self.maxslot: Optional[int] = None
 
         # Internal effort counter
-        self._effort = 0
+        self._effort: float = 0.0
 
         # Track partial slot usage: slot_idx -> seconds_used
         # When a task ends mid-slot, this records how much of the slot was used
@@ -73,7 +73,7 @@ class ResourceScenario(ScenarioData):
         # Track which tasks used which slots and how much
         # slot_idx -> list of (task, seconds_used)
         # This allows multiple tasks to share a slot
-        self.slotTaskUsage: dict[int, list] = {}
+        self.slotTaskUsage: dict[int, List[Tuple[Any, float]]] = {}
 
         # Data cache
         self.dCache = DataCache.instance()
@@ -94,7 +94,7 @@ class ResourceScenario(ScenarioData):
 
         This method must be called at the beginning of each scheduling run.
         """
-        self._effort = 0
+        self._effort = 0.0
         if self.property.leaf():
             self.initScoreboard()
 
@@ -162,16 +162,15 @@ class ResourceScenario(ScenarioData):
         will not get their resources.
         """
         if self.scoreboard is None:
-            self.property.set_scenario_attr('criticalness', self.scenarioIdx, 0.0)
+            self.property['criticalness', self.scenarioIdx] = 0.0
         else:
             free_slots = sum(1 for slot in self.scoreboard if slot is None)
             allocated_effort = self.property.get('alloctdeffort', self.scenarioIdx) or 0
 
             if free_slots == 0:
-                self.property.set_scenario_attr('criticalness', self.scenarioIdx, 1.0)
+                self.property['criticalness', self.scenarioIdx] = 1.0
             else:
-                self.property.set_scenario_attr('criticalness', self.scenarioIdx,
-                                               allocated_effort / free_slots)
+                self.property['criticalness', self.scenarioIdx] = allocated_effort / free_slots
 
     def setDirectReports(self) -> None:
         """
@@ -181,7 +180,7 @@ class ResourceScenario(ScenarioData):
         new_managers = []
 
         for manager_id in managers:
-            manager = self.project.resource(manager_id) if isinstance(manager_id, str) else manager_id
+            manager = self.project.resources.get(manager_id) if isinstance(manager_id, str) else manager_id  # type: ignore[attr-defined]
 
             if manager is None:
                 self.error('resource_id_expected',
@@ -212,7 +211,7 @@ class ResourceScenario(ScenarioData):
                 unique_managers.append(m)
                 seen.add(m)
 
-        self.property.set_scenario_attr('managers', self.scenarioIdx, unique_managers)
+        self.property['managers', self.scenarioIdx] = unique_managers
 
     def setReports(self) -> None:
         """
@@ -242,7 +241,8 @@ class ResourceScenario(ScenarioData):
         """
         # Recursively descend into all child resources
         for resource in self.property.children:
-            resource.finishScheduling(self.scenarioIdx)
+            if hasattr(resource, 'finishScheduling'):
+                resource.finishScheduling(self.scenarioIdx)
 
         # Add parent tasks of each task to the duties list
         duties = self.property.get('duties', self.scenarioIdx) or []
@@ -355,9 +355,9 @@ class ResourceScenario(ScenarioData):
         Returns:
             Available seconds in the slot (0 to slot_duration)
         """
-        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        slot_duration: float = self.project.attributes.get('scheduleGranularity', 3600)
         seconds_used = self.slotSecondsUsed.get(sb_idx, 0.0)
-        return max(0.0, slot_duration - seconds_used)
+        return float(max(0.0, slot_duration - seconds_used))
 
     def markSlotPartiallyUsed(self, sb_idx: int, seconds_used: float) -> None:
         """
@@ -418,7 +418,8 @@ class ResourceScenario(ScenarioData):
         self.slotSecondsUsed[sb_idx] = current_used + available_seconds
 
         # Update scoreboard (may be overwritten if multiple tasks share slot)
-        self.scoreboard[sb_idx] = task
+        if self.scoreboard is not None:
+            self.scoreboard[sb_idx] = task
 
         # Update resource limits
         limits = self.property.get('limits', self.scenarioIdx)
@@ -524,17 +525,20 @@ class ResourceScenario(ScenarioData):
             # Use the shift's working hours
             shift_wh = shift.get('workinghours', self.scenarioIdx)
             if shift_wh and hasattr(shift_wh, 'onShift'):
-                return shift_wh.onShift(sb_idx, timezone=resource_tz)
+                result: bool = shift_wh.onShift(sb_idx, timezone=resource_tz)
+                return result
 
         # Check if resource has direct working hours
         workinghours = self.property.get('workinghours', self.scenarioIdx)
         if workinghours and hasattr(workinghours, 'onShift'):
-            return workinghours.onShift(sb_idx, timezone=resource_tz)
+            result2: bool = workinghours.onShift(sb_idx, timezone=resource_tz)
+            return result2
 
         # Default: use project's working time
-        return self.project.isWorkingTime(sb_idx)
+        result3: bool = self.project.isWorkingTime(sb_idx)
+        return result3
 
-    def setReports_i(self, reports: list) -> None:
+    def setReports_i(self, reports: List[Any]) -> None:
         """
         Internal method to set reports relationship.
 
@@ -556,7 +560,7 @@ class ResourceScenario(ScenarioData):
             if hasattr(r, 'setReports_i'):
                 r.setReports_i(self.scenarioIdx, current_reports)
 
-    def treeSum(self, start_idx: int, end_idx: int, *args,
+    def treeSum(self, start_idx: int, end_idx: int, *args: Any,
                 block: Callable[['ResourceScenario'], float]) -> float:
         """
         Generic tree iterator that recursively accumulates results.
@@ -573,7 +577,7 @@ class ResourceScenario(ScenarioData):
         cache_tag = "treeSum"
         return self.treeSumR(cache_tag, start_idx, end_idx, *args, block=block)
 
-    def treeSumR(self, cache_tag: str, start_idx: int, end_idx: int, *args,
+    def treeSumR(self, cache_tag: str, start_idx: int, end_idx: int, *args: Any,
                  block: Callable[['ResourceScenario'], float]) -> float:
         """
         Recursive implementation of treeSum.
@@ -588,7 +592,7 @@ class ResourceScenario(ScenarioData):
         Returns:
             Accumulated sum
         """
-        if self.property.container():
+        if self.property.container:  # type: ignore[attr-defined]
             sum_val = 0.0
             for resource in self.property.kids():
                 if resource.data and resource.data[self.scenarioIdx]:
@@ -622,7 +626,8 @@ class ResourceScenario(ScenarioData):
             allocated = res_scen.getAllocatedSlots(start_idx, end_idx, task)
             granularity = res_scen.project.attributes.get('scheduleGranularity', 3600)
             efficiency = res_scen.property.get('efficiency', res_scen.scenarioIdx) or 1.0
-            return res_scen.project.convertToDailyLoad(allocated * granularity) * efficiency
+            daily_load: float = res_scen.project.convertToDailyLoad(allocated * granularity) * efficiency  # type: ignore[attr-defined]
+            return daily_load
 
         return self.treeSum(start_idx, end_idx, task, block=calculate)
 

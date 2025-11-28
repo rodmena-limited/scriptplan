@@ -8,7 +8,7 @@ the requested output format.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from scriptplan.report.report_base import ReportBase
 
@@ -142,7 +142,7 @@ class ReportTable:
         aux_dir: Auxiliary files directory
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.header_lines: list[ReportTableLine] = []
         self.body_lines: list[ReportTableLine] = []
         self.footer_lines: list[ReportTableLine] = []
@@ -209,7 +209,7 @@ class ReportTableLegend:
     Shows explanations for icons, colors, and symbols used in the report.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.items: list[tuple[str, str]] = []  # (symbol, description)
 
     def add_item(self, symbol: str, description: str) -> None:
@@ -244,9 +244,8 @@ class TableReport(ReportBase):
         legend: Report legend
     """
 
-    from typing import ClassVar
     # Column properties: ID -> (Header, Indent, Alignment, ScenarioSpecific)
-    PROPERTIES_BY_ID: ClassVar[dict] = {
+    PROPERTIES_BY_ID: ClassVar[dict[str, tuple[str, bool, Alignment, bool]]] = {
         'activetasks': ('Active Tasks', True, Alignment.RIGHT, True),
         'alert': ('Alert', True, Alignment.LEFT, False),
         'alertmessages': ('Alert Messages', False, Alignment.LEFT, False),
@@ -630,7 +629,7 @@ class TableReport(ReportBase):
         return str(value)
 
     def adjust_column_period(self, column_def: Any,
-                            tasks: 'PropertyList' = None,
+                            tasks: Optional['PropertyList'] = None,
                             scenarios: Optional[list[int]] = None) -> None:
         """
         Adjust the column period based on task dates.
@@ -676,8 +675,9 @@ class TableReport(ReportBase):
 
         for scenario_idx in scenarios:
             for task in tasks:
-                start = task.get('start', scenario_idx) if hasattr(task, 'get') else None
-                end = task.get('end', scenario_idx) if hasattr(task, 'get') else None
+                # Use __getitem__ with tuple for scenario-specific access
+                start = task['start', scenario_idx] if hasattr(task, '__getitem__') else None
+                end = task['end', scenario_idx] if hasattr(task, '__getitem__') else None
 
                 if start and (task_start is None or start < task_start):
                     task_start = start

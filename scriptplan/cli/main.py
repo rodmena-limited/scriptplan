@@ -226,8 +226,10 @@ class ScriptPlan:
         Args:
             args: Parsed command-line arguments
         """
+        from scriptplan.core.project import Project
+
         self.args = args
-        self.project = None
+        self.project: Optional[Project] = None
         self.errors = 0
         self.warnings = 0
         self.logger = logging.getLogger('scriptplan.cli')
@@ -324,7 +326,8 @@ class ScriptPlan:
                 content = f.read()
 
             self.project = parser.parse(content)
-            self.logger.info(f"Project '{self.project.name}' loaded successfully")
+            if self.project:
+                self.logger.info(f"Project '{self.project.name}' loaded successfully")
 
             # Parse additional include files
             for include_file in files[1:]:
@@ -503,7 +506,7 @@ class ScriptPlan:
                 context.push()
 
                 try:
-                    result = report.generate()
+                    result = report.generate()  # type: ignore[attr-defined]
                     if result != 0:
                         self.warnings += 1
                 finally:
