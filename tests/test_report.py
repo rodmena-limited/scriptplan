@@ -161,42 +161,45 @@ class TestReportTableCell:
             colspan=2,
             indent=1,
             is_header=True,
-            css_class='custom-class'
+            style_class='custom-class'
         )
         assert cell.text == 'Test Value'
         assert cell.alignment == Alignment.RIGHT
         assert cell.colspan == 2
         assert cell.indent == 1
         assert cell.is_header
-        assert cell.css_class == 'custom-class'
+        assert cell.style_class == 'custom-class'
 
-    def test_cell_to_html_basic(self):
-        """Test basic cell HTML generation."""
+    def test_cell_to_json_basic(self):
+        """Test basic cell JSON generation."""
         cell = ReportTableCell(text='Hello')
-        html = cell.to_html()
-        assert '<td>' in html
-        assert 'Hello' in html
-        assert '</td>' in html
+        data = cell.to_json()
+        assert isinstance(data, dict)
+        assert data['text'] == 'Hello'
+        assert data['is_header'] is False
 
-    def test_cell_to_html_header(self):
-        """Test header cell HTML generation."""
+    def test_cell_to_json_header(self):
+        """Test header cell JSON generation."""
         cell = ReportTableCell(text='Header', is_header=True)
-        html = cell.to_html()
-        assert '<th>' in html
-        assert '</th>' in html
+        data = cell.to_json()
+        assert isinstance(data, dict)
+        assert data['text'] == 'Header'
+        assert data['is_header'] is True
 
-    def test_cell_to_html_with_attributes(self):
-        """Test cell HTML with attributes."""
+    def test_cell_to_json_with_attributes(self):
+        """Test cell JSON with attributes."""
         cell = ReportTableCell(
             text='Value',
             colspan=2,
             alignment=Alignment.CENTER,
-            css_class='special'
+            style_class='special'
         )
-        html = cell.to_html()
-        assert 'colspan="2"' in html
-        assert 'class="special"' in html
-        assert 'text-align: center' in html
+        data = cell.to_json()
+        assert isinstance(data, dict)
+        assert data['text'] == 'Value'
+        assert data['colspan'] == 2
+        assert data['alignment'] == 'center'
+        assert data['style_class'] == 'special'
 
 
 class TestReportTableLine:
@@ -223,23 +226,26 @@ class TestReportTableLine:
         assert line.cells[0].text == 'A'
         assert line.cells[1].text == 'B'
 
-    def test_line_to_html(self):
-        """Test line HTML generation."""
+    def test_line_to_json(self):
+        """Test line JSON generation."""
         line = ReportTableLine()
         line.add_cell(ReportTableCell(text='Col1'))
         line.add_cell(ReportTableCell(text='Col2'))
 
-        html = line.to_html()
-        assert '<tr>' in html
-        assert '</tr>' in html
-        assert 'Col1' in html
-        assert 'Col2' in html
+        data = line.to_json()
+        assert isinstance(data, dict)
+        assert 'cells' in data
+        assert len(data['cells']) == 2
+        assert data['cells'][0]['text'] == 'Col1'
+        assert data['cells'][1]['text'] == 'Col2'
 
-    def test_line_to_html_hidden(self):
-        """Test hidden line returns empty."""
+    def test_line_to_json_hidden(self):
+        """Test hidden line returns hidden flag."""
         line = ReportTableLine()
         line.is_hidden = True
-        assert line.to_html() == ''
+        data = line.to_json()
+        assert isinstance(data, dict)
+        assert data['hidden'] is True
 
 
 class TestReportTable:
@@ -273,8 +279,8 @@ class TestReportTable:
         assert len(table.body_lines) == 1
         assert len(table.footer_lines) == 1
 
-    def test_table_to_html(self):
-        """Test table HTML generation."""
+    def test_table_to_json(self):
+        """Test table JSON generation."""
         table = ReportTable()
 
         header = ReportTableLine()
@@ -285,12 +291,13 @@ class TestReportTable:
         body.add_cell(ReportTableCell(text='Task 1'))
         table.add_body_line(body)
 
-        html = table.to_html()
-        assert '<table' in html
-        assert '<thead>' in html
-        assert '<tbody>' in html
-        assert 'Name' in html
-        assert 'Task 1' in html
+        data = table.to_json()
+        assert isinstance(data, dict)
+        assert 'columns' in data
+        assert 'data' in data
+        assert data['columns'] == ['name']
+        assert len(data['data']) == 1
+        assert data['data'][0] == {'name': 'Task 1'}
 
     def test_table_to_csv(self):
         """Test table CSV generation."""
@@ -317,7 +324,8 @@ class TestReportTableLegend:
         """Test empty legend."""
         legend = ReportTableLegend()
         assert legend.items == []
-        assert legend.to_html() == ''
+        data = legend.to_json()
+        assert data == []
 
     def test_legend_add_items(self):
         """Test adding legend items."""
@@ -328,15 +336,16 @@ class TestReportTableLegend:
         assert len(legend.items) == 2
         assert legend.items[0] == ('*', 'Important')
 
-    def test_legend_to_html(self):
-        """Test legend HTML generation."""
+    def test_legend_to_json(self):
+        """Test legend JSON generation."""
         legend = ReportTableLegend()
         legend.add_item('*', 'Important')
 
-        html = legend.to_html()
-        assert 'tj_table_legend' in html
-        assert '*' in html
-        assert 'Important' in html
+        data = legend.to_json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]['symbol'] == '*'
+        assert data[0]['description'] == 'Important'
 
 
 class TestTableReport:
@@ -437,7 +446,7 @@ class TestTextReport:
 
         text_report = TextReport(report)
 
-        assert text_report.html_content == ''
+        assert text_report.content_data == {}
 
     def test_text_report_generate(self):
         """Test TextReport intermediate format generation."""
@@ -452,8 +461,9 @@ class TestTextReport:
         text_report = TextReport(report)
         text_report.generate_intermediate_format()
 
-        assert 'Test Headline' in text_report.html_content
-        assert 'Test Caption' in text_report.html_content
+        assert isinstance(text_report.content_data, dict)
+        assert text_report.content_data['headline'] == 'Test Headline'
+        assert text_report.content_data['caption'] == 'Test Caption'
 
     def test_text_report_to_csv_returns_none(self):
         """Test TextReport to_csv returns None."""

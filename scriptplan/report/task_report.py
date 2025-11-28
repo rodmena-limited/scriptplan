@@ -198,7 +198,7 @@ class TaskReport(TableReport):
                     resource_line = self._generate_resource_line(
                         resource, task, columns, scenario_idx
                     )
-                    resource_line.css_class = 'nested_resource'
+                    resource_line.style_class = 'nested_resource'
                     self.table.add_body_line(resource_line)
 
     def _generate_task_line(self, task: Any, columns: list[Any],
@@ -215,7 +215,7 @@ class TaskReport(TableReport):
             ReportTableLine for the task
         """
         line = ReportTableLine(task, scenario_idx)
-        line.css_class = 'task_row'
+        line.style_class = 'task_row'
 
         for column_def in columns:
             cell = self._generate_task_cell(task, column_def, scenario_idx)

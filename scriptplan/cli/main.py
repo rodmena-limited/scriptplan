@@ -521,6 +521,48 @@ class ScriptPlan:
             return False
 
 
+def run_scriptplan(tjp_file: str) -> tuple[bool, Optional[str]]:
+    """
+    Run ScriptPlan report generation on a .tjp file.
+
+    This is a simplified interface for programmatic use.
+
+    Args:
+        tjp_file: Path to the .tjp file
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    import contextlib
+    import io
+
+    # Capture stderr to get error messages
+    stderr_capture = io.StringIO()
+
+    try:
+        with contextlib.redirect_stderr(stderr_capture):
+            # Create minimal args
+            parser = create_parser()
+            args = parser.parse_args([tjp_file])
+
+            # Suppress logging for programmatic use
+            logging.getLogger().setLevel(logging.ERROR)
+
+            # Run the application
+            app = ScriptPlan(args)
+            exit_code = app.run()
+
+            if exit_code == 0:
+                return (True, None)
+            else:
+                error_output = stderr_capture.getvalue()
+                return (False, error_output or "Report generation failed")
+
+    except Exception as e:
+        error_output = stderr_capture.getvalue()
+        return (False, error_output or str(e))
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """
     Main entry point for the CLI.

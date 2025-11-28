@@ -3,7 +3,7 @@ ReportBase - Abstract base class for report content generators.
 
 This module provides the ReportBase class which is the abstract base for all
 kinds of report content generators. Derived classes must implement the
-generate_intermediate_format function as well as to_html, to_csv, etc.
+generate_intermediate_format function as well as to_json, to_csv, etc.
 """
 
 from abc import ABC, abstractmethod
@@ -20,7 +20,7 @@ class ReportBase(ABC):
 
     This class provides common functionality for filtering property lists
     and generating the intermediate format that can be converted to
-    various output formats (HTML, CSV, etc.).
+    various output formats (JSON, CSV, etc.).
 
     Attributes:
         report: Reference to the parent Report object
@@ -102,12 +102,12 @@ class ReportBase(ABC):
                 text.setQuery(query)
 
     @abstractmethod
-    def to_html(self) -> Optional[str]:
+    def to_json(self) -> Optional[dict[str, Any]]:
         """
-        Convert the intermediate format to HTML.
+        Convert the intermediate format to JSON.
 
         Returns:
-            HTML string representation or None
+            Dictionary suitable for JSON serialization or None
         """
         pass
 

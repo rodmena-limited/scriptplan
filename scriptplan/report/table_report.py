@@ -35,13 +35,13 @@ class ReportTableCell:
         rowspan: Number of rows to span
         indent: Indentation level
         is_header: Whether this is a header cell
-        css_class: Optional CSS class
+        style_class: Optional style class
         tooltip: Optional tooltip text
     """
 
     def __init__(self, text: str = '', alignment: Alignment = Alignment.LEFT,
                  colspan: int = 1, rowspan: int = 1, indent: int = 0,
-                 is_header: bool = False, css_class: str = '',
+                 is_header: bool = False, style_class: str = '',
                  tooltip: str = ''):
         self.text = text
         self.alignment = alignment
@@ -49,34 +49,29 @@ class ReportTableCell:
         self.rowspan = rowspan
         self.indent = indent
         self.is_header = is_header
-        self.css_class = css_class
+        self.style_class = style_class
         self.tooltip = tooltip
 
-    def to_html(self) -> str:
-        """Convert cell to HTML."""
-        tag = 'th' if self.is_header else 'td'
-        attrs = []
+    def to_json(self) -> dict[str, Any]:
+        """Convert cell to JSON-serializable dict."""
+        data: dict[str, Any] = {
+            'text': self.text,
+            'alignment': self.alignment.value,
+            'is_header': self.is_header,
+        }
 
         if self.colspan > 1:
-            attrs.append(f'colspan="{self.colspan}"')
+            data['colspan'] = self.colspan
         if self.rowspan > 1:
-            attrs.append(f'rowspan="{self.rowspan}"')
-        if self.css_class:
-            attrs.append(f'class="{self.css_class}"')
-        if self.tooltip:
-            attrs.append(f'title="{self.tooltip}"')
-
-        style_parts = []
-        if self.alignment != Alignment.LEFT:
-            style_parts.append(f'text-align: {self.alignment.value}')
+            data['rowspan'] = self.rowspan
         if self.indent > 0:
-            style_parts.append(f'padding-left: {self.indent * 20}px')
+            data['indent'] = self.indent
+        if self.style_class:
+            data['style_class'] = self.style_class
+        if self.tooltip:
+            data['tooltip'] = self.tooltip
 
-        if style_parts:
-            attrs.append(f'style="{"; ".join(style_parts)}"')
-
-        attr_str = ' ' + ' '.join(attrs) if attrs else ''
-        return f'<{tag}{attr_str}>{self.text}</{tag}>'
+        return data
 
 
 class ReportTableLine:
@@ -88,7 +83,7 @@ class ReportTableLine:
         property: The property this row represents
         scenario_idx: The scenario index for this row
         is_hidden: Whether this row should be hidden
-        css_class: Optional CSS class for the row
+        style_class: Optional style class for the row
     """
 
     def __init__(self, property_node: Any = None, scenario_idx: int = 0):
@@ -96,24 +91,25 @@ class ReportTableLine:
         self.property = property_node
         self.scenario_idx = scenario_idx
         self.is_hidden = False
-        self.css_class = ''
+        self.style_class = ''
 
     def add_cell(self, cell: ReportTableCell) -> None:
         """Add a cell to this row."""
         self.cells.append(cell)
 
-    def to_html(self) -> str:
-        """Convert row to HTML."""
+    def to_json(self) -> dict[str, Any]:
+        """Convert row to JSON-serializable dict."""
         if self.is_hidden:
-            return ''
+            return {'hidden': True}
 
-        attrs = []
-        if self.css_class:
-            attrs.append(f'class="{self.css_class}"')
+        data: dict[str, Any] = {
+            'cells': [cell.to_json() for cell in self.cells],
+        }
 
-        attr_str = ' ' + ' '.join(attrs) if attrs else ''
-        cells_html = ''.join(cell.to_html() for cell in self.cells)
-        return f'<tr{attr_str}>{cells_html}</tr>'
+        if self.style_class:
+            data['style_class'] = self.style_class
+
+        return data
 
 
 class ReportTableColumn:
@@ -161,30 +157,29 @@ class ReportTable:
         """Add a footer row."""
         self.footer_lines.append(line)
 
-    def to_html(self) -> str:
-        """Convert table to HTML."""
-        html = ['<table class="tj_report_table">']
-
+    def to_json(self) -> dict[str, Any]:
+        """Convert table to JSON-serializable dict with clean data structure."""
+        # Extract column names from header (lowercase for JSON best practices)
+        column_names: list[str] = []
         if self.header_lines:
-            html.append('<thead>')
             for line in self.header_lines:
-                html.append(line.to_html())
-            html.append('</thead>')
+                if not line.is_hidden:
+                    column_names = [cell.text.lower() for cell in line.cells]
+                    break  # Use first header line
 
+        # Convert body rows to data records
+        records: list[dict[str, str]] = []
         if self.body_lines:
-            html.append('<tbody>')
             for line in self.body_lines:
-                html.append(line.to_html())
-            html.append('</tbody>')
+                if not line.is_hidden:
+                    record: dict[str, str] = {}
+                    for i, cell in enumerate(line.cells):
+                        if i < len(column_names):
+                            # Use lowercase column name as key, cell text as value
+                            record[column_names[i]] = cell.text
+                    records.append(record)
 
-        if self.footer_lines:
-            html.append('<tfoot>')
-            for line in self.footer_lines:
-                html.append(line.to_html())
-            html.append('</tfoot>')
-
-        html.append('</table>')
-        return '\n'.join(html)
+        return {'data': records, 'columns': column_names}
 
     def to_csv(self) -> list[list[str]]:
         """Convert table to CSV format."""
@@ -216,18 +211,12 @@ class ReportTableLegend:
         """Add a legend item."""
         self.items.append((symbol, description))
 
-    def to_html(self) -> str:
-        """Convert legend to HTML."""
-        if not self.items:
-            return ''
-
-        html = ['<div class="tj_table_legend">']
-        html.append('<table>')
-        for symbol, description in self.items:
-            html.append(f'<tr><td>{symbol}</td><td>{description}</td></tr>')
-        html.append('</table>')
-        html.append('</div>')
-        return '\n'.join(html)
+    def to_json(self) -> list[dict[str, str]]:
+        """Convert legend to JSON-serializable list."""
+        return [
+            {'symbol': symbol, 'description': description}
+            for symbol, description in self.items
+        ]
 
 
 class TableReport(ReportBase):
@@ -236,7 +225,7 @@ class TableReport(ReportBase):
 
     All tabular reports are converted to an abstract (output independent)
     intermediate form first, before being turned into the requested output
-    format (HTML, CSV, etc.).
+    format (JSON, CSV, etc.).
 
     Attributes:
         table: The intermediate table representation
@@ -303,59 +292,41 @@ class TableReport(ReportBase):
         """Generate the intermediate table format."""
         super().generate_intermediate_format()
 
-    def to_html(self) -> Optional[str]:
+    def to_json(self) -> Optional[dict[str, Any]]:
         """
-        Convert the table report to HTML.
+        Convert the table report to JSON-serializable dict.
 
         Returns:
-            HTML string or None
+            JSON-serializable dict or None
         """
         if not self.table:
             return None
 
-        html = []
+        # Get the clean data structure from table
+        data: dict[str, Any] = self.table.to_json()
 
-        # Add dynamic report ID comment
+        # Add report metadata only if present and useful
         if self.project.reportContexts:
             dynamic_id = self.project.reportContexts[-1].dynamic_report_id
-            html.append(f'<!-- Dynamic Report ID: {dynamic_id} -->')
+            if dynamic_id:
+                data['report_id'] = str(dynamic_id)
 
-        # Add header RichText if present
-        header = self._rich_text_to_html(self.a('header'))
+        # Add header text if present
+        header = self.a('header')
         if header:
-            html.append(header)
-
-        # Generate table frame
-        html.append(self._generate_html_table_frame())
-
-        # Add the actual table
-        html.append('<tr><td>')
-        html.append(self.table.to_html())
-        html.append('</td></tr>')
+            data['header'] = str(header)
 
         # Add caption if present
         caption = self.a('caption')
         if caption:
-            caption_html = self._rich_text_to_html(caption)
-            html.append('<tr><td>')
-            html.append(f'<div class="tj_table_caption">{caption_html}</div>')
-            html.append('</td></tr>')
+            data['caption'] = str(caption)
 
-        # Add legend
-        legend_html = self.legend.to_html()
-        if legend_html:
-            html.append('<tr><td>')
-            html.append(legend_html)
-            html.append('</td></tr>')
-
-        html.append('</table>')
-
-        # Add footer RichText if present
-        footer = self._rich_text_to_html(self.a('footer'))
+        # Add footer text if present
+        footer = self.a('footer')
         if footer:
-            html.append(footer)
+            data['footer'] = str(footer)
 
-        return '\n'.join(html)
+        return data
 
     def to_csv(self) -> Optional[list[list[str]]]:
         """

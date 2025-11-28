@@ -1714,8 +1714,8 @@ class ModelBuilder:
         elif report_type == 'accountreport':
             report.type_spec = ReportType.ACCOUNT_REPORT
 
-        # Default to HTML format if not specified
-        default_formats = [ReportFormat.HTML]
+        # Default to JSON format if not specified
+        default_formats = [ReportFormat.JSON]
 
         # Process attributes
         attributes = report_data.get('attributes', [])
@@ -1760,8 +1760,8 @@ class ModelBuilder:
                 formats = []
                 for fmt_str in value:
                     fmt_str = fmt_str.lower()
-                    if fmt_str == 'html':
-                        formats.append(ReportFormat.HTML)
+                    if fmt_str == 'json':
+                        formats.append(ReportFormat.JSON)
                     elif fmt_str == 'csv':
                         formats.append(ReportFormat.CSV)
                     elif fmt_str == 'ical':

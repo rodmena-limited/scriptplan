@@ -36,6 +36,7 @@ keywords = ["scheduling", "project-management", "resource-allocation", "gantt", 
 dependencies = [
     "lark>=1.0.0",
     "python-dateutil>=2.8.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +54,7 @@ dev = [
 
 [project.scripts]
 scriptplan = "scriptplan.cli.main:main"
+plan = "scriptplan.cli.plan:main"
 
 [project.urls]
 "Homepage" = "https://github.com/rodmena-limited/scriptplan"

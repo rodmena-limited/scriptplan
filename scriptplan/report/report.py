@@ -6,6 +6,7 @@ and functionality to turn a scheduled project into user-readable form.
 A report may contain other reports (nested reports).
 """
 
+import json
 import os
 from enum import Enum
 from pathlib import Path
@@ -13,11 +14,10 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.core.property import PropertyTreeNode
 from scriptplan.core.scenario_data import ScenarioData
-from scriptplan.report.html_generator import build_html_document, get_default_css
 from scriptplan.utils.message_handler import MessageHandler
 
 # Re-export for backwards compatibility
-__all__ = ['Report', 'ReportFormat', 'build_html_document', 'get_default_css']
+__all__ = ['Report', 'ReportFormat']
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 class ReportFormat(Enum):
     """Supported report output formats."""
-    HTML = 'html'
+    JSON = 'json'
     CSV = 'csv'
     ICAL = 'ical'
     TJP = 'tjp'
@@ -146,13 +146,12 @@ class Report(PropertyTreeNode, MessageHandler):
                           "but the file name is empty.")
                 continue
 
-            if fmt == ReportFormat.ICAL:
-                self._generate_ical()
-            elif fmt == ReportFormat.HTML:
-                self._generate_html()
-                self._copy_auxiliary_files()
+            if fmt == ReportFormat.JSON:
+                self._generate_json()
             elif fmt == ReportFormat.CSV:
                 self._generate_csv()
+            elif fmt == ReportFormat.ICAL:
+                self._generate_ical()
             elif fmt == ReportFormat.CTAGS:
                 self._generate_ctags()
             elif fmt == ReportFormat.NIKU:
@@ -234,14 +233,14 @@ class Report(PropertyTreeNode, MessageHandler):
         if self.content:
             self.content.generate_intermediate_format()
 
-    def to_html(self) -> Optional[str]:
+    def to_json(self) -> Optional[dict[str, Any]]:
         """
-        Render the content of the report as HTML.
+        Convert the report to JSON format.
 
         Returns:
-            HTML string or None if no content
+            Dictionary suitable for JSON serialization or None if no content
         """
-        return self.content.to_html() if self.content else None
+        return self.content.to_json() if self.content else None
 
     def to_csv(self) -> Optional[list[list[str]]]:
         """
@@ -280,116 +279,26 @@ class Report(PropertyTreeNode, MessageHandler):
         base_name = self.name or self.id
         return Path(output_dir) / f"{base_name}.{extension}"
 
-    def _generate_html(self) -> None:
-        """Generate HTML output."""
+    def _generate_json(self) -> None:
+        """Generate JSON output."""
         if not self.content:
             return
 
-        if not hasattr(self.content, 'to_html'):
-            self.warning('html_not_supported',
-                        f"HTML format is not supported for report {self.id} "
+        if not hasattr(self.content, 'to_json'):
+            self.warning('json_not_supported',
+                        f"JSON format is not supported for report {self.id} "
                         f"of type {self.type_spec}")
             return
 
-        html_content = self._build_html_document()
-        output_path = self._get_output_path('html')
+        json_data = self.content.to_json()
+        if not json_data:
+            return
 
+        output_path = self._get_output_path('json')
         os.makedirs(output_path.parent, exist_ok=True)
+
         with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-
-    def _build_html_document(self) -> str:
-        """
-        Build complete HTML document.
-
-        Returns:
-            Complete HTML document as string
-        """
-        title = f"{self.project.name} - {self.get('title') or self.name}"
-        body_content = self.content.to_html() if self.content else ""
-        if body_content is None:
-            body_content = ""
-
-        # Build navigation for sibling reports
-        navigation = self._build_navigation()
-
-        # Build subtitle from report period
-        subtitle = self._build_subtitle()
-
-        return build_html_document(
-            title=title,
-            content=body_content,
-            project_name=self.project.name,
-            subtitle=subtitle,
-            navigation=navigation,
-            include_css=True,
-            footer=True
-        )
-
-    def _build_navigation(self) -> Optional[list[dict[str, str]]]:
-        """
-        Build navigation links for sibling reports.
-
-        Returns:
-            List of navigation items or None
-        """
-        # Get all reports in the project
-        reports = list(self.project.reports)
-        if not reports or len(reports) <= 1:
-            return None
-
-        navigation = []
-        for report in reports:
-            # Skip reports without names (they won't have HTML output)
-            if not report.name:
-                continue
-
-            nav_item = {
-                'title': report.get('title') or report.name,
-                'url': f'{report.name}.html',
-                'active': report == self
-            }
-            navigation.append(nav_item)
-
-        return navigation if len(navigation) > 1 else None
-
-    def _build_subtitle(self) -> str:
-        """
-        Build subtitle showing report period or other context.
-
-        Returns:
-            Subtitle string
-        """
-        parts = []
-
-        # Add report period if defined
-        start = self.get('start')
-        end = self.get('end')
-        if start and end:
-            from scriptplan.report.html_generator import format_date
-            parts.append(f"{format_date(start)} - {format_date(end)}")
-
-        # Add scenario info if multiple scenarios
-        scenarios = self.get('scenarios') or []
-        if len(scenarios) > 1:
-            scenario_names = []
-            for scen in scenarios:
-                # Handle both scenario names and indices
-                if isinstance(scen, int):
-                    if scen < len(self.project.scenarios):
-                        scenario_names.append(self.project.scenarios[scen].name)
-                elif isinstance(scen, str):
-                    # Resolve scenario name to get display name
-                    for proj_scen in self.project.scenarios:
-                        if proj_scen.id == scen:
-                            scenario_names.append(proj_scen.name or scen)
-                            break
-                    else:
-                        scenario_names.append(scen)  # Use raw name if not found
-            if scenario_names:
-                parts.append(f"Scenarios: {', '.join(scenario_names)}")
-
-        return ' | '.join(parts) if parts else ''
+            json.dump(json_data, f, indent=2, default=str)
 
     def _generate_csv(self) -> None:
         """Generate CSV output."""
@@ -439,10 +348,6 @@ class Report(PropertyTreeNode, MessageHandler):
         # To be implemented
         pass
 
-    def _copy_auxiliary_files(self) -> None:
-        """Copy CSS and other auxiliary files to output directory."""
-        # To be implemented - copy CSS files, icons, etc.
-        pass
 
     def addReport(self, report: 'Report') -> None:
         """

@@ -3,7 +3,7 @@ Reporting System for ScriptPlan.
 
 This package provides a comprehensive reporting system for generating various
 types of reports from scheduled project data. Reports can be output in multiple
-formats including HTML, CSV, iCal, and others.
+formats including JSON, CSV, iCal, and others.
 
 Main Classes:
     - Report: Base class for all report definitions
@@ -22,7 +22,7 @@ Usage:
     report.type_spec = ReportType.TASK_REPORT
 
     # Generate output
-    report.generate([ReportFormat.HTML, ReportFormat.CSV])
+    report.generate([ReportFormat.JSON, ReportFormat.CSV])
 """
 
 from scriptplan.report.report import (

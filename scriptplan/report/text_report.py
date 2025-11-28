@@ -21,7 +21,7 @@ class TextReport(ReportBase):
     RichText blocks for prolog, header, center, epilog, etc.
 
     Attributes:
-        html_content: Generated HTML content
+        content_data: Generated content data
     """
 
     def __init__(self, report: 'Report'):
@@ -32,7 +32,7 @@ class TextReport(ReportBase):
             report: The parent Report object
         """
         super().__init__(report)
-        self.html_content = ''
+        self.content_data: dict[str, Any] = {}
 
     def generate_intermediate_format(self) -> None:
         """
@@ -44,63 +44,58 @@ class TextReport(ReportBase):
         super().generate_intermediate_format()
 
         # Build the content from various text blocks
-        parts = []
+        self.content_data = {}
 
         # Prolog
         prolog = self.a('prolog')
         if prolog:
-            parts.append(self._rich_text_to_html(prolog))
+            self.content_data['prolog'] = self._to_plain_text(prolog)
 
         # Header
         header = self.a('header')
         if header:
-            parts.append(f'<div class="tj_header">{self._rich_text_to_html(header)}</div>')
+            self.content_data['header'] = self._to_plain_text(header)
 
         # Headline
         headline = self.a('headline')
         if headline:
-            parts.append(f'<div class="tj_headline">{self._rich_text_to_html(headline)}</div>')
+            self.content_data['headline'] = self._to_plain_text(headline)
 
         # Left/Center/Right blocks
         left = self.a('left')
         center = self.a('center')
         right = self.a('right')
 
-        if left or center or right:
-            parts.append('<div class="tj_columns">')
-            if left:
-                parts.append(f'<div class="tj_left">{self._rich_text_to_html(left)}</div>')
-            if center:
-                parts.append(f'<div class="tj_center">{self._rich_text_to_html(center)}</div>')
-            if right:
-                parts.append(f'<div class="tj_right">{self._rich_text_to_html(right)}</div>')
-            parts.append('</div>')
+        if left:
+            self.content_data['left'] = self._to_plain_text(left)
+        if center:
+            self.content_data['center'] = self._to_plain_text(center)
+        if right:
+            self.content_data['right'] = self._to_plain_text(right)
 
         # Caption
         caption = self.a('caption')
         if caption:
-            parts.append(f'<div class="tj_caption">{self._rich_text_to_html(caption)}</div>')
+            self.content_data['caption'] = self._to_plain_text(caption)
 
         # Footer
         footer = self.a('footer')
         if footer:
-            parts.append(f'<div class="tj_footer">{self._rich_text_to_html(footer)}</div>')
+            self.content_data['footer'] = self._to_plain_text(footer)
 
         # Epilog
         epilog = self.a('epilog')
         if epilog:
-            parts.append(self._rich_text_to_html(epilog))
+            self.content_data['epilog'] = self._to_plain_text(epilog)
 
-        self.html_content = '\n'.join(parts)
-
-    def to_html(self) -> Optional[str]:
+    def to_json(self) -> Optional[dict[str, Any]]:
         """
-        Convert the text report to HTML.
+        Convert the text report to JSON.
 
         Returns:
-            HTML string representation
+            Dictionary representation
         """
-        return self.html_content if self.html_content else None
+        return self.content_data if self.content_data else None
 
     def to_csv(self) -> Optional[list[list[str]]]:
         """
