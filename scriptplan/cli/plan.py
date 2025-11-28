@@ -5,8 +5,14 @@ This module provides the 'plan' command-line interface for generating
 reports from TaskJuggler (.tjp) project files.
 """
 
+import hashlib
+import json
 import logging
+import os
+import secrets
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -86,7 +92,7 @@ def validate_tjp_file(tjp_path: str) -> Path:
     return path
 
 
-def create_auto_report_file(tjp_path: Path, output_format: str) -> Path:
+def create_auto_report_file(tjp_path: Path, output_format: str) -> tuple[Path, str]:
     """
     Create a temporary .tjp file with auto-generated report.
 
@@ -98,13 +104,11 @@ def create_auto_report_file(tjp_path: Path, output_format: str) -> Path:
         output_format: Desired output format ('json' or 'csv')
 
     Returns:
-        Path to the temporary .tjp file with auto-report
+        Tuple of (Path to temp .tjp file, report_id)
     """
-    import tempfile
-    import time
-
-    # Create a unique report ID using timestamp
-    report_id = f"plan_auto_{int(time.time())}"
+    # Create a unique report ID using secure random string (safe for concurrent execution)
+    random_suffix = secrets.token_hex(8)
+    report_id = f"plan_auto_{random_suffix}"
 
     # Default report definition
     auto_report = f"""
@@ -116,16 +120,16 @@ taskreport {report_id} "{report_id}" {{
 }}
 """
 
-    # Create temporary file
-    temp_dir = Path(tempfile.gettempdir())
-    temp_file = temp_dir / f"{tjp_path.stem}_auto_{int(time.time())}.tjp"
+    # Create temporary file with random suffix (safe for concurrent execution)
+    temp_fd, temp_path = tempfile.mkstemp(suffix='.tjp', prefix='plan_auto_')
+    temp_file = Path(temp_path)
 
     # Read original file
     with open(tjp_path) as f:
         original_content = f.read()
 
-    # Write combined content
-    with open(temp_file, 'w') as f:
+    # Write combined content and close file descriptor
+    with os.fdopen(temp_fd, 'w') as f:
         # Include original file
         f.write(f'# Original file: {tjp_path}\n')
         f.write('# Auto-report added by plan CLI\n\n')
@@ -133,7 +137,7 @@ taskreport {report_id} "{report_id}" {{
         f.write('\n\n')
         f.write(auto_report)
 
-    return temp_file
+    return temp_file, report_id
 
 
 def find_output_files(tjp_path: Path, output_format: str, report_id: str = "") -> list[Path]:
@@ -295,14 +299,12 @@ def report(
             if not stdin_content.strip():
                 raise FileNotFoundError("No input provided on stdin")
 
-            # Create temporary file from stdin content
-            import tempfile
-            import time
+            # Create temporary file from stdin content (safe for concurrent execution)
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.tjp', prefix='plan_stdin_')
+            stdin_temp_file = Path(temp_path)
 
-            temp_dir = Path(tempfile.gettempdir())
-            stdin_temp_file = temp_dir / f"plan_stdin_{int(time.time())}.tjp"
-
-            with open(stdin_temp_file, 'w') as f:
+            # Write content and close file descriptor
+            with os.fdopen(temp_fd, 'w') as f:
                 f.write(stdin_content)
 
             tjp_path = stdin_temp_file
@@ -321,7 +323,6 @@ def report(
             click.echo(f"Processing: {tjp_path.name}", err=True)
 
         # Calculate SHA256 hash of the input file for report_id
-        import hashlib
         with open(tjp_path, 'rb') as f:
             file_hash = hashlib.sha256(f.read()).hexdigest()
 
@@ -332,7 +333,6 @@ def report(
         output_format = 'csv' if output_csv else 'json'
 
         # Create temp directory for report output
-        import tempfile
         temp_output_dir = Path(tempfile.mkdtemp(prefix="plan_output_"))
 
         if verbose:
@@ -342,8 +342,7 @@ def report(
         if verbose:
             logger.debug(f"Creating auto-report for {output_format} format...")
 
-        temp_file = create_auto_report_file(tjp_path, output_format)
-        auto_report_id = f"plan_auto_{int(temp_file.stem.split('_')[-1])}"
+        temp_file, auto_report_id = create_auto_report_file(tjp_path, output_format)
 
         if verbose:
             logger.debug(f"Temporary file: {temp_file}")
@@ -385,7 +384,6 @@ def report(
 
         # Replace report_id with SHA256 hash for JSON output
         if output_format == 'json':
-            import json
             try:
                 report_data = json.loads(report_content)
                 # Replace report_id with file hash
@@ -423,7 +421,6 @@ def report(
 
         # Clean up temp output directory (contains all generated files)
         if temp_output_dir and temp_output_dir.exists():
-            import shutil
             shutil.rmtree(temp_output_dir)
             if verbose:
                 logger.debug(f"Cleaned up temp output directory: {temp_output_dir}")
@@ -456,7 +453,6 @@ def report(
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
         if temp_output_dir and temp_output_dir.exists():
-            import shutil
             shutil.rmtree(temp_output_dir)
 
         sys.exit(1)
@@ -472,7 +468,6 @@ def report(
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
         if temp_output_dir and temp_output_dir.exists():
-            import shutil
             shutil.rmtree(temp_output_dir)
 
         sys.exit(2)
@@ -488,7 +483,6 @@ def report(
         if stdin_temp_file and stdin_temp_file.exists():
             stdin_temp_file.unlink()
         if temp_output_dir and temp_output_dir.exists():
-            import shutil
             shutil.rmtree(temp_output_dir)
 
         sys.exit(2)
