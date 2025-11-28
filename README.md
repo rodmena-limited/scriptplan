@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icons/logo.svg" alt="ScriptPlan Logo" width="400"/>
+</p>
+
 # ScriptPlan
 
 ![Logic Certified](https://img.shields.io/badge/Logic-Certified_Airport--Grade-success?style=for-the-badge&logo=github)
