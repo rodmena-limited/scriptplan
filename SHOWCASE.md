@@ -1,6 +1,6 @@
 # ScriptPlan Report Generation - Certification Exam
 
-**Generated**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+**Generated**: 28 November 2025, London, UK
 **Tool**: plan (ScriptPlan CLI)
 **Purpose**: Audit certification of report generation correctness
 
