@@ -4,13 +4,13 @@ import unittest
 from datetime import datetime
 
 from scriptplan.report.html_generator import (
-    get_default_css,
+    alert_indicator_html,
     build_html_document,
     format_date,
     format_duration,
     format_percentage,
-    alert_indicator_html,
-    journal_entry_html
+    get_default_css,
+    journal_entry_html,
 )
 
 

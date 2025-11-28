@@ -9,14 +9,14 @@ __version__ = "0.9.0"
 __author__ = "ScriptPlan Team"
 
 from scriptplan.core.project import Project
-from scriptplan.core.task import Task
 from scriptplan.core.resource import Resource
 from scriptplan.core.scenario import Scenario
+from scriptplan.core.task import Task
 
 __all__ = [
-    '__version__',
     'Project',
-    'Task',
     'Resource',
     'Scenario',
+    'Task',
+    '__version__',
 ]

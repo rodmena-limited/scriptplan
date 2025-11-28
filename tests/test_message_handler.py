@@ -1,11 +1,16 @@
-import unittest
-import sys
 import os
 import tempfile
-from io import StringIO
+import unittest
+
 from scriptplan.utils.message_handler import (
-    Message, MessageType, MessageHandler, MessageHandlerInstance,
-    SourceFileInfo, TjRuntimeError, TjException, get_message_handler_instance
+    Message,
+    MessageHandler,
+    MessageHandlerInstance,
+    MessageType,
+    SourceFileInfo,
+    TjException,
+    TjRuntimeError,
+    get_message_handler_instance,
 )
 
 
@@ -245,7 +250,7 @@ class TestMessageHandlerInstance(unittest.TestCase):
             self.handler.logLevel = 5
             self.handler.info("test_id", "Test log message")
 
-            with open(log_path, 'r') as f:
+            with open(log_path) as f:
                 content = f.read()
             self.assertIn("Test log message", content)
             self.assertIn("info", content)

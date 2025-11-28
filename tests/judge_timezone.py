@@ -1,5 +1,7 @@
-import pandas as pd
 import sys
+
+import pandas as pd
+
 
 def check_timezone(csv_path):
     print(f"--- JUDGING GLOBAL TIMEZONES: {csv_path} ---")
@@ -44,7 +46,7 @@ def check_timezone(csv_path):
         if got == expected_jp_end:
             print(f"PASS: Tokyo finishes correctly at {got} UTC")
         else:
-            print(f"FAIL: Tokyo Task.")
+            print("FAIL: Tokyo Task.")
             print(f"  Expected End (UTC): {expected_jp_end}")
             print(f"  Got:                {got}")
             errors += 1
@@ -59,12 +61,12 @@ def check_timezone(csv_path):
         end = row_ny.iloc[0]['end'].strip()
 
         if start == expected_ny_start and end == expected_ny_end:
-            print(f"PASS: Global Handoff successful.")
-            print(f"      Tokyo Finished: 09:00 UTC")
-            print(f"      NY Started:     13:00 UTC (Gap Correctly Calculated)")
-            print(f"      NY Finished:    17:00 UTC")
+            print("PASS: Global Handoff successful.")
+            print("      Tokyo Finished: 09:00 UTC")
+            print("      NY Started:     13:00 UTC (Gap Correctly Calculated)")
+            print("      NY Finished:    17:00 UTC")
         else:
-            print(f"FAIL: Timezone Handoff Error.")
+            print("FAIL: Timezone Handoff Error.")
             print(f"  Expected Start: {expected_ny_start}")
             print(f"  Got Start:      {start}")
 

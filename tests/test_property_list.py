@@ -1,7 +1,8 @@
 import unittest
+
 from scriptplan.core.project import Project
-from scriptplan.core.task import Task
 from scriptplan.core.property import PropertyList, PTNProxy
+from scriptplan.core.task import Task
 
 
 class TestPropertyList(unittest.TestCase):

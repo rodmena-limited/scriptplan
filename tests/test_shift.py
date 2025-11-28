@@ -1,4 +1,5 @@
 import unittest
+
 from scriptplan.core.project import Project
 from scriptplan.core.shift import Shift, ShiftScenario
 

@@ -1,12 +1,15 @@
 """TJP Parser for TaskJuggler project files."""
 
-from lark import Lark, Transformer, v_args, Token, Tree
-from scriptplan.core.project import Project
-from scriptplan.core.task import Task
-from scriptplan.core.resource import Resource
-from scriptplan.parser.macro_processor import preprocess_tjp
-from datetime import datetime
+import contextlib
 import os
+from datetime import datetime
+
+from lark import Lark, Token, Transformer, Tree
+
+from scriptplan.core.project import Project
+from scriptplan.core.resource import Resource
+from scriptplan.core.task import Task
+from scriptplan.parser.macro_processor import preprocess_tjp
 
 
 class TJPTransformer(Transformer):
@@ -1058,8 +1061,9 @@ class ModelBuilder:
             project['start'] = start_date
             # Calculate end date from duration if provided
             if duration_str:
-                from dateutil.relativedelta import relativedelta
                 import re
+
+                from dateutil.relativedelta import relativedelta
                 match = re.match(r'(\d+)([dwmy])', duration_str)
                 if match:
                     amount = int(match.group(1))
@@ -1167,10 +1171,7 @@ class ModelBuilder:
         for source_task, precedes_list in self._pending_precedes:
             for prec_item in precedes_list:
                 # prec_item can be a dict with 'ref' key or a string
-                if isinstance(prec_item, dict):
-                    prec_ref = prec_item.get('ref', '')
-                else:
-                    prec_ref = prec_item
+                prec_ref = prec_item.get('ref', '') if isinstance(prec_item, dict) else prec_item
 
                 target_task = self._resolve_task_reference(project, source_task, prec_ref)
                 if target_task:
@@ -1272,10 +1273,8 @@ class ModelBuilder:
                 elif key == 'extend':
                     pass  # Handle extensions later
                 else:
-                    try:
+                    with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
-                    except (ValueError, KeyError):
-                        pass
 
     def _apply_global_attributes(self, project, attributes):
         """Apply global attributes to the project."""
@@ -1330,10 +1329,8 @@ class ModelBuilder:
                         existing.append(leave)
                         project.attributes['vacations'] = existing
                 else:
-                    try:
+                    with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
-                    except (ValueError, KeyError):
-                        pass
 
     def _create_scenario(self, project, scenario_data, parent=None):
         """Create a scenario in the project.
@@ -1478,16 +1475,15 @@ class ModelBuilder:
                     # Handle scenario-specific attributes like ('delayed', ('effort', 320))
                     scenario_id, attr_data = value
                     scenario_idx = self._get_scenario_index(obj.project, scenario_id)
-                    if scenario_idx is not None and attr_data:
-                        if isinstance(attr_data, tuple):
-                            attr_key, attr_value = attr_data
-                            obj[(attr_key, scenario_idx)] = attr_value
+                    if scenario_idx is not None and attr_data and isinstance(attr_data, tuple):
+                        attr_key, attr_value = attr_data
+                        obj[(attr_key, scenario_idx)] = attr_value
                 elif key == 'journalentry':
                     # Create a journal entry for this task
                     self._create_journal_entry(obj, value)
                 elif key == 'charge':
                     # charge is a tuple (amount, mode) where mode is 'onstart', 'onend', or 'perday'
-                    amount, mode = value
+                    amount, _mode = value
                     for scIdx in range(obj.project.scenarioCount()):
                         obj[('charge', scIdx)] = amount
                         # Note: mode (onstart/onend/perday) affects when charge is applied
@@ -1553,10 +1549,7 @@ class ModelBuilder:
 
                     # Check if working hours already exist
                     existing_wh = obj.get('workinghours', 0)
-                    if existing_wh and hasattr(existing_wh, 'set_hours'):
-                        wh = existing_wh
-                    else:
-                        wh = WorkingHours(obj.project)
+                    wh = existing_wh if existing_wh and hasattr(existing_wh, 'set_hours') else WorkingHours(obj.project)
 
                     if isinstance(value, dict):
                         days = value.get('days', [])
@@ -1598,10 +1591,11 @@ class ModelBuilder:
                 elif key == 'booking':
                     # Resource booking - blocks resource during a time period
                     # booking "name" date +duration (e.g., "Maintenance" 2025-05-12-09:00 +6h)
+                    import re
+                    from datetime import timedelta
+
                     from scriptplan.core.leave import Leave
                     from scriptplan.utils.time import TimeInterval
-                    from datetime import timedelta
-                    import re
 
                     start_date = value.get('start')
                     duration_str = value.get('duration', '0h')
@@ -1637,10 +1631,8 @@ class ModelBuilder:
                             existing.append(leave)
                             obj[('leaves', scIdx)] = existing
                 else:
-                    try:
+                    with contextlib.suppress(ValueError, KeyError, AttributeError):
                         obj[key] = value
-                    except (ValueError, KeyError, AttributeError):
-                        pass
 
     def _get_scenario_index(self, project, scenario_id):
         """Get the index of a scenario by its ID."""
@@ -1656,7 +1648,7 @@ class ModelBuilder:
             task: The Task object this entry belongs to
             entry_data: Dict with 'date', 'headline', and 'body' keys
         """
-        from scriptplan.core.journal import JournalEntry, AlertLevel
+        from scriptplan.core.journal import AlertLevel
 
         journal = task.project.attributes.get('journal')
         if journal is None:
@@ -1695,7 +1687,7 @@ class ModelBuilder:
             report_data: Dict with 'type', 'id', 'name', 'attributes'
             parent: Optional parent report for nested reports
         """
-        from scriptplan.report.report import Report, ReportType, ReportFormat
+        from scriptplan.report.report import Report, ReportFormat, ReportType
 
         report_type = report_data.get('type')
         r_id = report_data.get('id') or ''
@@ -1736,7 +1728,8 @@ class ModelBuilder:
             attr: The attribute (can be tuple, dict, Token, Tree, or string)
             default_formats: List to accumulate format types
         """
-        from lark import Token, Tree
+        from lark import Token
+
         from scriptplan.report.report import ReportFormat
 
         if attr is None:
@@ -1776,10 +1769,8 @@ class ModelBuilder:
                 report['period'] = value
             else:
                 # Generic attribute
-                try:
+                with contextlib.suppress(ValueError, KeyError, AttributeError):
                     report[key] = value
-                except (ValueError, KeyError, AttributeError):
-                    pass
             return
 
         if isinstance(attr, Token):
@@ -1873,7 +1864,7 @@ class ProjectFileParser:
 
     def __init__(self):
         grammar_path = os.path.join(os.path.dirname(__file__), 'tjp.lark')
-        with open(grammar_path, 'r') as f:
+        with open(grammar_path) as f:
             self.grammar = f.read()
         self.parser = Lark(self.grammar, start='start', parser='lalr')
 

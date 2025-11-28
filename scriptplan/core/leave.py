@@ -1,5 +1,8 @@
+from typing import ClassVar
+
+
 class Leave:
-    Types = {
+    Types: ClassVar[dict[str, int]] = {
         'project': 0,
         'holiday': 1,
         'sick': 2,
@@ -9,6 +12,6 @@ class Leave:
         'unemployed': 6
     }
 
-    def __init__(self, interval, type_idx):
+    def __init__(self, interval: object, type_idx: int) -> None:
         self.interval = interval
         self.type_idx = type_idx

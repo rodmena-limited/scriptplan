@@ -5,22 +5,27 @@ Account can just be a container for a set of Accounts. In this case it
 cannot directly record any transactions.
 """
 
+from typing import TYPE_CHECKING, Any, Optional
+
 from scriptplan.core.property import PropertyTreeNode
 from scriptplan.core.scenario_data import ScenarioData
+
+if TYPE_CHECKING:
+    from scriptplan.core.project import Project
 
 
 class AccountScenario(ScenarioData):
     """Handles the scenario-specific features of an Account object."""
 
-    def __init__(self, account, scenarioIdx, attributes):
+    def __init__(self, account: 'Account', scenarioIdx: int, attributes: dict[str, Any]) -> None:
         super().__init__(account, scenarioIdx, attributes)
-        self._credits = []
+        self._credits: list[Any] = []
 
-    def _get(self, attrName):
+    def _get(self, attrName: str) -> Any:
         """Get attribute value using property's attribute access."""
         return self.property.get(attrName, self.scenarioIdx)
 
-    def query_balance(self, query):
+    def query_balance(self, query: Any) -> None:
         """Query the account balance.
 
         The balance is the turnover from project start to the start of the query period.
@@ -36,7 +41,7 @@ class AccountScenario(ScenarioData):
         else:
             query.string = str(amount)
 
-    def query_turnover(self, query):
+    def query_turnover(self, query: Any) -> None:
         """Query the turnover for a period."""
         startIdx = self.project.dateToIdx(query.start) if hasattr(self.project, 'dateToIdx') else 0
         endIdx = self.project.dateToIdx(query.end) if hasattr(self.project, 'dateToIdx') else 0
@@ -49,7 +54,7 @@ class AccountScenario(ScenarioData):
         else:
             query.string = str(amount)
 
-    def turnover(self, startIdx, endIdx):
+    def turnover(self, startIdx: int, endIdx: int) -> float:
         """Compute the turnover for the period between startIdx and endIdx."""
         amount = 0.0
 
@@ -61,9 +66,8 @@ class AccountScenario(ScenarioData):
 
             if startDate and endDate:
                 for credit in credits:
-                    if hasattr(credit, 'date') and hasattr(credit, 'amount'):
-                        if startDate <= credit.date < endDate:
-                            amount += credit.amount
+                    if hasattr(credit, 'date') and hasattr(credit, 'amount') and startDate <= credit.date < endDate:
+                        amount += credit.amount
 
         if self.property.container():
             if not self.property.adoptees:
@@ -88,11 +92,10 @@ class AccountScenario(ScenarioData):
                         )
             elif aggregate == 'resources' or aggregate == ':resources':
                 for resource in self.project.resources:
-                    if resource.leaf():
-                        if hasattr(resource.scenario(self.scenarioIdx), 'turnover'):
-                            amount += resource.scenario(self.scenarioIdx).turnover(
-                                startIdx, endIdx, self.property, None, False
-                            )
+                    if resource.leaf() and hasattr(resource.scenario(self.scenarioIdx), 'turnover'):
+                        amount += resource.scenario(self.scenarioIdx).turnover(
+                            startIdx, endIdx, self.property, None, False
+                        )
         return amount
 
 
@@ -103,23 +106,30 @@ class Account(PropertyTreeNode):
     it cannot directly record transactions but aggregates them from children.
     """
 
-    def __init__(self, project, id, name, parent):
+    def __init__(
+        self,
+        project: 'Project',
+        id: str,
+        name: str,
+        parent: Optional['Account']
+    ) -> None:
         super().__init__(project.accounts, id, name, parent)
         project.addAccount(self)
 
         # Initialize scenario data array
-        self.data = [None] * project.scenarioCount()
+        self.data: list[Optional[AccountScenario]] = [None] * project.scenarioCount()
         for i in range(project.scenarioCount()):
             AccountScenario(self, i, self._scenarioAttributes[i])
 
-    def scenario(self, scenarioIdx):
+    def scenario(self, scenarioIdx: int) -> Optional[AccountScenario]:
         """Return a reference to the scenarioIdx-th scenario."""
         return self.data[scenarioIdx]
 
-    def container(self):
+    def container(self) -> bool:
         """Return True if this account is a container (has children)."""
         return len(self.children) > 0 or len(self.adoptees) > 0
 
-    def turnover(self, scenarioIdx, startIdx, endIdx):
+    def turnover(self, scenarioIdx: int, startIdx: int, endIdx: int) -> float:
         """Get the turnover for the specified scenario and period."""
-        return self.data[scenarioIdx].turnover(startIdx, endIdx)
+        scenario = self.data[scenarioIdx]
+        return scenario.turnover(startIdx, endIdx) if scenario else 0.0

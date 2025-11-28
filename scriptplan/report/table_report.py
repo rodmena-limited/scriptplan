@@ -7,14 +7,14 @@ of tabular reports. All tabular reports are converted to an abstract
 the requested output format.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any, Dict, Tuple
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.report.report_base import ReportBase
 
 if TYPE_CHECKING:
-    from scriptplan.report.report import Report
     from scriptplan.core.property import PropertyList
+    from scriptplan.report.report import Report
 
 
 class Alignment(Enum):
@@ -92,7 +92,7 @@ class ReportTableLine:
     """
 
     def __init__(self, property_node: Any = None, scenario_idx: int = 0):
-        self.cells: List[ReportTableCell] = []
+        self.cells: list[ReportTableCell] = []
         self.property = property_node
         self.scenario_idx = scenario_idx
         self.is_hidden = False
@@ -143,9 +143,9 @@ class ReportTable:
     """
 
     def __init__(self):
-        self.header_lines: List[ReportTableLine] = []
-        self.body_lines: List[ReportTableLine] = []
-        self.footer_lines: List[ReportTableLine] = []
+        self.header_lines: list[ReportTableLine] = []
+        self.body_lines: list[ReportTableLine] = []
+        self.footer_lines: list[ReportTableLine] = []
         self.self_contained = True
         self.aux_dir = ''
 
@@ -186,7 +186,7 @@ class ReportTable:
         html.append('</table>')
         return '\n'.join(html)
 
-    def to_csv(self) -> List[List[str]]:
+    def to_csv(self) -> list[list[str]]:
         """Convert table to CSV format."""
         rows = []
 
@@ -210,7 +210,7 @@ class ReportTableLegend:
     """
 
     def __init__(self):
-        self.items: List[Tuple[str, str]] = []  # (symbol, description)
+        self.items: list[tuple[str, str]] = []  # (symbol, description)
 
     def add_item(self, symbol: str, description: str) -> None:
         """Add a legend item."""
@@ -244,8 +244,9 @@ class TableReport(ReportBase):
         legend: Report legend
     """
 
+    from typing import ClassVar
     # Column properties: ID -> (Header, Indent, Alignment, ScenarioSpecific)
-    PROPERTIES_BY_ID = {
+    PROPERTIES_BY_ID: ClassVar[dict] = {
         'activetasks': ('Active Tasks', True, Alignment.RIGHT, True),
         'alert': ('Alert', True, Alignment.LEFT, False),
         'alertmessages': ('Alert Messages', False, Alignment.LEFT, False),
@@ -296,7 +297,7 @@ class TableReport(ReportBase):
         super().__init__(report)
         self.report.content = self
         self.table: Optional[ReportTable] = None
-        self.columns: Dict[Any, ReportTableColumn] = {}
+        self.columns: dict[Any, ReportTableColumn] = {}
         self.legend = ReportTableLegend()
 
     def generate_intermediate_format(self) -> None:
@@ -357,7 +358,7 @@ class TableReport(ReportBase):
 
         return '\n'.join(html)
 
-    def to_csv(self) -> Optional[List[List[str]]]:
+    def to_csv(self) -> Optional[list[list[str]]]:
         """
         Convert the table report to CSV.
 
@@ -563,10 +564,9 @@ class TableReport(ReportBase):
         # Look up the account and check if it's a revenue account
         # For now, use a simple heuristic: if the chargeset is 'rev' or similar
         # A more complete implementation would check the account's properties
-        if isinstance(chargeset_id, str):
+        if isinstance(chargeset_id, str) and ('rev' in chargeset_id.lower() or chargeset_id == 'rev'):
             # Simple check: 'rev' accounts are revenue accounts
-            if 'rev' in chargeset_id.lower() or chargeset_id == 'rev':
-                return charge
+            return charge
 
         return None
 
@@ -574,7 +574,7 @@ class TableReport(ReportBase):
         """
         Get the cost value for a task.
 
-        Cost is calculated as: allocated_time × resource_rate
+        Cost is calculated as: allocated_time * resource_rate
         Uses the task's getCost() method if available.
         """
         if not hasattr(property_node, 'data'):
@@ -631,7 +631,7 @@ class TableReport(ReportBase):
 
     def adjust_column_period(self, column_def: Any,
                             tasks: 'PropertyList' = None,
-                            scenarios: List[int] = None) -> None:
+                            scenarios: Optional[list[int]] = None) -> None:
         """
         Adjust the column period based on task dates.
 
@@ -679,12 +679,10 @@ class TableReport(ReportBase):
                 start = task.get('start', scenario_idx) if hasattr(task, 'get') else None
                 end = task.get('end', scenario_idx) if hasattr(task, 'get') else None
 
-                if start:
-                    if task_start is None or start < task_start:
-                        task_start = start
-                if end:
-                    if task_end is None or end > task_end:
-                        task_end = end
+                if start and (task_start is None or start < task_start):
+                    task_start = start
+                if end and (task_end is None or end > task_end):
+                    task_end = end
 
         # Update column range if found
         if task_start and not do_not_adjust_start:

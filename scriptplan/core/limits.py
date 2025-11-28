@@ -5,7 +5,12 @@ Implements the limit mechanism that can restrict resource allocation within
 certain time periods (daily, weekly, etc.). Supports both upper and lower limits.
 """
 
-from scriptplan.scheduler.scoreboard import Scoreboard
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Optional, Union
+
+if TYPE_CHECKING:
+    from scriptplan.core.project import Project
+    from scriptplan.core.resource import Resource
 
 
 class Limit:
@@ -21,7 +26,17 @@ class Limit:
     Limits can optionally be restricted to specific resources.
     """
 
-    def __init__(self, name, interval_start, interval_end, period, value, upper, resource=None, slot_duration=3600):
+    def __init__(
+        self,
+        name: str,
+        interval_start: datetime,
+        interval_end: datetime,
+        period: Union[int, float],
+        value: int,
+        upper: bool,
+        resource: Optional['Resource'] = None,
+        slot_duration: int = 3600
+    ) -> None:
         """
         Create a new Limit.
 
@@ -45,12 +60,12 @@ class Limit:
         self.slot_duration = slot_duration
 
         self._dirty = True
-        self._scoreboard = None
+        self._scoreboard: list[int] = []
         self.reset()
 
-    def copy(self):
+    def copy(self) -> 'Limit':
         """Return a deep copy of this limit."""
-        limit = Limit(
+        return Limit(
             self.name,
             self.interval_start,
             self.interval_end,
@@ -60,9 +75,8 @@ class Limit:
             self.resource,
             self.slot_duration
         )
-        return limit
 
-    def reset(self, index=None):
+    def reset(self, index: Optional[int] = None) -> None:
         """
         Reset counters for all periods or a specific period.
 
@@ -86,13 +100,13 @@ class Limit:
 
         self._dirty = False
 
-    def _contains(self, index):
+    def _contains(self, index: int) -> bool:
         """Check if a scoreboard index falls within this limit's interval."""
         # Convert index to datetime for comparison
         # index is the project scoreboard index
         return True  # We'll check bounds in _idx_to_sb_idx
 
-    def _idx_to_sb_idx(self, index):
+    def _idx_to_sb_idx(self, index: int) -> int:
         """
         Convert project scoreboard index to limit scoreboard index.
 
@@ -105,8 +119,6 @@ class Limit:
 
         For daily limits, uses calendar day boundaries.
         """
-        from datetime import timedelta
-
         # Calculate the actual datetime for this slot
         slot_datetime = self.interval_start + timedelta(seconds=index * self.slot_duration)
 
@@ -138,7 +150,7 @@ class Limit:
             slot_seconds = index * self.slot_duration
             return int(slot_seconds / self.period)
 
-    def inc(self, index, resource=None):
+    def inc(self, index: int, resource: Optional['Resource'] = None) -> None:
         """
         Increment the counter if index matches the interval and resource.
 
@@ -157,7 +169,7 @@ class Limit:
             self._dirty = True
             self._scoreboard[sb_idx] += 1
 
-    def dec(self, index, resource=None):
+    def dec(self, index: int, resource: Optional['Resource'] = None) -> None:
         """
         Decrement the counter if index matches the interval and resource.
 
@@ -173,7 +185,7 @@ class Limit:
             self._dirty = True
             self._scoreboard[sb_idx] -= 1
 
-    def ok(self, index, upper, resource=None):
+    def ok(self, index: Optional[int], upper: bool, resource: Optional['Resource'] = None) -> bool:
         """
         Check if the counter is within the limit.
 
@@ -224,15 +236,15 @@ class Limits:
     Supports setting multiple limits and checking/incrementing them all at once.
     """
 
-    def __init__(self, limits=None):
+    def __init__(self, limits: Optional['Limits'] = None) -> None:
         """
         Create a new Limits collection.
 
         Args:
             limits: Optional existing Limits to copy from
         """
-        self._limits = []
-        self.project = None
+        self._limits: list[Limit] = []
+        self.project: Optional[Project] = None
 
         if limits is not None:
             # Deep copy from existing
@@ -240,22 +252,28 @@ class Limits:
                 self._limits.append(limit.copy())
             self.project = limits.project
 
-    def copy(self):
+    def copy(self) -> 'Limits':
         """Return a deep copy of this Limits collection."""
         return Limits(self)
 
-    def setProject(self, project):
+    def setProject(self, project: 'Project') -> None:
         """Set the project reference."""
         if self._limits:
             raise RuntimeError("Cannot change project after limits have been set!")
         self.project = project
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all limit counters."""
         for limit in self._limits:
             limit.reset()
 
-    def setLimit(self, name, value, interval=None, resource=None):
+    def setLimit(
+        self,
+        name: str,
+        value: Union[int, float],
+        interval: Optional[tuple[datetime, datetime]] = None,
+        resource: Optional['Resource'] = None
+    ) -> None:
         """
         Create or update a limit.
 
@@ -276,13 +294,15 @@ class Limits:
             interval_start, interval_end = interval
 
         # Determine period and slot duration based on project settings
-        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        slot_duration: int = self.project.attributes.get('scheduleGranularity', 3600)
 
         # Convert value from hours to slots
         # e.g., 3.5h with 15-min (0.25h) slots = 14 slots
         slot_duration_hours = slot_duration / 3600.0
         value_in_slots = int(value / slot_duration_hours)
 
+        period: float
+        upper: bool
         if name == 'dailymax':
             period = 60 * 60 * 24  # 1 day in seconds
             upper = True
@@ -311,25 +331,30 @@ class Limits:
             raise ValueError(f"Unknown limit type: {name}")
 
         # Remove existing limit with same name + resource combination
-        self._limits = [l for l in self._limits
-                       if not (l.name == name and l.resource == resource)]
+        self._limits = [limit for limit in self._limits
+                       if not (limit.name == name and limit.resource == resource)]
 
         # Add new limit (using value_in_slots which is calculated from hours)
         self._limits.append(Limit(
             name, interval_start, interval_end, period, value_in_slots, upper, resource, slot_duration
         ))
 
-    def inc(self, index, resource=None):
+    def inc(self, index: int, resource: Optional['Resource'] = None) -> None:
         """Increment all limit counters for the given index."""
         for limit in self._limits:
             limit.inc(index, resource)
 
-    def dec(self, index, resource=None):
+    def dec(self, index: int, resource: Optional['Resource'] = None) -> None:
         """Decrement all limit counters for the given index."""
         for limit in self._limits:
             limit.dec(index, resource)
 
-    def ok(self, index=None, upper=True, resource=None):
+    def ok(
+        self,
+        index: Optional[int] = None,
+        upper: bool = True,
+        resource: Optional['Resource'] = None
+    ) -> bool:
         """
         Check if all limits are satisfied.
 
@@ -341,14 +366,11 @@ class Limits:
         Returns:
             True if all limits are satisfied
         """
-        for limit in self._limits:
-            if not limit.ok(index, upper, resource):
-                return False
-        return True
+        return all(limit.ok(index, upper, resource) for limit in self._limits)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         """Return True if there are any limits."""
         return len(self._limits) > 0
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._limits)

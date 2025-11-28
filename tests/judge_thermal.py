@@ -1,6 +1,8 @@
-import pandas as pd
 import sys
 from datetime import datetime
+
+import pandas as pd
+
 
 def measure_temperature(csv_path):
     print(f"--- MEASURING INGOT TEMPERATURE: {csv_path} ---")

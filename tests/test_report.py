@@ -10,19 +10,29 @@ This module contains comprehensive tests for:
 - TextReport
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
+from unittest.mock import Mock
 
-from scriptplan.report import (
-    Report, ReportFormat, ReportType, ReportContext, Query,
-    ReportBase, TableReport, TaskReport, ResourceReport, TextReport,
-    ReportTable, ReportTableLine, ReportTableCell, ReportTableLegend,
-    Alignment
-)
+import pytest
+
 from scriptplan.core.project import Project
-from scriptplan.core.task import Task
 from scriptplan.core.resource import Resource
+from scriptplan.core.task import Task
+from scriptplan.report import (
+    Alignment,
+    Query,
+    Report,
+    ReportContext,
+    ReportTable,
+    ReportTableCell,
+    ReportTableLegend,
+    ReportTableLine,
+    ReportType,
+    ResourceReport,
+    TableReport,
+    TaskReport,
+    TextReport,
+)
 
 
 class TestQuery:

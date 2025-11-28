@@ -1,5 +1,7 @@
-import pandas as pd
 import sys
+
+import pandas as pd
+
 
 def check_bottleneck(csv_path):
     print(f"--- JUDGING: {csv_path} ---")

@@ -1,5 +1,7 @@
-import pandas as pd
 import sys
+
+import pandas as pd
+
 
 def check_results(csv_path):
     print(f"Checking {csv_path} against Logic Rules...")

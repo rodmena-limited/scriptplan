@@ -5,11 +5,11 @@ separate processes. Multiple pieces of code can be submitted to be executed
 in parallel. The number of CPU cores to use is limited at object creation time.
 """
 
-import threading
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from typing import Callable, Any, Optional, List, Dict
+import threading
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
 
 
 @dataclass
@@ -20,32 +20,36 @@ class JobInfo:
     """
 
     job_id: int
-    func: Callable
+    func: Callable[..., Any]
     tag: Any = None
     pid: Optional[int] = None
     ret_val: Optional[int] = None
     stdout: str = ''
     stderr: str = ''
-    args: tuple = field(default_factory=tuple)
-    kwargs: dict = field(default_factory=dict)
+    args: tuple[Any, ...] = field(default_factory=tuple)
+    kwargs: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def jobId(self):
+    def jobId(self) -> int:
         """Alias for Ruby compatibility."""
         return self.job_id
 
     @property
-    def retVal(self):
+    def retVal(self) -> Optional[int]:
         """Alias for Ruby compatibility."""
         return self.ret_val
 
 
-def _worker_function(func, args, kwargs):
+def _worker_function(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any]
+) -> tuple[int, Any, str, str]:
     """Worker function that runs in subprocess and returns result."""
     try:
         result = func(*args, **kwargs)
         return (0, result, '', '')
-    except Exception as e:
+    except Exception:
         import traceback
         return (1, None, '', traceback.format_exc())
 
@@ -60,7 +64,7 @@ class BatchProcessor:
         3. Use wait() to wait for completion and process results
     """
 
-    def __init__(self, max_cpu_cores: int = None):
+    def __init__(self, max_cpu_cores: Optional[int] = None) -> None:
         """Create a BatchProcessor object.
 
         Args:
@@ -71,22 +75,28 @@ class BatchProcessor:
             max_cpu_cores = multiprocessing.cpu_count()
         self._max_cpu_cores = max_cpu_cores
 
-        self._to_run_queue: List[JobInfo] = []
-        self._running_jobs: Dict[int, JobInfo] = {}
-        self._completed_jobs: List[JobInfo] = []
+        self._to_run_queue: list[JobInfo] = []
+        self._running_jobs: dict[int, JobInfo] = {}
+        self._completed_jobs: list[JobInfo] = []
 
         self._lock = threading.Lock()
         self._jobs_in = 0
         self._jobs_out = 0
 
-        self._executor = None
+        self._executor: Optional[ProcessPoolExecutor] = None
 
     @property
-    def maxCpuCores(self):
+    def maxCpuCores(self) -> int:
         """Return the maximum number of CPU cores to use."""
         return self._max_cpu_cores
 
-    def queue(self, tag: Any = None, func: Callable = None, *args, **kwargs):
+    def queue(
+        self,
+        tag: Any = None,
+        func: Optional[Callable[..., Any]] = None,
+        *args: Any,
+        **kwargs: Any
+    ) -> None:
         """Add a new job to the job queue.
 
         Args:
@@ -99,6 +109,9 @@ class BatchProcessor:
             if self._jobs_out > 0:
                 raise RuntimeError("You cannot call queue() while wait() is running!")
 
+            if func is None:
+                raise ValueError("func cannot be None")
+
             job = JobInfo(
                 job_id=self._jobs_in,
                 func=func,
@@ -109,7 +122,7 @@ class BatchProcessor:
             self._jobs_in += 1
             self._to_run_queue.append(job)
 
-    def wait(self, callback: Callable[[JobInfo], None] = None):
+    def wait(self, callback: Optional[Callable[[JobInfo], None]] = None) -> None:
         """Wait for all jobs to complete.
 
         Args:
@@ -123,7 +136,7 @@ class BatchProcessor:
 
         try:
             # Submit all jobs
-            futures = {}
+            futures: dict[Future[tuple[int, Any, str, str]], JobInfo] = {}
             for job in self._to_run_queue:
                 future = self._executor.submit(
                     _worker_function, job.func, job.args, job.kwargs
@@ -134,7 +147,7 @@ class BatchProcessor:
             for future in as_completed(futures):
                 job = futures[future]
                 try:
-                    ret_code, result, stdout, stderr = future.result()
+                    ret_code, _result, stdout, stderr = future.result()
                     job.ret_val = ret_code
                     job.stdout = stdout
                     job.stderr = stderr
@@ -159,7 +172,7 @@ class BatchProcessor:
         self._jobs_in = 0
         self._jobs_out = 0
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel all pending jobs."""
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
@@ -172,7 +185,7 @@ class ThreadBatchProcessor:
     Uses threads instead of processes, suitable for I/O-bound tasks.
     """
 
-    def __init__(self, max_threads: int = None):
+    def __init__(self, max_threads: Optional[int] = None) -> None:
         """Create a ThreadBatchProcessor object.
 
         Args:
@@ -183,15 +196,24 @@ class ThreadBatchProcessor:
             max_threads = multiprocessing.cpu_count() * 5
         self._max_threads = max_threads
 
-        self._to_run_queue: List[JobInfo] = []
+        self._to_run_queue: list[JobInfo] = []
         self._jobs_in = 0
         self._jobs_out = 0
         self._lock = threading.Lock()
-        self._executor = None
+        self._executor: Optional[ThreadPoolExecutor] = None
 
-    def queue(self, tag: Any = None, func: Callable = None, *args, **kwargs):
+    def queue(
+        self,
+        tag: Any = None,
+        func: Optional[Callable[..., Any]] = None,
+        *args: Any,
+        **kwargs: Any
+    ) -> None:
         """Add a new job to the job queue."""
         with self._lock:
+            if func is None:
+                raise ValueError("func cannot be None")
+
             job = JobInfo(
                 job_id=self._jobs_in,
                 func=func,
@@ -202,7 +224,7 @@ class ThreadBatchProcessor:
             self._jobs_in += 1
             self._to_run_queue.append(job)
 
-    def wait(self, callback: Callable[[JobInfo], None] = None):
+    def wait(self, callback: Optional[Callable[[JobInfo], None]] = None) -> None:
         """Wait for all jobs to complete."""
         if self._jobs_in == 0:
             return
@@ -210,7 +232,7 @@ class ThreadBatchProcessor:
         self._executor = ThreadPoolExecutor(max_workers=self._max_threads)
 
         try:
-            futures = {}
+            futures: dict[Future[Any], JobInfo] = {}
             for job in self._to_run_queue:
                 future = self._executor.submit(job.func, *job.args, **job.kwargs)
                 futures[future] = job
@@ -218,7 +240,7 @@ class ThreadBatchProcessor:
             for future in as_completed(futures):
                 job = futures[future]
                 try:
-                    result = future.result()
+                    future.result()
                     job.ret_val = 0
                 except Exception as e:
                     job.ret_val = 1

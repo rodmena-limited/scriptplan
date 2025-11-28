@@ -12,13 +12,12 @@ Issue #42: Airport Retrofit (mixed calendars, night shifts, start-to-start depen
 Issue #43: Workflow Engine (efficiency scaling, offset work weeks)
 """
 
-import pytest
-import pandas as pd
 from datetime import datetime, timedelta
 from math import isclose
-from io import StringIO
 from pathlib import Path
-import os
+
+import pandas as pd
+import pytest
 
 from scriptplan.parser.tjp_parser import ProjectFileParser
 
@@ -68,7 +67,7 @@ class TestIssue39UltraMath:
         import io
 
         parser = ProjectFileParser()
-        with open('tests/data/airport_ultra_math_report.tjp', 'r') as f:
+        with open('tests/data/airport_ultra_math_report.tjp') as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -217,7 +216,7 @@ class TestIssue41MathTorture:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/math_torture.tjp', 'r') as f:
+        with open('tests/data/math_torture.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -360,7 +359,7 @@ class TestIssue42AirportRetrofit:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/airport_retrofit.tjp', 'r') as f:
+        with open('tests/data/airport_retrofit.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -436,7 +435,7 @@ class TestIssue40AirportStressTest:
     def csv_output(self):
         """Generate our tool's output."""
         parser = ProjectFileParser()
-        with open('tests/data/airport_stress_test.tjp', 'r') as f:
+        with open('tests/data/airport_stress_test.tjp') as f:
             content = f.read()
         project = parser.parse(content)
         project.schedule()
@@ -506,7 +505,7 @@ class TestIssue43WorkflowEngine:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/workflow_engine.tjp', 'r') as f:
+        with open('tests/data/workflow_engine.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -1178,7 +1177,7 @@ class TestIssue55TimeTraveler:
         import io
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1303,7 +1302,7 @@ class TestIssue56UnionContract:
         import io
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1443,10 +1442,11 @@ class TestIssue57BlackBoxProtocol:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame (like judge script)."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1556,10 +1556,11 @@ class TestIssue58BlindParadox:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1658,10 +1659,11 @@ class TestIssue60EclipseProtocol:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1754,10 +1756,11 @@ class TestIssue61SineWaveCapacity:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1866,10 +1869,11 @@ class TestIssue59DateLineParadox:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -1982,10 +1986,11 @@ class TestIssue62SharedQuotaProtocol:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -2105,10 +2110,11 @@ class TestIssue63FailoverProtocol:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -2221,10 +2227,11 @@ class TestIssue64AtomicBooking:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -2327,10 +2334,11 @@ class TestIssue65ThermalShock:
     def csv_dataframe(self):
         """Generate CSV output and return as pandas DataFrame."""
         import io
+
         import pandas as pd
 
         parser = ProjectFileParser()
-        with open(self.TJP_FILE, 'r') as f:
+        with open(self.TJP_FILE) as f:
             content = f.read()
         project = parser.parse(content)
 

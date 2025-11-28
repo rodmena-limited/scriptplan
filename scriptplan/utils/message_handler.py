@@ -6,9 +6,9 @@ for handling fatal errors, errors, warnings, info, and debug messages.
 
 import sys
 import threading
-from enum import Enum
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union
+from enum import Enum
+from typing import Any, ClassVar, Optional, Union
 
 from scriptplan.utils.logger import ANSIColor
 
@@ -67,7 +67,7 @@ class Message:
     Messages can include source file locations and specific line content for debugging.
     """
 
-    VALID_TYPES = [MessageType.FATAL, MessageType.ERROR, MessageType.WARNING,
+    VALID_TYPES: ClassVar[list[MessageType]] = [MessageType.FATAL, MessageType.ERROR, MessageType.WARNING,
                    MessageType.INFO, MessageType.DEBUG]
 
     def __init__(self, msg_type: MessageType, msg_id: str, message: str,
@@ -124,7 +124,7 @@ class Message:
         return self._source_file_info
 
     @sourceFileInfo.setter
-    def sourceFileInfo(self, value: Optional[SourceFileInfo]):
+    def sourceFileInfo(self, value: Optional[SourceFileInfo]) -> None:
         self._source_file_info = value
 
     @property
@@ -189,10 +189,10 @@ class MessageHandlerInstance:
     output levels for both console and log files.
     """
 
-    _instance = None
-    _lock = threading.Lock()
+    _instance: ClassVar[Optional['MessageHandlerInstance']] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
-    LOG_LEVELS = {
+    LOG_LEVELS: ClassVar[dict[Union[str, MessageType], int]] = {
         'none': 0,
         MessageType.FATAL: 1,
         MessageType.ERROR: 2,
@@ -202,7 +202,19 @@ class MessageHandlerInstance:
         MessageType.DEBUG: 5,
     }
 
-    def __new__(cls):
+    _initialized: bool
+    _output_level: int
+    _log_level: int
+    _log_file: Optional[str]
+    _hide_scenario: bool
+    _app_name: str
+    _abort_on_warning: bool
+    _baseline_sfi: dict[int, SourceFileInfo]
+    _trap_setup: dict[int, bool]
+    _errors: int
+    _messages: list[Message]
+
+    def __new__(cls) -> 'MessageHandlerInstance':
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -210,27 +222,27 @@ class MessageHandlerInstance:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if self._initialized:
             return
         self._initialized = True
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all handler state to defaults."""
         self._output_level = 4
         self._log_level = 3
-        self._log_file: Optional[str] = None
+        self._log_file = None
         self._hide_scenario = True
         self._app_name = 'unknown'
         self._abort_on_warning = False
-        self._baseline_sfi: Dict[int, SourceFileInfo] = {}
-        self._trap_setup: Dict[int, bool] = {}
+        self._baseline_sfi = {}
+        self._trap_setup = {}
 
         self.clear()
 
     @property
-    def messages(self) -> List[Message]:
+    def messages(self) -> list[Message]:
         return self._messages
 
     @property
@@ -242,7 +254,7 @@ class MessageHandlerInstance:
         return self._log_file
 
     @logFile.setter
-    def logFile(self, value: Optional[str]):
+    def logFile(self, value: Optional[str]) -> None:
         self._log_file = value
 
     @property
@@ -250,7 +262,7 @@ class MessageHandlerInstance:
         return self._app_name
 
     @appName.setter
-    def appName(self, value: str):
+    def appName(self, value: str) -> None:
         self._app_name = value
 
     @property
@@ -258,36 +270,46 @@ class MessageHandlerInstance:
         return self._abort_on_warning
 
     @abortOnWarning.setter
-    def abortOnWarning(self, value: bool):
+    def abortOnWarning(self, value: bool) -> None:
         self._abort_on_warning = value
 
     @property
     def baselineSFI(self) -> Optional[SourceFileInfo]:
-        return self._baseline_sfi.get(threading.current_thread().ident)
+        thread_id = threading.current_thread().ident
+        if thread_id is None:
+            return None
+        return self._baseline_sfi.get(thread_id)
 
     @baselineSFI.setter
-    def baselineSFI(self, value: Optional[SourceFileInfo]):
-        self._baseline_sfi[threading.current_thread().ident] = value
+    def baselineSFI(self, value: Optional[SourceFileInfo]) -> None:
+        thread_id = threading.current_thread().ident
+        if thread_id is not None and value is not None:
+            self._baseline_sfi[thread_id] = value
 
     @property
     def trapSetup(self) -> bool:
-        return self._trap_setup.get(threading.current_thread().ident, False)
+        thread_id = threading.current_thread().ident
+        if thread_id is None:
+            return False
+        return self._trap_setup.get(thread_id, False)
 
     @trapSetup.setter
-    def trapSetup(self, value: bool):
-        self._trap_setup[threading.current_thread().ident] = value
+    def trapSetup(self, value: bool) -> None:
+        thread_id = threading.current_thread().ident
+        if thread_id is not None:
+            self._trap_setup[thread_id] = value
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear all stored messages and reset error count."""
         self._errors = 0
-        self._messages: List[Message] = []
+        self._messages = []
 
     @property
     def outputLevel(self) -> int:
         return self._output_level
 
     @outputLevel.setter
-    def outputLevel(self, level: Union[int, str, MessageType]):
+    def outputLevel(self, level: Union[int, str, MessageType]) -> None:
         self._output_level = self._check_level(level)
 
     @property
@@ -295,7 +317,7 @@ class MessageHandlerInstance:
         return self._log_level
 
     @logLevel.setter
-    def logLevel(self, level: Union[int, str, MessageType]):
+    def logLevel(self, level: Union[int, str, MessageType]) -> None:
         self._log_level = self._check_level(level)
 
     @property
@@ -303,7 +325,7 @@ class MessageHandlerInstance:
         return self._hide_scenario
 
     @hideScenario.setter
-    def hideScenario(self, value: bool):
+    def hideScenario(self, value: bool) -> None:
         self._hide_scenario = value
 
     def _check_level(self, level: Union[int, str, MessageType]) -> int:
@@ -319,14 +341,12 @@ class MessageHandlerInstance:
         if isinstance(level, str):
             level_lower = level.lower()
             for key, val in self.LOG_LEVELS.items():
-                if isinstance(key, str) and key == level_lower:
-                    return val
-                elif isinstance(key, MessageType) and key.value == level_lower:
+                if (isinstance(key, str) and key == level_lower) or (isinstance(key, MessageType) and key.value == level_lower):
                     return val
 
         raise ValueError(f"Unsupported level {level}")
 
-    def _log(self, msg_type: MessageType, message: str):
+    def _log(self, msg_type: MessageType, message: str) -> None:
         """Write message to log file if configured."""
         if not self._log_file:
             return
@@ -345,7 +365,7 @@ class MessageHandlerInstance:
                      source_file_info: Optional[SourceFileInfo] = None,
                      line: Optional[str] = None,
                      data: Any = None,
-                     scenario: Any = None):
+                     scenario: Any = None) -> None:
         """Add a message and handle based on type."""
         # Adjust source file info based on baseline
         baseline_sfi = self.baselineSFI
@@ -391,7 +411,7 @@ class MessageHandlerInstance:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log a fatal error and raise RuntimeError."""
         self._add_message(MessageType.FATAL, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -400,7 +420,7 @@ class MessageHandlerInstance:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log an error. Will exit or raise TjRuntimeError based on trapSetup."""
         self._add_message(MessageType.ERROR, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -409,7 +429,7 @@ class MessageHandlerInstance:
                  source_file_info: Optional[SourceFileInfo] = None,
                  line: Optional[str] = None,
                  data: Any = None,
-                 scenario: Any = None):
+                 scenario: Any = None) -> None:
         """Log a critical error. Increments error count but does not exit."""
         self._add_message(MessageType.CRITICAL, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -418,7 +438,7 @@ class MessageHandlerInstance:
                 source_file_info: Optional[SourceFileInfo] = None,
                 line: Optional[str] = None,
                 data: Any = None,
-                scenario: Any = None):
+                scenario: Any = None) -> None:
         """Log a warning. May raise TjException if abortOnWarning is set."""
         self._add_message(MessageType.WARNING, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -427,7 +447,7 @@ class MessageHandlerInstance:
              source_file_info: Optional[SourceFileInfo] = None,
              line: Optional[str] = None,
              data: Any = None,
-             scenario: Any = None):
+             scenario: Any = None) -> None:
         """Log an info message."""
         self._add_message(MessageType.INFO, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -436,7 +456,7 @@ class MessageHandlerInstance:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log a debug message."""
         self._add_message(MessageType.DEBUG, msg_id, message,
                           source_file_info, line, data, scenario)
@@ -464,7 +484,7 @@ class MessageHandler:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log a fatal error and raise RuntimeError."""
         MessageHandlerInstance().fatal(msg_id, message, source_file_info,
                                         line, data, scenario)
@@ -473,7 +493,7 @@ class MessageHandler:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log an error."""
         MessageHandlerInstance().error(msg_id, message, source_file_info,
                                         line, data, scenario)
@@ -482,7 +502,7 @@ class MessageHandler:
                  source_file_info: Optional[SourceFileInfo] = None,
                  line: Optional[str] = None,
                  data: Any = None,
-                 scenario: Any = None):
+                 scenario: Any = None) -> None:
         """Log a critical error."""
         MessageHandlerInstance().critical(msg_id, message, source_file_info,
                                            line, data, scenario)
@@ -491,7 +511,7 @@ class MessageHandler:
                 source_file_info: Optional[SourceFileInfo] = None,
                 line: Optional[str] = None,
                 data: Any = None,
-                scenario: Any = None):
+                scenario: Any = None) -> None:
         """Log a warning."""
         MessageHandlerInstance().warning(msg_id, message, source_file_info,
                                           line, data, scenario)
@@ -500,7 +520,7 @@ class MessageHandler:
              source_file_info: Optional[SourceFileInfo] = None,
              line: Optional[str] = None,
              data: Any = None,
-             scenario: Any = None):
+             scenario: Any = None) -> None:
         """Log an info message."""
         MessageHandlerInstance().info(msg_id, message, source_file_info,
                                        line, data, scenario)
@@ -509,7 +529,7 @@ class MessageHandler:
               source_file_info: Optional[SourceFileInfo] = None,
               line: Optional[str] = None,
               data: Any = None,
-              scenario: Any = None):
+              scenario: Any = None) -> None:
         """Log a debug message."""
         MessageHandlerInstance().debug(msg_id, message, source_file_info,
                                         line, data, scenario)

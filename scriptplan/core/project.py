@@ -1,25 +1,39 @@
-import logging
-from scriptplan.utils.message_handler import MessageHandler
-from scriptplan.utils.time import TjTime, TimeInterval
-from scriptplan.utils.data_cache import DataCache, FileList
-from scriptplan.core.property import (
-    PropertySet, PropertyList, AttributeDefinition, AttributeBase,
-    AlertLevelDefinitions, LeaveList, RealFormat, KeywordArray,
-    StringAttribute, IntegerAttribute, DateAttribute, BooleanAttribute,
-    ListAttribute, FloatAttribute,
-    ResourceListAttribute, ShiftAssignmentsAttribute, TaskDepListAttribute,
-    LogicalExpressionListAttribute, PropertyAttribute, RichTextAttribute,
-    ColumnListAttribute, AccountAttribute, DefinitionListAttribute,
-    FlagListAttribute, FormatListAttribute, LogicalExpressionAttribute,
-    SymbolListAttribute, SymbolAttribute, NodeListAttribute, ScenarioListAttribute,
-    SortListAttribute, JournalSortListAttribute, RealFormatAttribute,
-    LeaveListAttribute
-)
 from scriptplan.core.journal import Journal
+from scriptplan.core.property import (
+    AlertLevelDefinitions,
+    AttributeBase,
+    AttributeDefinition,
+    BooleanAttribute,
+    ColumnListAttribute,
+    DateAttribute,
+    FlagListAttribute,
+    FloatAttribute,
+    FormatListAttribute,
+    IntegerAttribute,
+    LeaveList,
+    LeaveListAttribute,
+    ListAttribute,
+    LogicalExpressionAttribute,
+    PropertyAttribute,
+    PropertySet,
+    RealFormat,
+    ResourceListAttribute,
+    RichTextAttribute,
+    ScenarioListAttribute,
+    ShiftAssignmentsAttribute,
+    SortListAttribute,
+    StringAttribute,
+    SymbolAttribute,
+    SymbolListAttribute,
+    TaskDepListAttribute,
+)
 from scriptplan.core.scenario import Scenario
 from scriptplan.core.timesheet import TimeSheets
-from scriptplan.core.working_hours import WorkingHours
 from scriptplan.scheduler.scoreboard import Scoreboard
+from scriptplan.utils.data_cache import FileList
+from scriptplan.utils.message_handler import MessageHandler
+from scriptplan.utils.time import TjTime
+
 
 class Project(MessageHandler):
     """
@@ -27,15 +41,15 @@ class Project(MessageHandler):
     generally consist of resources, tasks and a number of other optional
     properties.
     """
-    
+
     def __init__(self, id, name, version):
         self.id = id
         self.name = name
         self.version = version
-        
+
         if hasattr(AttributeBase, 'setMode'):
              AttributeBase.setMode(0)
-        
+
         self.attributes = {
             'alertLevels': AlertLevelDefinitions(),
             'auxdir': '',
@@ -75,7 +89,7 @@ class Project(MessageHandler):
             'yearlyworkingdays': 260.714,
             'yresolution': 1
         }
-        
+
         self.accounts = PropertySet(self, True)
         self._define_account_attributes()
 
@@ -84,25 +98,25 @@ class Project(MessageHandler):
 
         self.resources = PropertySet(self, False)
         self._define_resource_attributes()
-        
+
         self.tasks = PropertySet(self, False)
         self._define_task_attributes()
-        
+
         self.reports = PropertySet(self, False)
         self._define_report_attributes()
-        
+
         self.scenarios = PropertySet(self, True)
         self._define_scenario_attributes()
-        
+
         # Scenario needs to be added AFTER attributes are defined
         Scenario(self, 'plan', 'Plan Scenario', None)
-        
+
         self.inputFiles = FileList()
         self.timeSheets = TimeSheets()
-        
+
         self.scoreboard = None
         self.scoreboardNoLeaves = None
-        
+
         self.reportContexts = []
         self.outputDir = './'
         self.warnTsDeltas = False
@@ -265,7 +279,7 @@ class Project(MessageHandler):
         ]
         for a in attrs:
             self.reports.addAttributeType(AttributeDefinition(*a))
-    
+
     def scenarioCount(self):
         return self.scenarios.items()
 
@@ -290,29 +304,29 @@ class Project(MessageHandler):
 
         for p in [self.accounts, self.shifts, self.resources, self.tasks]:
             p.index()
-            
+
         if self.tasks.empty():
             # No tasks to schedule - just return
             return True
-            
+
         for sc in self.scenarios:
             # Skip disabled scenarios if 'active' is false (default true if not set)
             if not sc.get('active') and sc.get('active') is not None:
                 continue
 
             scIdx = sc.sequenceNo - 1
-            
+
             # Propagate inherited values
             AttributeBase.setMode(1)
             self.prepareScenario(scIdx)
-            
+
             # Schedule
             AttributeBase.setMode(2)
             self.scheduleScenario(scIdx)
-            
+
             # Finish
             self.finishScenario(scIdx)
-             
+
         return True
 
     def prepareScenario(self, scIdx):
@@ -325,10 +339,9 @@ class Project(MessageHandler):
         project_scheduling = self.attributes.get('scheduling')
         if project_scheduling == 'alap':
             for task in self.tasks:
-                if task.leaf():
-                    # Only override if task doesn't have explicit scheduling attribute
-                    if not getattr(task, '_explicit_scheduling', False):
-                        task[('forward', scIdx)] = False  # ALAP mode
+                # Only override if task doesn't have explicit scheduling attribute
+                if task.leaf() and not getattr(task, '_explicit_scheduling', False):
+                    task[('forward', scIdx)] = False  # ALAP mode
 
         # Propagate container end dates to leaf children for ALAP mode
         # In ALAP, container end dates act as constraints for children
@@ -771,9 +784,8 @@ class Project(MessageHandler):
 
         # Initialize working time slots - mark working hours as None
         # Default working hours: Mon-Fri, 9am-5pm
-        from datetime import timedelta
         size = self.scoreboardSize()
-        granularity = self.attributes['scheduleGranularity']
+        self.attributes['scheduleGranularity']
 
         for i in range(size):
             date = self.idxToDate(i)
@@ -797,16 +809,14 @@ class Project(MessageHandler):
         if weekday >= 5:  # Saturday or Sunday
             return False
         hour = date.hour
-        if hour < 9 or hour >= 17:  # Outside 9am-5pm
-            return False
-        return True
+        return 9 <= hour < 17  # Within 9am-5pm
 
     def isWorkingTime(self, sbIdx):
         """Check if a scoreboard slot is working time."""
         if self.scoreboard is None:
             return self._isDefaultWorkingTime(self.idxToDate(sbIdx))
         return self.scoreboard[sbIdx] is None
-    
+
     def scoreboardSize(self):
         if self.scoreboard:
             return self.scoreboard.size
@@ -825,7 +835,7 @@ class Project(MessageHandler):
             diff = (date - self.attributes['start']).total_seconds()
          except AttributeError:
             diff = date - self.attributes['start']
-         
+
          idx = int(diff / self.attributes['scheduleGranularity'])
          return idx
 

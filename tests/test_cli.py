@@ -4,16 +4,10 @@ Tests for the CLI module.
 This module contains tests for the command-line interface.
 """
 
-import pytest
-import sys
-import os
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
-from scriptplan.cli.main import (
-    main, ScriptPlan, create_parser, setup_logging
-)
+import pytest
+
+from scriptplan.cli.main import ScriptPlan, create_parser, main, setup_logging
 
 
 class TestCreateParser:

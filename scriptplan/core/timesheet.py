@@ -4,8 +4,12 @@ Contains TimeSheetRecord, TimeSheet, and TimeSheets classes for
 managing time tracking and work reporting.
 """
 
-from typing import List, Optional, Union, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
+
 from scriptplan.utils.message_handler import MessageHandler
+
+if TYPE_CHECKING:
+    from scriptplan.core.resource import Resource
 
 
 class TimeSheetRecord(MessageHandler):
@@ -16,7 +20,7 @@ class TimeSheetRecord(MessageHandler):
     For all tasks, stores the completed work during the reporting time frame.
     """
 
-    def __init__(self, time_sheet: 'TimeSheet', task):
+    def __init__(self, time_sheet: 'TimeSheet', task: Any) -> None:
         """Create a new TimeSheetRecord.
 
         Args:
@@ -29,14 +33,14 @@ class TimeSheetRecord(MessageHandler):
 
         self._work: Optional[int] = None  # Measured in time slots
         self._remaining: Optional[int] = None  # Measured in time slots
-        self._expected_end = None
+        self._expected_end: Any = None
         self._name: Optional[str] = None  # For new tasks
-        self._status = None  # JournalEntry reference
+        self._status: Any = None  # JournalEntry reference
         self._priority: int = 0
-        self.sourceFileInfo = None
+        self.sourceFileInfo: Any = None
 
     @property
-    def task(self):
+    def task(self) -> Any:
         return self._task
 
     @property
@@ -44,7 +48,7 @@ class TimeSheetRecord(MessageHandler):
         return self._work
 
     @work.setter
-    def work(self, value):
+    def work(self, value: Union[int, float]) -> None:
         """Set work value. Integer is slots, Float is percentage (0.0-1.0)."""
         if isinstance(value, int):
             self._work = value
@@ -57,23 +61,23 @@ class TimeSheetRecord(MessageHandler):
         return self._remaining
 
     @remaining.setter
-    def remaining(self, value):
+    def remaining(self, value: Optional[int]) -> None:
         self._remaining = value
 
     @property
-    def expectedEnd(self):
+    def expectedEnd(self) -> Any:
         return self._expected_end
 
     @expectedEnd.setter
-    def expectedEnd(self, value):
+    def expectedEnd(self, value: Any) -> None:
         self._expected_end = value
 
     @property
-    def status(self):
+    def status(self) -> Any:
         return self._status
 
     @status.setter
-    def status(self, value):
+    def status(self, value: Any) -> None:
         self._status = value
 
     @property
@@ -81,7 +85,7 @@ class TimeSheetRecord(MessageHandler):
         return self._priority
 
     @priority.setter
-    def priority(self, value):
+    def priority(self, value: int) -> None:
         self._priority = value
 
     @property
@@ -89,10 +93,10 @@ class TimeSheetRecord(MessageHandler):
         return self._name
 
     @name.setter
-    def name(self, value):
+    def name(self, value: Optional[str]) -> None:
         self._name = value
 
-    def check(self):
+    def check(self) -> None:
         """Perform consistency checks on the record."""
         scIdx = self._time_sheet.scenarioIdx
         taskId = self.taskId
@@ -132,13 +136,12 @@ class TimeSheetRecord(MessageHandler):
                        f"You must specify a status for task {taskId}. It was worked "
                        "on for a day or more.")
 
-        if self._status:
-            if hasattr(self._status, 'headline') and not self._status.headline:
-                self.error('ts_no_headline',
-                           f"You must provide a headline for the status of "
-                           f"task {taskId}")
+        if self._status and hasattr(self._status, 'headline') and not self._status.headline:
+            self.error('ts_no_headline',
+                       f"You must provide a headline for the status of "
+                       f"task {taskId}")
 
-    def warnOnDelta(self, startIdx: int, endIdx: int):
+    def warnOnDelta(self, startIdx: int, endIdx: int) -> None:
         """Warn about differences between planned and actual work."""
         if self._task is None:
             return
@@ -150,13 +153,17 @@ class TimeSheetRecord(MessageHandler):
 
         if isinstance(self._task, str):
             # New task request
-            remaining_str = (f"Remaining: {self._time_sheet.slotsToDays(self._remaining)}d"
-                            if self._remaining else f"End: {self._expected_end}")
+            remaining_str: str
+            if self._remaining is not None:
+                remaining_str = f"Remaining: {self._time_sheet.slotsToDays(self._remaining)}d"
+            else:
+                remaining_str = f"End: {self._expected_end}"
+            work_days = self._time_sheet.slotsToDays(self._work) if self._work else 0
             self.warning('ts_res_new_task',
                         f"{resource.name} is requesting a new task:\n"
                         f"  ID: {self._task}\n"
                         f"  Name: {self._name}\n"
-                        f"  Work: {self._time_sheet.slotsToDays(self._work)}d  "
+                        f"  Work: {work_days}d  "
                         f"{remaining_str}")
             return
 
@@ -164,8 +171,13 @@ class TimeSheetRecord(MessageHandler):
         scenarioIdx = self._time_sheet.scenarioIdx
         if hasattr(self._task, 'getEffectiveWork'):
             plannedWork = self._task.getEffectiveWork(scenarioIdx, startIdx, endIdx, resource)
-            scheduleGranularity = project.get('scheduleGranularity', 3600)
-            work = project.convertToDailyLoad(self._work * scheduleGranularity) if hasattr(project, 'convertToDailyLoad') else self._work
+            scheduleGranularity = project.get('scheduleGranularity', 3600) if hasattr(project, 'get') else 3600
+            work_val = self._work if self._work else 0
+            work: float
+            if hasattr(project, 'convertToDailyLoad'):
+                work = project.convertToDailyLoad(work_val * scheduleGranularity)
+            else:
+                work = float(work_val)
 
             if work != plannedWork:
                 direction = 'less' if work < plannedWork else 'more'
@@ -177,7 +189,7 @@ class TimeSheetRecord(MessageHandler):
     def taskId(self) -> str:
         """Return the task ID."""
         if hasattr(self._task, 'fullId'):
-            return self._task.fullId
+            return str(self._task.fullId)
         return str(self._task)
 
     def actualWorkPercent(self) -> float:
@@ -224,7 +236,8 @@ class TimeSheetRecord(MessageHandler):
         project = resource.project
         scheduleGranularity = project.get('scheduleGranularity', 3600) if hasattr(project, 'get') else 3600
         if hasattr(project, 'convertToDailyLoad'):
-            return project.convertToDailyLoad(self._remaining * scheduleGranularity)
+            result = project.convertToDailyLoad(self._remaining * scheduleGranularity)
+            return float(result)
         return float(self._remaining)
 
     def planRemaining(self) -> float:
@@ -239,14 +252,15 @@ class TimeSheetRecord(MessageHandler):
         if hasattr(project, 'dateToIdx'):
             startIdx = project.dateToIdx(project.get('now'))
             endIdx = project.dateToIdx(self._task.get('end', scenarioIdx))
-            return self._task.getEffectiveWork(scenarioIdx, startIdx, endIdx, resource)
+            result = self._task.getEffectiveWork(scenarioIdx, startIdx, endIdx, resource)
+            return float(result)
         return 0.0
 
-    def actualEnd(self):
+    def actualEnd(self) -> Any:
         """Return reported expected end of task."""
         return self._expected_end
 
-    def planEnd(self):
+    def planEnd(self) -> Any:
         """Return planned end of task."""
         if hasattr(self._task, 'get'):
             return self._task.get('end', self._time_sheet.scenarioIdx)
@@ -260,7 +274,7 @@ class TimeSheet(MessageHandler):
     Always bound to an existing Resource.
     """
 
-    def __init__(self, resource, interval, scenarioIdx: int):
+    def __init__(self, resource: Any, interval: Any, scenarioIdx: int) -> None:
         """Create a new TimeSheet.
 
         Args:
@@ -280,16 +294,16 @@ class TimeSheet(MessageHandler):
             raise ValueError("Scenario index undefined")
         self._scenarioIdx = scenarioIdx
 
-        self.sourceFileInfo = None
+        self.sourceFileInfo: Any = None
         self._percentageUsed = False
-        self._records: List[TimeSheetRecord] = []
+        self._records: list[TimeSheetRecord] = []
 
     @property
-    def resource(self):
+    def resource(self) -> Any:
         return self._resource
 
     @property
-    def interval(self):
+    def interval(self) -> Any:
         return self._interval
 
     @property
@@ -297,10 +311,10 @@ class TimeSheet(MessageHandler):
         return self._scenarioIdx
 
     @property
-    def records(self) -> List[TimeSheetRecord]:
+    def records(self) -> list[TimeSheetRecord]:
         return self._records
 
-    def add_record(self, record: TimeSheetRecord):
+    def add_record(self, record: TimeSheetRecord) -> None:
         """Add a TimeSheetRecord to this time sheet."""
         for r in self._records:
             if r.task == record.task:
@@ -308,12 +322,12 @@ class TimeSheet(MessageHandler):
                           f"Duplicate records for task {r.taskId}")
         self._records.append(record)
 
-    def __lshift__(self, record: TimeSheetRecord):
+    def __lshift__(self, record: TimeSheetRecord) -> 'TimeSheet':
         """Add a record using << operator."""
         self.add_record(record)
         return self
 
-    def check(self):
+    def check(self) -> None:
         """Perform consistency checks on all records."""
         totalSlots = 0
         for record in self._records:
@@ -352,7 +366,7 @@ class TimeSheet(MessageHandler):
                 self.error('ts_work_not_null',
                           "The reported work for non-working resources must be 0.")
 
-    def warnOnDelta(self):
+    def warnOnDelta(self) -> None:
         """Warn about all delta differences in records."""
         project = self._resource.project if hasattr(self._resource, 'project') else None
         if not project or not hasattr(project, 'dateToIdx'):
@@ -440,18 +454,18 @@ class TimeSheet(MessageHandler):
             return f"{self.slotsToDays(slots)} days"
 
 
-class TimeSheets(list):
+class TimeSheets(list[TimeSheet]):
     """Collection of all time sheets for a project."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-    def check(self):
+    def check(self) -> None:
         """Check all time sheets."""
         for sheet in self:
             sheet.check()
 
-    def warnOnDelta(self):
+    def warnOnDelta(self) -> None:
         """Warn about deltas in all time sheets."""
         for sheet in self:
             sheet.warnOnDelta()

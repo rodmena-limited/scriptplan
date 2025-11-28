@@ -25,51 +25,51 @@ Usage:
     report.generate([ReportFormat.HTML, ReportFormat.CSV])
 """
 
-from scriptplan.report.report_context import (
-    ReportContext,
-    Query,
-)
 from scriptplan.report.report import (
     Report,
     ReportFormat,
-    ReportType,
     ReportScenario,
+    ReportType,
 )
 from scriptplan.report.report_base import ReportBase
+from scriptplan.report.report_context import (
+    Query,
+    ReportContext,
+)
+from scriptplan.report.resource_report import ResourceReport
 from scriptplan.report.table_report import (
-    TableReport,
+    Alignment,
     ReportTable,
-    ReportTableLine,
     ReportTableCell,
     ReportTableColumn,
     ReportTableLegend,
-    Alignment,
+    ReportTableLine,
+    TableReport,
 )
 from scriptplan.report.task_report import TaskReport
-from scriptplan.report.resource_report import ResourceReport
 from scriptplan.report.text_report import TextReport
 
 __all__ = [
-    # Context
-    'ReportContext',
+    'Alignment',
     'Query',
     # Report definition
     'Report',
-    'ReportFormat',
-    'ReportType',
-    'ReportScenario',
     # Base classes
     'ReportBase',
-    'TableReport',
+    # Context
+    'ReportContext',
+    'ReportFormat',
+    'ReportScenario',
     # Table components
     'ReportTable',
-    'ReportTableLine',
     'ReportTableCell',
     'ReportTableColumn',
     'ReportTableLegend',
-    'Alignment',
+    'ReportTableLine',
+    'ReportType',
+    'ResourceReport',
+    'TableReport',
     # Report types
     'TaskReport',
-    'ResourceReport',
     'TextReport',
 ]

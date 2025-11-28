@@ -5,7 +5,7 @@ This module implements the Resource class which represents any kind of
 resource that can be allocated to tasks (people, equipment, etc.).
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from scriptplan.core.property import PropertyTreeNode
 from scriptplan.core.resource_scenario import ResourceScenario
@@ -26,8 +26,13 @@ class Resource(PropertyTreeNode):
         data: List of ResourceScenario objects, one per scenario
     """
 
-    def __init__(self, project: 'Project', id: str, name: str,
-                 parent: Optional['Resource'] = None):
+    def __init__(
+        self,
+        project: 'Project',
+        id: str,
+        name: str,
+        parent: Optional['Resource'] = None
+    ) -> None:
         """
         Create a new Resource.
 
@@ -45,7 +50,7 @@ class Resource(PropertyTreeNode):
 
         # Initialize scenario data
         scenario_count = project.scenarioCount() if hasattr(project, 'scenarioCount') else 1
-        self.data = [None] * scenario_count
+        self.data: list[Optional[ResourceScenario]] = [None] * scenario_count
 
         for i in range(scenario_count):
             ResourceScenario(self, i, self._scenarioAttributes[i])
@@ -64,11 +69,12 @@ class Resource(PropertyTreeNode):
         Returns:
             True if booking succeeded, False otherwise
         """
-        if self.data[scenario_idx]:
-            return self.data[scenario_idx].book(sb_idx, task)
+        scenario = self.data[scenario_idx]
+        if scenario:
+            return scenario.book(sb_idx, task)
         return False
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Callable[..., Any]:
         """
         Forward unknown method calls to ResourceScenario.
 
@@ -87,7 +93,7 @@ class Resource(PropertyTreeNode):
         if name.startswith('_') or name == 'data':
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-        def method_forwarder(scenario_idx: int = 0, *args, **kwargs):
+        def method_forwarder(scenario_idx: int = 0, *args: Any, **kwargs: Any) -> Any:
             if self.data and self.data[scenario_idx]:
                 method = getattr(self.data[scenario_idx], name, None)
                 if method and callable(method):
@@ -103,8 +109,9 @@ class Resource(PropertyTreeNode):
         Args:
             scenario_idx: The scenario index
         """
-        if self.data[scenario_idx]:
-            self.data[scenario_idx].prepareScheduling()
+        scenario = self.data[scenario_idx]
+        if scenario:
+            scenario.prepareScheduling()
 
     def finishScheduling(self, scenario_idx: int) -> None:
         """
@@ -119,10 +126,12 @@ class Resource(PropertyTreeNode):
         """
         # Recursively descend into all child resources
         for child in self.children:
-            child.finishScheduling(scenario_idx)
+            if hasattr(child, 'finishScheduling'):
+                child.finishScheduling(scenario_idx)
 
-        if self.data[scenario_idx]:
-            self.data[scenario_idx].finishScheduling()
+        scenario = self.data[scenario_idx]
+        if scenario:
+            scenario.finishScheduling()
 
     def bookedEffort(self, scenario_idx: int) -> float:
         """
@@ -134,8 +143,9 @@ class Resource(PropertyTreeNode):
         Returns:
             The booked effort value
         """
-        if self.data[scenario_idx]:
-            return self.data[scenario_idx].bookedEffort()
+        scenario = self.data[scenario_idx]
+        if scenario:
+            return scenario.bookedEffort()
         return 0.0
 
     def query_dashboard(self, query: Any) -> None:
@@ -155,7 +165,7 @@ class Resource(PropertyTreeNode):
             query: The query object
         """
         scenario_idx = self.project.attributes.get('trackingScenarioIdx')
-        task_list = []
+        task_list: list[Any] = []
 
         if scenario_idx is None:
             r_text = "No 'trackingscenario' defined."
@@ -163,12 +173,11 @@ class Resource(PropertyTreeNode):
             journal = self.project.attributes.get('journal')
             for task in self.project.tasks:
                 responsible = task.get('responsible', scenario_idx) or []
-                if self in responsible:
+                if self in responsible and journal:
                     # Check for current entries
-                    if journal:
-                        entries = []  # journal.currentEntries(...)
-                        if entries:
-                            task_list.append(task)
+                    entries: list[Any] = []  # journal.currentEntries(...)
+                    if entries:
+                        task_list.append(task)
 
         if not task_list:
             r_text = (f"We have no current status for any task that {self.name} "
@@ -183,7 +192,7 @@ class Resource(PropertyTreeNode):
         if hasattr(query, 'rti'):
             query.rti = r_text
 
-    def scenario(self, scenario_idx: int) -> Optional['ResourceScenario']:
+    def scenario(self, scenario_idx: int) -> Optional[ResourceScenario]:
         """
         Get the ResourceScenario for a given scenario index.
 

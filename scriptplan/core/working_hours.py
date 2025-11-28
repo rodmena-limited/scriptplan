@@ -5,7 +5,8 @@ This class handles irregular working hours like "08:15 - 11:45, 13:15 - 16:30"
 for specific days of the week.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import datetime
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 try:
     import zoneinfo
@@ -13,10 +14,13 @@ try:
 except ImportError:
     HAS_ZONEINFO = False
     try:
-        import pytz
+        import pytz  # noqa: F401 - used dynamically in _convert_to_timezone
         HAS_PYTZ = True
     except ImportError:
         HAS_PYTZ = False
+
+if TYPE_CHECKING:
+    from scriptplan.core.project import Project
 
 
 class WorkingHours:
@@ -30,11 +34,11 @@ class WorkingHours:
     """
 
     # Map day names to weekday numbers (0=Monday, 6=Sunday)
-    DAY_MAP = {
+    DAY_MAP: ClassVar[dict[str, int]] = {
         'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6
     }
 
-    def __init__(self, project):
+    def __init__(self, project: 'Project') -> None:
         """
         Initialize working hours.
 
@@ -44,12 +48,12 @@ class WorkingHours:
         self.project = project
         # Dict mapping weekday (0-6) to list of (start_time, end_time) tuples
         # Times are stored as (hour, minute) tuples
-        self._hours = {}
+        self._hours: dict[int, list[tuple[tuple[int, int], tuple[int, int]]]] = {}
         # Start with empty hours - will be populated by set_hours()
         # If no hours are set, onShift will fall back to project default
         self._custom_hours_set = False
 
-    def set_hours(self, days, ranges):
+    def set_hours(self, days: list[str], ranges: list[tuple[str, str]]) -> None:
         """
         Set working hours for specific days.
 
@@ -60,7 +64,7 @@ class WorkingHours:
         self._custom_hours_set = True
 
         # Convert day names to weekday numbers
-        day_nums = []
+        day_nums: list[int] = []
         for day in days:
             day_lower = day.lower()
             if day_lower in self.DAY_MAP:
@@ -71,7 +75,7 @@ class WorkingHours:
             return
 
         # Parse time ranges to (hour, minute) tuples
-        time_intervals = []
+        time_intervals: list[tuple[tuple[int, int], tuple[int, int]]] = []
         for start_str, end_str in ranges:
             start_h, start_m = self._parse_time(start_str)
             end_h, end_m = self._parse_time(end_str)
@@ -88,14 +92,14 @@ class WorkingHours:
             # Extend with new intervals (allows multiple non-contiguous ranges per day)
             self._hours[day_num].extend(time_intervals)
 
-    def _parse_time(self, time_str):
+    def _parse_time(self, time_str: str) -> tuple[int, int]:
         """Parse a time string like '08:15' to (hour, minute) tuple."""
         parts = str(time_str).split(':')
         hour = int(parts[0])
         minute = int(parts[1]) if len(parts) > 1 else 0
         return (hour, minute)
 
-    def onShift(self, slot_idx, timezone=None):
+    def onShift(self, slot_idx: int, timezone: Optional[str] = None) -> bool:
         """
         Check if a slot index is within working hours.
 
@@ -152,20 +156,19 @@ class WorkingHours:
 
         # Also check if we're in the early morning part of a cross-midnight shift from previous day
         prev_weekday = (weekday - 1) % 7
-        if prev_weekday in self._hours and self._hours[prev_weekday]:
+        if self._hours.get(prev_weekday):
             for (start_h, start_m), (end_h, end_m) in self._hours[prev_weekday]:
                 start_minutes = start_h * 60 + start_m
                 end_minutes = end_h * 60 + end_m
 
                 # If previous day had a cross-midnight shift
-                if end_minutes <= start_minutes:
+                if end_minutes <= start_minutes and slot_minutes < end_minutes:
                     # Check if current slot is in the morning part (0 <= slot < end)
-                    if slot_minutes < end_minutes:
-                        return True
+                    return True
 
         return False
 
-    def get_daily_hours(self, weekday):
+    def get_daily_hours(self, weekday: int) -> float:
         """
         Get total working hours for a specific weekday.
 
@@ -186,16 +189,16 @@ class WorkingHours:
 
         return total_minutes / 60.0
 
-    def clear_day(self, weekday):
+    def clear_day(self, weekday: int) -> None:
         """Clear working hours for a specific day."""
         if weekday in self._hours:
             self._hours[weekday] = []
 
-    def clear_all(self):
+    def clear_all(self) -> None:
         """Clear all working hours."""
         self._hours = {}
 
-    def _convert_to_timezone(self, dt, timezone_str):
+    def _convert_to_timezone(self, dt: datetime, timezone_str: str) -> Optional[datetime]:
         """
         Convert a naive UTC datetime to the specified timezone.
 

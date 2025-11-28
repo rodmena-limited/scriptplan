@@ -1,23 +1,36 @@
 import math
+from collections.abc import Generator, Iterator
+from datetime import datetime, timedelta
+from typing import Any, Callable, Optional, Union
+
 from scriptplan.utils.time import TimeInterval
 
+
 class Scoreboard:
-    def __init__(self, start, end, granularity, init_val=None):
+    def __init__(
+        self,
+        start: datetime,
+        end: datetime,
+        granularity: int,
+        init_val: Optional[Any] = None
+    ) -> None:
         self.startDate = start
         self.endDate = end
         self.resolution = granularity
-        
+
         # Calculate size
         # Ruby: ((endDate - startDate) / resolution).ceil + 1
-        diff = (end - start).total_seconds() if hasattr(end - start, 'total_seconds') else (end - start)
+        diff_result = end - start
+        diff: float = diff_result.total_seconds()
         self.size = math.ceil(diff / granularity) + 1
-        
+
+        self.sb: list[Any] = []
         self.clear(init_val)
 
-    def clear(self, init_val=None):
+    def clear(self, init_val: Optional[Any] = None) -> None:
         self.sb = [init_val] * self.size
 
-    def idxToDate(self, idx, forceIntoProject=False):
+    def idxToDate(self, idx: int, forceIntoProject: bool = False) -> datetime:
         if forceIntoProject:
             if idx < 0:
                 return self.startDate
@@ -25,76 +38,83 @@ class Scoreboard:
                 return self.endDate
         elif idx < 0 or idx >= self.size:
             raise IndexError(f"Index {idx} is out of scoreboard range ({self.size - 1})")
-        
-        from datetime import timedelta
+
         return self.startDate + timedelta(seconds=idx * self.resolution)
 
-    def dateToIdx(self, date, forceIntoProject=True):
-        diff = (date - self.startDate).total_seconds() if hasattr(date - self.startDate, 'total_seconds') else (date - self.startDate)
+    def dateToIdx(self, date: datetime, forceIntoProject: bool = True) -> int:
+        diff_result = date - self.startDate
+        diff: float = diff_result.total_seconds()
         idx = int(diff / self.resolution)
-        
+
         if forceIntoProject:
-            if idx < 0: return 0
-            if idx >= self.size: return self.size - 1
+            if idx < 0:
+                return 0
+            if idx >= self.size:
+                return self.size - 1
         elif idx < 0 or idx >= self.size:
             raise IndexError(f"Date {date} is out of project time range ({self.startDate} - {self.endDate})")
-        
+
         return idx
 
-    def each(self, startIdx=0, endIdx=None):
+    def each(self, startIdx: int = 0, endIdx: Optional[int] = None) -> Generator[Any, None, None]:
         if endIdx is None:
             endIdx = self.size
-        
+
         if startIdx != 0 or endIdx != self.size:
             for i in range(startIdx, endIdx):
                 yield self.sb[i]
         else:
-            for entry in self.sb:
-                yield entry
+            yield from self.sb
 
-    def each_index(self):
-        for i in range(len(self.sb)):
-            yield i
+    def each_index(self) -> Generator[int, None, None]:
+        yield from range(len(self.sb))
 
-    def collect(self, func):
+    def collect(self, func: Callable[[Any], Any]) -> None:
         for i in range(len(self.sb)):
             self.sb[i] = func(self.sb[i])
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Any:
         return self.sb[idx]
 
-    def __setitem__(self, idx, value):
+    def __setitem__(self, idx: int, value: Any) -> None:
         self.sb[idx] = value
 
-    def get(self, date):
+    def get(self, date: datetime) -> Any:
         return self.sb[self.dateToIdx(date)]
 
-    def set(self, date, value):
+    def set(self, date: datetime, value: Any) -> None:
         self.sb[self.dateToIdx(date)] = value
 
-    def collectIntervals(self, iv, minDuration, predicate):
+    def collectIntervals(
+        self,
+        iv: TimeInterval,
+        minDuration: Union[int, float],
+        predicate: Callable[[Any], bool]
+    ) -> list[TimeInterval]:
         startIdx = self.dateToIdx(iv.start)
         endIdx = self.dateToIdx(iv.end)
         sIdx = startIdx
         eIdx = endIdx
-        
+
         minDurationSlots = int(minDuration / self.resolution)
         if minDurationSlots <= 0:
             minDurationSlots = 1
-            
+
         startIdx -= minDurationSlots
-        if startIdx < 0: startIdx = 0
+        if startIdx < 0:
+            startIdx = 0
         endIdx += minDurationSlots
-        if endIdx > self.size - 1: endIdx = self.size - 1
-        
-        intervals = []
+        if endIdx > self.size - 1:
+            endIdx = self.size - 1
+
+        intervals: list[TimeInterval] = []
         duration = 0
         start = 0
-        
+
         idx = startIdx
         while idx <= endIdx:
             # yield/predicate check
-            val = self.sb[idx] if idx < len(self.sb) else None # Boundary check
+            val = self.sb[idx] if idx < len(self.sb) else None  # Boundary check
             if predicate(val) and idx < endIdx:
                 if start == 0:
                     start = idx
@@ -102,19 +122,21 @@ class Scoreboard:
             else:
                 if duration > 0:
                     if duration >= minDurationSlots:
-                        if start < sIdx: start = sIdx
+                        if start < sIdx:
+                            start = sIdx
                         current_idx = idx
-                        if current_idx > eIdx: current_idx = eIdx
-                        
+                        if current_idx > eIdx:
+                            current_idx = eIdx
+
                         intervals.append(TimeInterval(self.idxToDate(start), self.idxToDate(current_idx)))
                     duration = 0
                     start = 0
             idx += 1
-            
+
         return intervals
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.sb)
-    
-    def __len__(self):
+
+    def __len__(self) -> int:
         return self.size

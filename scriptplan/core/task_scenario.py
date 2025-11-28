@@ -1,5 +1,7 @@
-from scriptplan.core.scenario_data import ScenarioData
+import contextlib
+
 from scriptplan.core.property import AttributeBase
+from scriptplan.core.scenario_data import ScenarioData
 
 # Default working hours: 9am-5pm (0-indexed: hours 9-16 are working)
 DEFAULT_WORK_START_HOUR = 9
@@ -13,7 +15,7 @@ class TaskScenario(ScenarioData):
         self.hasDurationSpec = False
         self.scheduled = False
         self.currentSlotIdx = None
-        
+
         # Ensure required attributes exist
         required_attrs = [
              'allocate', 'assignedresources', 'booking', 'charge', 'chargeset', 'complete',
@@ -23,12 +25,10 @@ class TaskScenario(ScenarioData):
              'precedes', 'priority', 'projectionmode', 'responsible',
              'scheduled', 'shifts', 'start', 'status'
         ]
-        
+
         for attr in required_attrs:
-            try:
+            with contextlib.suppress(ValueError):
                 _ = self.property[(attr, self.scenarioIdx)]
-            except ValueError:
-                pass
 
         if not self.property.parent:
             mode = AttributeBase.mode()
@@ -64,7 +64,7 @@ class TaskScenario(ScenarioData):
         limits = self.property.get('limits', self.scenarioIdx)
         if limits:
             limits.reset()
-    
+
     def getAllDependencies(self):
         """
         Get all dependencies including inherited ones from parent containers.
@@ -161,11 +161,7 @@ class TaskScenario(ScenarioData):
             # (unless we have onstart deps, which we checked above)
             return True
 
-        for successor in successors:
-            if not successor.get('scheduled', self.scenarioIdx):
-                return False
-
-        return True
+        return all(successor.get('scheduled', self.scenarioIdx) for successor in successors)
 
     def _getSuccessors(self):
         """
@@ -228,7 +224,6 @@ class TaskScenario(ScenarioData):
 
         Returns datetime of earliest available slot.
         """
-        from datetime import timedelta
 
         # Get successor's allocations
         allocations = successor.get('allocate', self.scenarioIdx)
@@ -308,7 +303,7 @@ class TaskScenario(ScenarioData):
             successor_earliest = self._getSuccessorEarliestStart(successor)
 
             # Parse maxgapduration
-            maxgap_hours = self._parse_duration(maxgap_str)
+            self._parse_duration(maxgap_str)
             gap_hours = self._parse_duration(gap_str) if gap_str else 0
 
             # This task must end no more than maxgap_hours before successor can start
@@ -341,7 +336,6 @@ class TaskScenario(ScenarioData):
         Returns:
             Required start time (datetime)
         """
-        from datetime import timedelta
 
         # Get allocations to determine resource working hours
         allocations = self.property.get('allocate', self.scenarioIdx)
@@ -431,10 +425,7 @@ class TaskScenario(ScenarioData):
                             continue
 
                         # Use start time if onstart, otherwise use end time (finish-to-start)
-                        if onstart:
-                            dep_time = t.get('start', self.scenarioIdx)
-                        else:
-                            dep_time = t.get('end', self.scenarioIdx)
+                        dep_time = t.get('start', self.scenarioIdx) if onstart else t.get('end', self.scenarioIdx)
                         if dep_time:
                             # Add gap if specified
                             if gapduration:
@@ -555,8 +546,7 @@ class TaskScenario(ScenarioData):
         duration = self.property.get('duration', self.scenarioIdx) or 0
         length = self.property.get('length', self.scenarioIdx) or 0
         is_milestone = milestone or (effort == 0 and duration == 0 and length == 0)
-        if forward and not self.property.get('start', self.scenarioIdx) and not is_milestone:
-            if effort == 0 or not allocations:
+        if forward and not self.property.get('start', self.scenarioIdx) and not is_milestone and (effort == 0 or not allocations):
                 # Non-effort task: find first working slot and set start
                 upperLimit = self.project.dateToIdx(self.project['end'])
                 while self.currentSlotIdx < upperLimit and not self.isWorkingTime(self.currentSlotIdx):
@@ -629,9 +619,12 @@ class TaskScenario(ScenarioData):
         milestone = self.property.get('milestone', self.scenarioIdx)
 
         # We need state tracking for done effort/duration
-        if not hasattr(self, 'doneEffort'): self.doneEffort = 0
-        if not hasattr(self, 'doneDuration'): self.doneDuration = 0
-        if not hasattr(self, 'doneLength'): self.doneLength = 0
+        if not hasattr(self, 'doneEffort'):
+            self.doneEffort = 0
+        if not hasattr(self, 'doneDuration'):
+            self.doneDuration = 0
+        if not hasattr(self, 'doneLength'):
+            self.doneLength = 0
 
         forward = self.property.get('forward', self.scenarioIdx)
 
@@ -663,11 +656,9 @@ class TaskScenario(ScenarioData):
         if effort > 0:
             # Check for contiguous flag - task cannot be split across breaks
             flags = self.property.get('flags', self.scenarioIdx) or []
-            if 'contiguous' in flags and self.doneEffort == 0:
-                # Before starting, verify we have a contiguous block large enough
-                if not self._hasContiguousBlock(effort):
-                    # Skip this slot - no contiguous block starts here
-                    return True  # Continue to next slot
+            if 'contiguous' in flags and self.doneEffort == 0 and not self._hasContiguousBlock(effort):
+                # Skip this slot - no contiguous block starts here
+                return True  # Continue to next slot
 
             # Store effort before booking to calculate fraction used in final slot
             effort_before = self.doneEffort
@@ -676,7 +667,7 @@ class TaskScenario(ScenarioData):
             if self.doneEffort >= effort:
                 # Finished - calculate precise end time within the final slot
                 # and release unused time for other tasks
-                end_date, seconds_used = self._calculatePreciseEndTimeAndRelease(
+                end_date, _seconds_used = self._calculatePreciseEndTimeAndRelease(
                     effort, effort_before, forward
                 )
                 self.propagateDate(end_date, forward)
@@ -693,10 +684,8 @@ class TaskScenario(ScenarioData):
             self.bookResources()
             # Check if reached end/start
             target_date = end_date if forward else start_date
-            if target_date:
-                target_idx = self.project.dateToIdx(target_date)
-                if (forward and self.currentSlotIdx >= target_idx) or (not forward and self.currentSlotIdx <= target_idx):
-                    return False
+            if target_date and ((forward and self.currentSlotIdx >= self.project.dateToIdx(target_date)) or (not forward and self.currentSlotIdx <= self.project.dateToIdx(target_date))):
+                return False
 
         return True
 
@@ -787,7 +776,7 @@ class TaskScenario(ScenarioData):
                 # Update the per-task usage record to reflect actual usage
                 if self.currentSlotIdx in res_scenario.slotTaskUsage:
                     # Find and update this task's entry
-                    for i, (task, secs) in enumerate(res_scenario.slotTaskUsage[self.currentSlotIdx]):
+                    for i, (task, _secs) in enumerate(res_scenario.slotTaskUsage[self.currentSlotIdx]):
                         if task == self.property:
                             res_scenario.slotTaskUsage[self.currentSlotIdx][i] = (task, seconds_into_slot)
                             break
@@ -911,7 +900,6 @@ class TaskScenario(ScenarioData):
         Returns:
             True if a contiguous block large enough exists starting at current slot
         """
-        from datetime import timedelta
 
         # Get allocations to check resource availability
         allocations = self.property.get('allocate', self.scenarioIdx)
@@ -970,11 +958,9 @@ class TaskScenario(ScenarioData):
 
         while current_slot < max_slots and consecutive_count < slots_needed:
             if res_scenario.available(current_slot):
-                if consecutive_count == 0:
-                    # First available slot - check if it's the current slot
-                    if current_slot != self.currentSlotIdx:
-                        # Gap before first available - not contiguous from current
-                        return False
+                if consecutive_count == 0 and current_slot != self.currentSlotIdx:
+                    # Gap before first available - not contiguous from current
+                    return False
                 consecutive_count += 1
                 current_slot += 1
             else:
@@ -1102,7 +1088,7 @@ class TaskScenario(ScenarioData):
         efficiency = resource.get('efficiency', self.scenarioIdx) or 1.0
 
         # Duration = effort / efficiency
-        duration_hours = effort / efficiency
+        effort / efficiency
 
         # Find the first available slot for this resource
         res_scenario = resource.data[self.scenarioIdx] if resource.data else None
@@ -1443,7 +1429,7 @@ class TaskScenario(ScenarioData):
         """
         Calculate the cost for this task based on allocated time and resource rates.
 
-        Cost is calculated as: allocated_time × resource_rate
+        Cost is calculated as: allocated_time x resource_rate
         where allocated_time is the actual duration (not effort).
 
         For efficiency > 1.0, allocated_time < effort
@@ -1470,7 +1456,7 @@ class TaskScenario(ScenarioData):
 
             # Use slotTaskUsage to get exact time used by this task
             allocated_seconds = 0.0
-            for slot_idx, task_list in res_scenario.slotTaskUsage.items():
+            for _slot_idx, task_list in res_scenario.slotTaskUsage.items():
                 for task, seconds in task_list:
                     if task == self.property:
                         allocated_seconds += seconds

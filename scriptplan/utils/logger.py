@@ -7,16 +7,16 @@ level of the segments. The class uses a Singleton pattern.
 
 import sys
 import threading
-from typing import List, Callable, Optional
+from typing import Callable, ClassVar, Optional, Union
 
 
 class ANSIColor:
     """ANSI color codes for terminal output."""
-    GREEN = '\033[32m'
-    RED = '\033[31m'
-    YELLOW = '\033[33m'
-    BLUE = '\033[34m'
-    RESET = '\033[0m'
+    GREEN: ClassVar[str] = '\033[32m'
+    RED: ClassVar[str] = '\033[31m'
+    YELLOW: ClassVar[str] = '\033[33m'
+    BLUE: ClassVar[str] = '\033[34m'
+    RESET: ClassVar[str] = '\033[0m'
 
     @classmethod
     def green(cls, text: str) -> str:
@@ -42,18 +42,18 @@ class Log:
     level of the segments.
     """
 
-    _instance = None
-    _lock = threading.Lock()
+    _instance: ClassVar[Optional['Log']] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     # Class-level variables (equivalent to Ruby's @@)
-    _level = 0
-    _stack: List[str] = []
-    _segments: List[str] = []
-    _silent = True
-    _progress = 0
-    _progressMeter = ''
+    _level: ClassVar[int] = 0
+    _stack: ClassVar[list[str]] = []
+    _segments: ClassVar[list[str]] = []
+    _silent: ClassVar[bool] = True
+    _progress: ClassVar[Union[int, float]] = 0
+    _progressMeter: ClassVar[str] = ''
 
-    def __new__(cls):
+    def __new__(cls) -> 'Log':
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -66,7 +66,7 @@ class Log:
         return cls._level
 
     @classmethod
-    def set_level(cls, level: int):
+    def set_level(cls, level: int) -> None:
         """Set the maximum nesting level that should be shown.
 
         Segments with a nesting level greater than level will be silently dropped.
@@ -77,12 +77,12 @@ class Log:
     level = property(lambda cls: cls._level)
 
     @classmethod
-    def get_segments(cls) -> List[str]:
+    def get_segments(cls) -> list[str]:
         """Get the current segment filter list."""
         return cls._segments
 
     @classmethod
-    def set_segments(cls, segments: List[str]):
+    def set_segments(cls, segments: list[str]) -> None:
         """Set the segment filter list.
 
         Messages not in these segments will be ignored. Messages from segments
@@ -97,12 +97,12 @@ class Log:
         return cls._silent
 
     @classmethod
-    def set_silent(cls, silent: bool):
+    def set_silent(cls, silent: bool) -> None:
         """Set silent mode. If True, progress information will not be shown."""
         cls._silent = silent
 
     @classmethod
-    def enter(cls, segment: str, message: str):
+    def enter(cls, segment: str, message: str) -> None:
         """Open a new segment.
 
         Args:
@@ -116,7 +116,7 @@ class Log:
         cls.msg(lambda: f">> [{segment}] {message}")
 
     @classmethod
-    def exit(cls, segment: str, message: Optional[str] = None):
+    def exit(cls, segment: str, message: Optional[str] = None) -> None:
         """Close an open segment.
 
         Will search the stack of open segments for a segment with that name
@@ -139,7 +139,7 @@ class Log:
                     break
 
     @classmethod
-    def msg(cls, message_func: Callable[[], str]):
+    def msg(cls, message_func: Callable[[], str]) -> None:
         """Show a log message within the currently active segment.
 
         The message is the result of the passed callable. The callable will
@@ -167,14 +167,14 @@ class Log:
             print(indent + message_func(), file=sys.stderr)
 
     @classmethod
-    def status(cls, message: str):
+    def status(cls, message: str) -> None:
         """Print out a status message unless in silent mode."""
         if cls._silent:
             return
         print(message)
 
     @classmethod
-    def startProgressMeter(cls, text: str):
+    def startProgressMeter(cls, text: str) -> None:
         """Start the progress meter display or change the info text.
 
         While the meter is active, the text cursor is always returned to
@@ -192,14 +192,14 @@ class Log:
         sys.stdout.flush()
 
     @classmethod
-    def stopProgressMeter(cls):
+    def stopProgressMeter(cls) -> None:
         """Set the progress meter status to 'done' and move to the next line."""
         if cls._silent:
             return
         print(f"{cls._progressMeter} [      {ANSIColor.green('Done')}      ]")
 
     @classmethod
-    def activity(cls):
+    def activity(cls) -> None:
         """Update the progress indicator to the next symbol.
 
         May only be called after startProgressMeter.
@@ -208,12 +208,14 @@ class Log:
             return
 
         indicator = ['-', '\\', '|', '/']
-        cls._progress = (cls._progress + 1) % len(indicator)
-        print(f"{cls._progressMeter} [{indicator[cls._progress]}]", end='\r')
+        int_progress = int(cls._progress) if isinstance(cls._progress, float) else cls._progress
+        cls._progress = (int_progress + 1) % len(indicator)
+        int_idx = int(cls._progress) if isinstance(cls._progress, float) else cls._progress
+        print(f"{cls._progressMeter} [{indicator[int_idx]}]", end='\r')
         sys.stdout.flush()
 
     @classmethod
-    def progress(cls, percent: float):
+    def progress(cls, percent: float) -> None:
         """Update the progress bar to the given percent completion.
 
         May only be called after startProgressMeter.

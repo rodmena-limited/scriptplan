@@ -1,5 +1,5 @@
 from scriptplan.utils.message_handler import MessageHandler
-from scriptplan.utils.time import TjTime
+
 
 class PropertySet:
     def __init__(self, project, flat_namespace=False):
@@ -9,10 +9,10 @@ class PropertySet:
         self.attributeDefinitions = {}
         self._properties = [] # List for order
         self._propertyMap = {} # Dict fullId -> PropertyTreeNode
-        
+
         # Add standard attributes
         # In Ruby: id, name, seqno
-        # I will move this logic here from Project.py if I update Project.py later, 
+        # I will move this logic here from Project.py if I update Project.py later,
         # but for now I can duplicate or rely on Project.py calling _add_standard_attributes.
         # However, cleaner to have it here.
         self.addAttributeType(AttributeDefinition('id', 'ID', StringAttribute, False, False, False, ''))
@@ -22,10 +22,10 @@ class PropertySet:
     def addAttributeType(self, attribute_definition):
         if self._properties:
              raise RuntimeError("Fatal Error: Attribute types must be defined before properties are added.")
-        
+
         self.attributes.append(attribute_definition)
         self.attributeDefinitions[attribute_definition.id] = attribute_definition
-    
+
     def eachAttributeDefinition(self):
         return iter(self.attributes)
 
@@ -47,7 +47,7 @@ class PropertySet:
 
     def __iter__(self):
         return iter(self._properties)
-    
+
     def __contains__(self, item):
         if isinstance(item, str):
             return item in self._propertyMap
@@ -55,39 +55,35 @@ class PropertySet:
 
     def empty(self):
         return len(self._properties) == 0
-    
+
     def addProperty(self, property):
         self._propertyMap[property.fullId] = property
         self._properties.append(property)
-    
+
     def removeProperty(self, prop):
-        if isinstance(prop, str):
-            property_node = self._propertyMap.get(prop)
-        else:
-            property_node = prop
-        
+        property_node = self._propertyMap.get(prop) if isinstance(prop, str) else prop
+
         if not property_node:
             return None
-        
+
         # Eliminate references
         for p in self._properties:
             p.removeReferences(property_node)
-        
+
         # Recursively remove children
         # Copy children list to avoid modification during iteration issue
         children = list(property_node.children)
         for child in children:
             self.removeProperty(child)
-            
+
         if property_node in self._properties:
             self._properties.remove(property_node)
         if property_node.fullId in self._propertyMap:
             del self._propertyMap[property_node.fullId]
-            
-        if property_node.parent:
-            if property_node in property_node.parent.children:
-                property_node.parent.children.remove(property_node)
-        
+
+        if property_node.parent and property_node in property_node.parent.children:
+            property_node.parent.children.remove(property_node)
+
         return property_node
 
     def clearProperties(self):
@@ -136,23 +132,22 @@ class PropertySet:
     def hasQuery(self, attrId, scenarioIdx=None):
         if not self._properties:
             return False
-        
+
         property_node = self._properties[0]
         method_name = f"query_{attrId}"
-        
+
         if hasattr(property_node, method_name):
             return True
-        elif scenarioIdx is not None:
+        if scenarioIdx is not None and property_node.data and property_node.data[scenarioIdx]:
             # Check scenario object
-            if property_node.data and property_node.data[scenarioIdx]:
-                return hasattr(property_node.data[scenarioIdx], method_name)
+            return hasattr(property_node.data[scenarioIdx], method_name)
         return False
 
     def scenarioSpecific(self, attrId):
         defn = self.attributeDefinitions.get(attrId)
         if defn:
             return defn.scenarioSpecific
-        
+
         # Check for query method
         if self._properties:
             prop = self._properties[0]
@@ -215,10 +210,7 @@ class PTNProxy:
             return self._ptn.id
         else:
             dot_pos = self._ptn.id.rfind('.')
-            if dot_pos >= 0:
-                id = self._ptn.id[dot_pos + 1:]
-            else:
-                id = self._ptn.id
+            id = self._ptn.id[dot_pos + 1:] if dot_pos >= 0 else self._ptn.id
             return f"{self._parent.logicalId}.{id}"
 
     def set(self, attribute, val):
@@ -446,7 +438,7 @@ class PropertyList:
                 if node.propertySet != self._propertySet:
                     raise ValueError("All nodes must belong to the same PropertySet.")
             self._items.extend(items)
-            if len(self._items) != len(set(id(x) for x in self._items)):
+            if len(self._items) != len({id(x) for x in self._items}):
                 raise ValueError("Duplicate items")
         else:
             self._items.append(items)
@@ -483,9 +475,7 @@ class PropertyList:
             return None
 
     def index(self):
-        i = 0
-        for p in self._items:
-            i += 1
+        for i, p in enumerate(self._items, 1):
             p.force('index', i)
 
     def __str__(self):
@@ -518,10 +508,7 @@ class PropertyList:
 
     def _indexTree(self):
         for property in self._items:
-            if isinstance(property, PTNProxy):
-                treeIdcs = property.getIndicies()
-            else:
-                treeIdcs = self._getIndicies(property)
+            treeIdcs = property.getIndicies() if isinstance(property, PTNProxy) else self._getIndicies(property)
 
             tree = ''
             for idx in treeIdcs:
@@ -556,10 +543,7 @@ class PropertyList:
                 else:
                     # Static attribute sorting
                     if scIdx < 0:
-                        if criteria == 'id':
-                            val = item.fullId
-                        else:
-                            val = item.get(criteria)
+                        val = item.fullId if criteria == 'id' else item.get(criteria)
                     else:
                         val = item[(criteria, scIdx)]
 
@@ -578,9 +562,7 @@ class PropertyList:
                     else:
                         val = (1, val)
                 else:
-                    if isinstance(val, str):
-                        val = (0, val)
-                    elif not isinstance(val, (int, float)):
+                    if isinstance(val, str) or not isinstance(val, (int, float)):
                         val = (0, val)
 
                 key_parts.append(val)
@@ -615,8 +597,16 @@ class AttributeDefinition:
         userDefined: True if this is a user-defined (custom) attribute.
     """
 
-    __slots__ = ['id', 'name', 'objClass', 'inheritedFromParent',
-                 'inheritedFromProject', 'scenarioSpecific', 'default', 'userDefined']
+    __slots__ = [
+        'default',
+        'id',
+        'inheritedFromParent',
+        'inheritedFromProject',
+        'name',
+        'objClass',
+        'scenarioSpecific',
+        'userDefined',
+    ]
 
     def __init__(self, id, name, objClass, inheritedFromParent, inheritedFromProject,
                  scenarioSpecific, default, userDefined=False):
@@ -997,10 +987,10 @@ class PropertyTreeNode(MessageHandler):
         self.propertySet = property_set
         self.project = property_set.project
         self.parent = parent
-        self.data = None 
-        
-        self._attributes = {} 
-        self._scenarioAttributes = [] 
+        self.data = None
+
+        self._attributes = {}
+        self._scenarioAttributes = []
 
         scenario_count = self.project.scenarioCount() if hasattr(self.project, 'scenarioCount') else 1
         self._scenarioAttributes = [{} for _ in range(scenario_count)]
@@ -1010,7 +1000,7 @@ class PropertyTreeNode(MessageHandler):
             id = f"_{tag}_{self.propertySet.items() + 1}"
             if not self.propertySet.flat_namespace and parent:
                 id = f"{parent.fullId}.{id}"
-        
+
         if not self.propertySet.flat_namespace and id and '.' in id:
             parent_id = id.rsplit('.', 1)[0]
             if not self.parent:
@@ -1018,22 +1008,22 @@ class PropertyTreeNode(MessageHandler):
             self.subId = id.rsplit('.', 1)[1]
         else:
             self.subId = id
-        
-        self.id = id 
+
+        self.id = id
         self.name = name
         self.sourceFileInfo = None
         self.sequenceNo = self.propertySet.items() + 1
         self.children = []
         self.adoptees = []
         self.stepParents = []
-        
+
         self.set('id', self.fullId)
         self.set('name', name)
         self.set('seqno', self.sequenceNo)
 
         if self.parent:
             self.parent.addChild(self)
-        
+
         self.propertySet.addProperty(self)
 
     @property
@@ -1055,9 +1045,9 @@ class PropertyTreeNode(MessageHandler):
     def adopt(self, property_node):
         if self == property_node:
             self.error('adopt_self', 'A property cannot adopt itself')
-        
+
         # Check for duplicates logic... simplified
-        
+
         self.adoptees.append(property_node)
         property_node.getAdopted(self)
 
@@ -1077,9 +1067,12 @@ class PropertyTreeNode(MessageHandler):
         self._attributes, self._scenarioAttributes = backup
 
     def removeReferences(self, property_node):
-        if property_node in self.children: self.children.remove(property_node)
-        if property_node in self.adoptees: self.adoptees.remove(property_node)
-        if property_node in self.stepParents: self.stepParents.remove(property_node)
+        if property_node in self.children:
+            self.children.remove(property_node)
+        if property_node in self.adoptees:
+            self.adoptees.remove(property_node)
+        if property_node in self.stepParents:
+            self.stepParents.remove(property_node)
 
     def level(self):
         lvl = 0
@@ -1102,8 +1095,8 @@ class PropertyTreeNode(MessageHandler):
     def levelSeqNo(self, node):
         try:
             return self.children.index(node) + 1
-        except ValueError:
-            raise ValueError(f"Node {node.fullId} is not a child of {self.fullId}")
+        except ValueError as err:
+            raise ValueError(f"Node {node.fullId} is not a child of {self.fullId}") from err
 
     def inheritAttributes(self):
         # Inherit non-scenario-specific values
@@ -1120,16 +1113,15 @@ class PropertyTreeNode(MessageHandler):
                     # Only inherit if not already provided explicitly
                     if not my_attr.provided:
                         my_attr.inherit(parent_attr.get())
-            else:
-                if attrDef.inheritedFromProject:
-                    # Check project
-                    if aId in self.project.attributes:
-                         val = self.project[aId]
-                         if val is not None:
-                             my_attr = self._get_attribute(aId)
-                             # Only inherit if not already provided explicitly
-                             if not my_attr.provided:
-                                 my_attr.inherit(val)
+            elif attrDef.inheritedFromProject:
+                # Check project
+                if aId in self.project.attributes:
+                     val = self.project[aId]
+                     if val is not None:
+                         my_attr = self._get_attribute(aId)
+                         # Only inherit if not already provided explicitly
+                         if not my_attr.provided:
+                             my_attr.inherit(val)
 
         # Inherit scenario-specific values
         for attrDef in self.propertySet.attributes:
@@ -1243,7 +1235,7 @@ class PropertyTreeNode(MessageHandler):
 
     def attributeDefinition(self, attribute_id):
         return self.propertySet.attributeDefinitions.get(attribute_id)
-    
+
     def get(self, attribute_id, scenarioIdx=None):
         if scenarioIdx is not None:
              attr = self._get_scenario_attribute(attribute_id, scenarioIdx)
@@ -1275,7 +1267,7 @@ class PropertyTreeNode(MessageHandler):
 
     def kids(self):
         return self.children + self.adoptees
-    
+
     def allLeaves(self, without_self=False):
         res = []
         if self.leaf():
@@ -1285,6 +1277,6 @@ class PropertyTreeNode(MessageHandler):
             for c in self.kids():
                 res.extend(c.allLeaves())
         return res
-    
+
     def leaf(self):
         return not self.children and not self.adoptees

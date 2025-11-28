@@ -5,14 +5,12 @@ This module implements the ResourceScenario class which holds all
 scenario-specific data for a Resource.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
+import contextlib
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.scheduler.scoreboard import Scoreboard
 from scriptplan.utils.data_cache import DataCache
-from scriptplan.core.leave import Leave
-from scriptplan.core.booking import Booking
-from scriptplan.utils.time import TimeInterval
 
 if TYPE_CHECKING:
     from scriptplan.core.resource import Resource
@@ -53,11 +51,11 @@ class ResourceScenario(ScenarioData):
         # The index of the earliest booked time slot
         self.firstBookedSlot: Optional[int] = None
         # Same but for each assigned resource
-        self.firstBookedSlots: Dict[Any, int] = {}
+        self.firstBookedSlots: dict[Any, int] = {}
         # The index of the last booked time slot
         self.lastBookedSlot: Optional[int] = None
         # Same but for each assigned resource
-        self.lastBookedSlots: Dict[Any, int] = {}
+        self.lastBookedSlots: dict[Any, int] = {}
 
         # First available slot of the resource
         self.minslot: Optional[int] = None
@@ -70,12 +68,12 @@ class ResourceScenario(ScenarioData):
         # Track partial slot usage: slot_idx -> seconds_used
         # When a task ends mid-slot, this records how much of the slot was used
         # Subsequent tasks can use the remaining time in that slot
-        self.slotSecondsUsed: Dict[int, float] = {}
+        self.slotSecondsUsed: dict[int, float] = {}
 
         # Track which tasks used which slots and how much
         # slot_idx -> list of (task, seconds_used)
         # This allows multiple tasks to share a slot
-        self.slotTaskUsage: Dict[int, list] = {}
+        self.slotTaskUsage: dict[int, list] = {}
 
         # Data cache
         self.dCache = DataCache.instance()
@@ -87,10 +85,8 @@ class ResourceScenario(ScenarioData):
             'reports', 'shifts', 'leaves', 'leaveallowances', 'workinghours'
         ]
         for attr in required_attrs:
-            try:
+            with contextlib.suppress(ValueError, KeyError, AttributeError):
                 _ = self.property.get(attr, self.scenarioIdx)
-            except (ValueError, KeyError, AttributeError):
-                pass
 
     def prepareScheduling(self) -> None:
         """
@@ -402,7 +398,7 @@ class ResourceScenario(ScenarioData):
             self.initScoreboard()
 
         # Calculate effort based on available time in slot (for partial slots)
-        slot_duration = self.project.attributes.get('scheduleGranularity', 3600)
+        self.project.attributes.get('scheduleGranularity', 3600)
         available_seconds = self.getAvailableSecondsInSlot(sb_idx)
         efficiency = self.property.get('efficiency', self.scenarioIdx) or 1.0
 
@@ -508,17 +504,15 @@ class ResourceScenario(ScenarioData):
         vacations = self.project.attributes.get('vacations', [])
         if vacations:
             for vac in vacations:
-                if hasattr(vac, 'interval') and vac.interval:
-                    if vac.interval.start <= date < vac.interval.end:
-                        return False
+                if hasattr(vac, 'interval') and vac.interval and vac.interval.start <= date < vac.interval.end:
+                    return False
 
         # Check resource-level leaves/vacations
         leaves = self.property.get('leaves', self.scenarioIdx)
         if leaves:
             for leave in leaves:
-                if hasattr(leave, 'interval') and leave.interval:
-                    if leave.interval.start <= date < leave.interval.end:
-                        return False
+                if hasattr(leave, 'interval') and leave.interval and leave.interval.start <= date < leave.interval.end:
+                    return False
 
         # Get resource's timezone for local time conversion
         # Working hours are defined in local time, but slots are in UTC
@@ -540,7 +534,7 @@ class ResourceScenario(ScenarioData):
         # Default: use project's working time
         return self.project.isWorkingTime(sb_idx)
 
-    def setReports_i(self, reports: List) -> None:
+    def setReports_i(self, reports: list) -> None:
         """
         Internal method to set reports relationship.
 
@@ -659,9 +653,8 @@ class ResourceScenario(ScenarioData):
         actual_end = min(end_idx, len(self.scoreboard))
         for i in range(start_idx, actual_end):
             slot = self.scoreboard[i]
-            if isinstance(slot, Task):
-                if task is None or slot in task_list or slot == task:
-                    booked_slots += 1
+            if isinstance(slot, Task) and (task is None or slot in task_list or slot == task):
+                booked_slots += 1
 
         return booked_slots
 

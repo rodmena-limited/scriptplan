@@ -4,8 +4,8 @@ Handles macro definitions and expansions before the main parser runs.
 """
 
 import re
-from typing import Dict, Optional, List, Tuple
 from datetime import datetime
+from typing import Optional
 
 
 def strip_shell_comments(text: str) -> str:
@@ -60,8 +60,8 @@ class MacroProcessor:
     - ${today} - today's date
     """
 
-    def __init__(self):
-        self._macros: Dict[str, str] = {}
+    def __init__(self) -> None:
+        self._macros: dict[str, str] = {}
         self._project_start: Optional[str] = None
         self._project_end: Optional[str] = None
         self._now: Optional[str] = None
@@ -128,7 +128,7 @@ class MacroProcessor:
 
         return ''.join(result)
 
-    def _extract_project_dates(self, content: str):
+    def _extract_project_dates(self, content: str) -> None:
         """Extract project start/end dates for built-in macros."""
         # Look for project declaration: project id "name" date +duration
         match = re.search(r'project\s+\w+\s+"[^"]*"\s+(\d{4}-\d{2}-\d{2})(?:\s+\+(\d+)([dwmy]))?', content)
@@ -246,7 +246,7 @@ class MacroProcessor:
         """Get a macro definition by name."""
         return self._macros.get(name)
 
-    def list_macros(self) -> List[str]:
+    def list_macros(self) -> list[str]:
         """Return list of defined macro names."""
         return list(self._macros.keys())
 

@@ -6,10 +6,11 @@ This script implements a discrete minute-by-minute simulation of the calendar
 and shift logic to verify scheduling accuracy down to the minute.
 """
 
-import pandas as pd
 import datetime
-from datetime import timedelta
 import sys
+from datetime import timedelta
+
+import pandas as pd
 
 # --- CONFIGURATION ---
 START_DATE = datetime.datetime(2024, 2, 28, 8, 13)  # Start of first shift

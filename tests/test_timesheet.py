@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
+
 from scriptplan.core.timesheet import TimeSheet, TimeSheetRecord, TimeSheets
 from scriptplan.utils.time import TimeInterval
 

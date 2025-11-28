@@ -7,17 +7,17 @@ A report may contain other reports (nested reports).
 """
 
 import os
-from typing import TYPE_CHECKING, Optional, List, Any, Dict
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.core.property import PropertyTreeNode
 from scriptplan.core.scenario_data import ScenarioData
+from scriptplan.report.html_generator import build_html_document, get_default_css
 from scriptplan.utils.message_handler import MessageHandler
-from scriptplan.report.report_context import ReportContext
-from scriptplan.report.html_generator import (
-    build_html_document, get_default_css
-)
+
+# Re-export for backwards compatibility
+__all__ = ['build_html_document', 'get_default_css', 'Report', 'ReportFormat']
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
@@ -115,7 +115,7 @@ class Report(PropertyTreeNode, MessageHandler):
                 self.error('invalid_filename',
                           f"Report filename '{name}' contains invalid character '{char}'")
 
-    def generate(self, requested_formats: Optional[List[ReportFormat]] = None) -> int:
+    def generate(self, requested_formats: Optional[list[ReportFormat]] = None) -> int:
         """
         Generate the report in the requested formats.
 
@@ -243,7 +243,7 @@ class Report(PropertyTreeNode, MessageHandler):
         """
         return self.content.to_html() if self.content else None
 
-    def to_csv(self) -> Optional[List[List[str]]]:
+    def to_csv(self) -> Optional[list[list[str]]]:
         """
         Convert the report to CSV format.
 
@@ -326,7 +326,7 @@ class Report(PropertyTreeNode, MessageHandler):
             footer=True
         )
 
-    def _build_navigation(self) -> Optional[List[Dict[str, str]]]:
+    def _build_navigation(self) -> Optional[list[dict[str, str]]]:
         """
         Build navigation links for sibling reports.
 

@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime
-from scriptplan.core.journal import Journal, JournalEntry, JournalEntryList, AlertLevel
+
+from scriptplan.core.journal import AlertLevel, Journal, JournalEntry, JournalEntryList
 
 
 class TestAlertLevel(unittest.TestCase):

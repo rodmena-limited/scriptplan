@@ -5,8 +5,8 @@ This module provides utilities for generating complete HTML documents
 with proper CSS styling, similar to TaskJuggler's output.
 """
 
-from typing import Optional, Dict, Any, List
 from datetime import datetime
+from typing import Any, Optional
 
 
 def get_default_css() -> str:
@@ -338,7 +338,7 @@ body {
 def build_html_document(title: str, content: str,
                        project_name: str = '',
                        subtitle: str = '',
-                       navigation: Optional[List[Dict[str, str]]] = None,
+                       navigation: Optional[list[dict[str, str]]] = None,
                        include_css: bool = True,
                        custom_css: str = '',
                        footer: bool = True) -> str:

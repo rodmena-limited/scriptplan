@@ -17,17 +17,17 @@ Examples:
 """
 
 import argparse
-import sys
-import os
 import logging
-from pathlib import Path
-from typing import List, Optional
+import os
 import re
+import sys
+from pathlib import Path
+from typing import Optional
 
 from scriptplan import __version__
 
 
-def setup_logging(debug_level: int = 0, debug_modules: Optional[List[str]] = None) -> None:
+def setup_logging(debug_level: int = 0, debug_modules: Optional[list[str]] = None) -> None:
     """
     Configure logging based on debug settings.
 
@@ -284,22 +284,20 @@ class ScriptPlan:
                     return 1
 
         # Freeze (generate bookings) if requested
-        if self.args.freeze:
-            if not self.freeze_project():
-                return 1
+        if self.args.freeze and not self.freeze_project():
+            return 1
 
         # List reports if requested
         if self.args.list_reports:
             self.list_reports(self.args.list_reports)
 
         # Generate reports
-        if not self.args.no_reports:
-            if not self.generate_reports():
-                return 1
+        if not self.args.no_reports and not self.generate_reports():
+            return 1
 
         return 0 if self.errors == 0 else 1
 
-    def parse_files(self, files: List[str]) -> bool:
+    def parse_files(self, files: list[str]) -> bool:
         """
         Parse the project files.
 
@@ -322,7 +320,7 @@ class ScriptPlan:
                 print(f"Error: File '{main_file}' not found", file=sys.stderr)
                 return False
 
-            with open(main_file, 'r', encoding='utf-8') as f:
+            with open(main_file, encoding='utf-8') as f:
                 content = f.read()
 
             self.project = parser.parse(content)
@@ -520,7 +518,7 @@ class ScriptPlan:
             return False
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     """
     Main entry point for the CLI.
 

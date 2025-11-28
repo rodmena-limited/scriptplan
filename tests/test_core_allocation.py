@@ -1,17 +1,19 @@
 import unittest
+
+from scriptplan.core.allocation import Allocation
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
-from scriptplan.core.allocation import Allocation
+
 
 class TestAllocation(unittest.TestCase):
     def test_allocation_init(self):
         project = Project("prj", "Test Project", "1.0")
         r1 = Resource(project, "r1", "Resource 1", None)
         r2 = Resource(project, "r2", "Resource 2", None)
-        
+
         alloc = Allocation([r1, r2], selectionMode=Allocation.ORDER)
         self.assertEqual(alloc.candidates(0), [r1, r2])
-        
+
     def test_selection_mode(self):
         project = Project("prj", "Test Project", "1.0")
         r1 = Resource(project, "r1", "Resource 1", None)

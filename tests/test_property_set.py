@@ -1,7 +1,8 @@
 import unittest
+
 from scriptplan.core.project import Project
 from scriptplan.core.task import Task
-from scriptplan.core.property import PropertySet, AttributeDefinition, StringAttribute
+
 
 class TestPropertySet(unittest.TestCase):
     def test_standard_attributes(self):
@@ -16,14 +17,14 @@ class TestPropertySet(unittest.TestCase):
         project = Project("prj", "Test Project", "1.0")
         t1 = Task(project, "t1", "Task 1", None)
         t2 = Task(project, "t2", "Task 2", t1)
-        
+
         self.assertIn(t1, project.tasks)
         self.assertIn(t2, project.tasks)
         self.assertEqual(project.tasks.items(), 2)
-        
+
         # Remove parent should remove child
         project.tasks.removeProperty(t1)
-        
+
         self.assertEqual(project.tasks.items(), 0)
         self.assertNotIn(t1, project.tasks)
         self.assertNotIn(t2, project.tasks)
@@ -33,10 +34,10 @@ class TestPropertySet(unittest.TestCase):
         t1 = Task(project, "t1", "Task 1", None)
         t2 = Task(project, "t2", "Task 2", t1)
         t3 = Task(project, "t3", "Task 3", t1)
-        
+
         # Index logic
         project.tasks.index()
-        
+
         # Check BSI (Breakdown Structure Index)
         # t1: 1
         # t2: 1.1

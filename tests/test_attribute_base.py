@@ -1,12 +1,12 @@
 import unittest
+
 from scriptplan.core.property import (
     AttributeBase,
-    ListAttributeBase,
     AttributeDefinition,
     AttributeOverwrite,
-    StringAttribute,
     IntegerAttribute,
-    FloatAttribute,
+    ListAttributeBase,
+    StringAttribute,
     deep_clone,
 )
 

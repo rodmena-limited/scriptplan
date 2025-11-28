@@ -5,7 +5,7 @@ This module provides the TextReport class which generates simple text-based
 reports that can contain RichText blocks for header, body, and footer sections.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.report.report_base import ReportBase
 
@@ -102,7 +102,7 @@ class TextReport(ReportBase):
         """
         return self.html_content if self.html_content else None
 
-    def to_csv(self) -> Optional[List[List[str]]]:
+    def to_csv(self) -> Optional[list[list[str]]]:
         """
         Convert the text report to CSV.
 

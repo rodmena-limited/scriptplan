@@ -1,4 +1,5 @@
 import unittest
+
 from scriptplan.parser.macro_processor import MacroProcessor, preprocess_tjp, strip_shell_comments
 
 

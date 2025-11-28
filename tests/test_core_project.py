@@ -1,6 +1,8 @@
 import unittest
+
 from scriptplan.core.project import Project
 from scriptplan.core.property import PropertySet
+
 
 class TestProject(unittest.TestCase):
     def test_initialization(self):
@@ -8,7 +10,7 @@ class TestProject(unittest.TestCase):
         self.assertEqual(project.id, "prj")
         self.assertEqual(project.name, "Test Project")
         self.assertEqual(project.version, "1.0")
-        
+
         self.assertIsInstance(project.tasks, PropertySet)
         self.assertIsInstance(project.resources, PropertySet)
         self.assertIsInstance(project.reports, PropertySet)
@@ -18,7 +20,7 @@ class TestProject(unittest.TestCase):
         project = Project("prj", "Test Project", "1.0")
         self.assertEqual(project['dailyworkinghours'], 8.0)
         self.assertEqual(project['currency'], "EUR")
-        
+
         project['dailyworkinghours'] = 7.5
         self.assertEqual(project['dailyworkinghours'], 7.5)
 

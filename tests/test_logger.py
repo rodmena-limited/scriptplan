@@ -1,7 +1,8 @@
-import unittest
 import sys
+import unittest
 from io import StringIO
-from scriptplan.utils.logger import Log, ANSIColor, get_logger
+
+from scriptplan.utils.logger import ANSIColor, Log, get_logger
 
 
 class TestANSIColor(unittest.TestCase):

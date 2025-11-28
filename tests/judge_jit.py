@@ -1,5 +1,7 @@
-import pandas as pd
 import sys
+
+import pandas as pd
+
 
 def check_jit(csv_path):
     print(f"--- JUDGING JIT (ALAP + CONTENTION): {csv_path} ---")
@@ -46,7 +48,7 @@ def check_jit(csv_path):
         if s == exp_pack_start and e == exp_pack_end:
             print(f"PASS: Packaging anchored correctly ({s} -> {e})")
         else:
-            print(f"FAIL: Packaging ALAP logic.")
+            print("FAIL: Packaging ALAP logic.")
             print(f"  Expected: {exp_pack_start} -> {exp_pack_end}")
             print(f"  Got:      {s} -> {e}")
             errors += 1
@@ -73,9 +75,9 @@ def check_jit(csv_path):
     is_b_slot2 = (start_b == slot2_start and end_b == slot2_end)
 
     if (is_a_slot1 and is_b_slot2) or (is_a_slot2 and is_b_slot1):
-         print(f"PASS: Assemblies sequenced correctly back-to-back.")
-         print(f"      Slot 1 (Wed-Thu): Occupied")
-         print(f"      Slot 2 (Mon-Tue): Occupied")
+         print("PASS: Assemblies sequenced correctly back-to-back.")
+         print("      Slot 1 (Wed-Thu): Occupied")
+         print("      Slot 2 (Mon-Tue): Occupied")
     else:
         print("FAIL: Assembly Scheduling Collision or Calendar Error.")
         print(f"  A: {start_a} -> {end_a}")

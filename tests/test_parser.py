@@ -1,7 +1,9 @@
 import unittest
-from scriptplan.parser.tjp_parser import ProjectFileParser
-from scriptplan.core.project import Project
 from datetime import datetime
+
+from scriptplan.core.project import Project
+from scriptplan.parser.tjp_parser import ProjectFileParser
+
 
 class TestTJPParser(unittest.TestCase):
     def test_parse_simple_project(self):

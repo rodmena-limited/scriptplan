@@ -1,9 +1,10 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from scriptplan.parser.tjp_parser import ProjectFileParser
+
 from scriptplan.core.project import Project
 from scriptplan.core.task import Task
+from scriptplan.parser.tjp_parser import ProjectFileParser
 
 
 class TestSchedulingBasic(unittest.TestCase):
@@ -103,7 +104,7 @@ task phase2 "Phase 2" {
         tutorial_path = test_data_dir / 'tutorial.tjp'
 
         parser = ProjectFileParser()
-        with open(tutorial_path, 'r') as f:
+        with open(tutorial_path) as f:
             text = f.read()
 
         project = parser.parse(text)

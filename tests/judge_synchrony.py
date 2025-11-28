@@ -1,6 +1,8 @@
-import pandas as pd
-import sys
 import base64
+import sys
+
+import pandas as pd
+
 
 def check_synchrony(csv_path):
     print(f"--- VERIFYING LOGISTICS SYNCHRONY: {csv_path} ---")

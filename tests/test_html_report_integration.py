@@ -1,14 +1,9 @@
 """Integration tests for HTML report generation."""
 
 import unittest
-import tempfile
-import os
 from pathlib import Path
-from datetime import datetime
 
 from scriptplan.parser.tjp_parser import ProjectFileParser
-from scriptplan.report.report import Report, ReportFormat, ReportType
-from scriptplan.core.project import Project
 
 
 class TestHtmlReportIntegration(unittest.TestCase):
@@ -21,7 +16,7 @@ class TestHtmlReportIntegration(unittest.TestCase):
         # Find the test data directory
         test_data_dir = Path(__file__).parent / 'data'
         tutorial_path = test_data_dir / 'tutorial.tjp'
-        with open(tutorial_path, 'r') as f:
+        with open(tutorial_path) as f:
             text = f.read()
         cls.project = parser.parse(text)
 
@@ -114,9 +109,7 @@ class TestTableReportHtml(unittest.TestCase):
 
     def test_report_table_to_html(self):
         """Test that ReportTable produces valid HTML."""
-        from scriptplan.report.table_report import (
-            ReportTable, ReportTableLine, ReportTableCell, Alignment
-        )
+        from scriptplan.report.table_report import Alignment, ReportTable, ReportTableCell, ReportTableLine
 
         # Create a simple table
         table = ReportTable()
@@ -147,9 +140,7 @@ class TestTableReportHtml(unittest.TestCase):
 
     def test_table_to_csv(self):
         """Test that ReportTable produces valid CSV."""
-        from scriptplan.report.table_report import (
-            ReportTable, ReportTableLine, ReportTableCell
-        )
+        from scriptplan.report.table_report import ReportTable, ReportTableCell, ReportTableLine
 
         table = ReportTable()
 
@@ -177,10 +168,7 @@ class TestHtmlGeneratorInReport(unittest.TestCase):
 
     def test_import_in_report(self):
         """Verify html_generator is properly imported in report.py."""
-        from scriptplan.report.report import (
-            build_html_document,
-            get_default_css
-        )
+        from scriptplan.report.report import build_html_document, get_default_css
         self.assertIsNotNone(build_html_document)
         self.assertIsNotNone(get_default_css)
 

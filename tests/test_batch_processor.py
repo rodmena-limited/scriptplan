@@ -1,7 +1,6 @@
 import unittest
-from scriptplan.scheduler.batch_processor import (
-    BatchProcessor, ThreadBatchProcessor, JobInfo
-)
+
+from scriptplan.scheduler.batch_processor import BatchProcessor, JobInfo, ThreadBatchProcessor
 
 
 def simple_add(a, b):

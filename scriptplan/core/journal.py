@@ -9,9 +9,9 @@ of the project at a certain point in time. Additionally, the entry can
 contain a reference to a Resource as author and an alert level.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 from datetime import datetime
 from enum import IntEnum
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
@@ -69,15 +69,15 @@ class JournalEntry:
         self.property = property_node
         self.source_file_info = source_file_info
 
-        self.author: Optional['Resource'] = None
-        self.moderators: List['Resource'] = []
+        self.author: Optional[Resource] = None
+        self.moderators: list[Resource] = []
         self.summary: Optional[str] = None
         self.details: Optional[str] = None
         self.alert_level: AlertLevel = AlertLevel.GREEN
-        self.flags: List[str] = []
+        self.flags: list[str] = []
         self.timesheet_record: Any = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert entry to dictionary for serialization."""
         return {
             'date': self.date.isoformat() if self.date else None,
@@ -103,11 +103,11 @@ class JournalEntryList(list):
     various filtering operations.
     """
 
-    def __init__(self, entries: Optional[List[JournalEntry]] = None):
+    def __init__(self, entries: Optional[list[JournalEntry]] = None):
         """Initialize with optional list of entries."""
         super().__init__(entries or [])
 
-    def sort_by(self, criteria: List[tuple]) -> 'JournalEntryList':
+    def sort_by(self, criteria: list[tuple]) -> 'JournalEntryList':
         """
         Sort entries by multiple criteria.
 
@@ -168,8 +168,8 @@ class Journal:
             project: Optional reference to the Project
         """
         self.project = project
-        self._entries: List[JournalEntry] = []
-        self._entries_by_property: Dict[str, List[JournalEntry]] = {}
+        self._entries: list[JournalEntry] = []
+        self._entries_by_property: dict[str, list[JournalEntry]] = {}
 
     def add_entry(self, entry: JournalEntry) -> JournalEntry:
         """
@@ -338,7 +338,7 @@ class Journal:
         filtered.sort_by([('date', False)])
         return filtered
 
-    def _filter_entries(self, entries: List[JournalEntry],
+    def _filter_entries(self, entries: list[JournalEntry],
                        start: Optional[datetime] = None,
                        end: Optional[datetime] = None,
                        alert_level: Optional[AlertLevel] = None) -> JournalEntryList:
@@ -372,6 +372,6 @@ class Journal:
         self._entries.clear()
         self._entries_by_property.clear()
 
-    def to_list(self) -> List[Dict[str, Any]]:
+    def to_list(self) -> list[dict[str, Any]]:
         """Convert all entries to a list of dictionaries."""
         return [entry.to_dict() for entry in self._entries]

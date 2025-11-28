@@ -1,6 +1,7 @@
 import unittest
-from scriptplan.core.project import Project
+
 from scriptplan.core.account import Account, AccountScenario
+from scriptplan.core.project import Project
 
 
 class TestAccount(unittest.TestCase):

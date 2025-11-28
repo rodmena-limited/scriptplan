@@ -7,12 +7,11 @@ generate_intermediate_format function as well as to_html, to_csv, etc.
 """
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional, List, Any, Dict
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from scriptplan.report.report import Report
-    from scriptplan.core.project import Project
     from scriptplan.core.property import PropertyList
+    from scriptplan.report.report import Report
 
 
 class ReportBase(ABC):
@@ -50,7 +49,7 @@ class ReportBase(ABC):
         """
         return self.report.get(attribute)
 
-    def get_scenario_indices(self) -> List[int]:
+    def get_scenario_indices(self) -> list[int]:
         """
         Get scenario indices from the report's scenarios attribute.
 
@@ -77,11 +76,9 @@ class ReportBase(ABC):
                         break
                 else:
                     # Scenario name not found, try to parse as int
-                    try:
+                    from contextlib import suppress
+                    with suppress(ValueError):
                         result.append(int(scen))
-                    except ValueError:
-                        # Skip unknown scenarios
-                        pass
 
         return result if result else [0]
 
@@ -114,7 +111,7 @@ class ReportBase(ABC):
         """
         pass
 
-    def to_csv(self) -> Optional[List[List[str]]]:
+    def to_csv(self) -> Optional[list[list[str]]]:
         """
         Convert the intermediate format to CSV.
 
@@ -126,7 +123,7 @@ class ReportBase(ABC):
     def filter_account_list(self, account_list: 'PropertyList',
                            hide_expr: Any = None,
                            rollup_expr: Any = None,
-                           open_nodes: Optional[List] = None) -> 'PropertyList':
+                           open_nodes: Optional[list[Any]] = None) -> 'PropertyList':
         """
         Filter an account list based on hide/rollup expressions.
 
@@ -159,7 +156,7 @@ class ReportBase(ABC):
                         resource: Any = None,
                         hide_expr: Any = None,
                         rollup_expr: Any = None,
-                        open_nodes: Optional[List] = None) -> 'PropertyList':
+                        open_nodes: Optional[list[Any]] = None) -> 'PropertyList':
         """
         Filter a task list based on hide/rollup expressions.
 
@@ -192,11 +189,10 @@ class ReportBase(ABC):
             start = self.a('start')
             end = self.a('end')
 
-            def has_resource(task):
+            def has_resource(task: Any) -> bool:
                 for scenario_idx in scenario_indices:
-                    if hasattr(task, 'hasResourceAllocated'):
-                        if task.hasResourceAllocated(scenario_idx, (start, end), resource):
-                            return True
+                    if hasattr(task, 'hasResourceAllocated') and task.hasResourceAllocated(scenario_idx, (start, end), resource):
+                        return True
                 return False
 
             result.delete_if(lambda task: not has_resource(task))
@@ -208,7 +204,7 @@ class ReportBase(ABC):
                             task: Any = None,
                             hide_expr: Any = None,
                             rollup_expr: Any = None,
-                            open_nodes: Optional[List] = None) -> 'PropertyList':
+                            open_nodes: Optional[list[Any]] = None) -> 'PropertyList':
         """
         Filter a resource list based on hide/rollup expressions.
 
@@ -241,11 +237,10 @@ class ReportBase(ABC):
             start = self.a('start')
             end = self.a('end')
 
-            def is_assigned(resource):
+            def is_assigned(resource: Any) -> bool:
                 for scenario_idx in scenario_indices:
-                    if hasattr(task, 'hasResourceAllocated'):
-                        if task.hasResourceAllocated(scenario_idx, (start, end), resource):
-                            return True
+                    if hasattr(task, 'hasResourceAllocated') and task.hasResourceAllocated(scenario_idx, (start, end), resource):
+                        return True
                 return False
 
             result.delete_if(lambda res: not is_assigned(res))
@@ -256,7 +251,7 @@ class ReportBase(ABC):
     def _standard_filter_ops(self, items: 'PropertyList',
                             hide_expr: Any,
                             rollup_expr: Any,
-                            open_nodes: Optional[List],
+                            open_nodes: Optional[list[Any]],
                             scope_property: Any,
                             root: Any) -> 'PropertyList':
         """
@@ -281,26 +276,25 @@ class ReportBase(ABC):
 
         # Remove hidden properties
         if hide_expr and query:
-            def should_hide(prop):
+            def should_hide(prop: Any) -> bool:
                 query.property = prop
-                return self._eval_expression(hide_expr, query)
+                return bool(self._eval_expression(hide_expr, query))
             items.delete_if(should_hide)
 
         # Remove children of rolled-up properties
         if rollup_expr or open_nodes:
-            def should_remove_child(prop):
+            def should_remove_child(prop: Any) -> bool:
                 parent = prop.parent
                 while parent:
-                    query.property = parent if query else None
+                    if query:
+                        query.property = parent
 
-                    if open_nodes:
+                    if open_nodes and [parent, scope_property] not in open_nodes:
                         # If open_nodes specified, only listed nodes are unrolled
-                        if [parent, scope_property] not in open_nodes:
-                            return True
-                    elif rollup_expr:
+                        return True
+                    elif rollup_expr and bool(self._eval_expression(rollup_expr, query)):
                         # Roll up based on expression
-                        if self._eval_expression(rollup_expr, query):
-                            return True
+                        return True
 
                     parent = parent.parent
                 return False

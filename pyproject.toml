@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scriptplan"
-version = "0.9.0"
+version = "0.9.1"
 description = "A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management."
 authors = [
     { name = "Farshid Ashouri", email = "farsheed.ashouri@gmail.com" },
@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: Office/Business :: Scheduling",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -52,10 +53,10 @@ dev = [
 scriptplan = "scriptplan.cli.main:main"
 
 [project.urls]
-"Homepage" = "https://github.com/farshidash/scriptplan"
-"Documentation" = "https://github.com/farshidash/scriptplan#readme"
-"Bug Tracker" = "https://github.com/farshidash/scriptplan/issues"
-"Source" = "https://github.com/farshidash/scriptplan"
+"Homepage" = "https://github.com/rodmena-limited/scriptplan"
+"Documentation" = "https://github.com/rodmena-limited/scriptplan#readme"
+"Bug Tracker" = "https://github.com/rodmena-limited/scriptplan/issues"
+"Source" = "https://github.com/rodmena-limited/scriptplan"
 
 [tool.setuptools]
 include-package-data = true
@@ -83,7 +84,9 @@ line-length = 120
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+# N rules ignored: codebase uses camelCase for TaskJuggler API compatibility
+ignore = ["E501"]  # Line length handled separately
 
 [tool.mypy]
 python_version = "3.9"

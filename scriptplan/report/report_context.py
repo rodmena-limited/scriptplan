@@ -7,11 +7,10 @@ can exist at a time, but there is always one current context accessible via
 Project.reportContexts[-1].
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any, Dict
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
-    from scriptplan.core.property import PropertyList
 
 
 class Query:
@@ -22,7 +21,7 @@ class Query:
     with proper formatting and scenario handling.
     """
 
-    def __init__(self, attrs: Optional[Dict[str, Any]] = None):
+    def __init__(self, attrs: Optional[dict[str, Any]] = None):
         self.project = None
         self.property = None
         self.scope_property = None
@@ -97,18 +96,18 @@ class Query:
                     # But property.get() usually takes (name, scIdx) or just name
                     # Let's look at how PropertyTreeNode.get is implemented
                     # It usually takes (attribute_name, scenario_idx)
-                    
+
                     # Note: property.py logic sets self.scenarioIdx which maps to self.scenario_idx here
                     # property.py calls self._query.process()
-                    
+
                     val = self.property.get(self.attributeId, self.scenario_idx)
                 else:
                     val = self.property.get(self.attributeId)
-                
+
                 self.result = val
             except Exception:
                 self.result = None
-        
+
         return self.result
 
     def to_sort(self) -> Any:

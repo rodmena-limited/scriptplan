@@ -36,7 +36,7 @@ def parse_csv(filepath):
     """Reads the CSV and maps Task IDs to their data row."""
     data = {}
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             sample = f.read(1024)
             f.seek(0)
             dialect = csv.Sniffer().sniff(sample)
@@ -85,7 +85,7 @@ def check_cost(task_name, actual_str, expected_val):
 
 
 def run_judge(csv_path):
-    print(f"--- ISSUE #39: ULTRA-COMPLEX STRESS TEST JUDGE ---")
+    print("--- ISSUE #39: ULTRA-COMPLEX STRESS TEST JUDGE ---")
     print(f"Analyzing: {csv_path}\n")
 
     data = parse_csv(csv_path)

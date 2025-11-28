@@ -6,12 +6,10 @@ which generates a list of tasks that can optionally have the allocated
 resources nested underneath each task line.
 """
 
-from typing import TYPE_CHECKING, Optional, List, Any
+from typing import TYPE_CHECKING, Any
 
-from scriptplan.report.table_report import (
-    TableReport, ReportTable, ReportTableLine, ReportTableCell, Alignment
-)
 from scriptplan.core.property import PropertyList
+from scriptplan.report.table_report import Alignment, ReportTable, ReportTableCell, ReportTableLine, TableReport
 
 if TYPE_CHECKING:
     from scriptplan.report.report import Report
@@ -151,7 +149,7 @@ class TaskReport(TableReport):
         # Use PropertyList's built-in sorting which sorts by seqno by default
         resource_list.sort()
 
-    def _generate_header(self, columns: List[Any]) -> None:
+    def _generate_header(self, columns: list[Any]) -> None:
         """
         Generate the table header row.
 
@@ -162,7 +160,7 @@ class TaskReport(TableReport):
 
         for column_def in columns:
             # Adjust column period if needed
-            scenarios = self.a('scenarios') or []
+            self.a('scenarios') or []
             # self.adjust_column_period(column_def, task_list, scenarios)
 
             cell = self.generate_header_cell(column_def)
@@ -172,7 +170,7 @@ class TaskReport(TableReport):
 
     def _generate_task_list(self, task_list: PropertyList,
                            resource_list: PropertyList,
-                           columns: List[Any]) -> None:
+                           columns: list[Any]) -> None:
         """
         Generate rows for each task in the list.
 
@@ -201,7 +199,7 @@ class TaskReport(TableReport):
                     resource_line.css_class = 'nested_resource'
                     self.table.add_body_line(resource_line)
 
-    def _generate_task_line(self, task: Any, columns: List[Any],
+    def _generate_task_line(self, task: Any, columns: list[Any],
                            scenario_idx: int) -> ReportTableLine:
         """
         Generate a table row for a task.
@@ -303,7 +301,7 @@ class TaskReport(TableReport):
         return self.a('showResources') or False
 
     def _get_resources_for_task(self, task: Any, resource_list: PropertyList,
-                               scenario_idx: int) -> List[Any]:
+                               scenario_idx: int) -> list[Any]:
         """
         Get resources allocated to a task.
 
@@ -320,14 +318,13 @@ class TaskReport(TableReport):
         end = self.a('end')
 
         for resource in resource_list:
-            if hasattr(task, 'hasResourceAllocated'):
-                if task.hasResourceAllocated(scenario_idx, (start, end), resource):
-                    result.append(resource)
+            if hasattr(task, 'hasResourceAllocated') and task.hasResourceAllocated(scenario_idx, (start, end), resource):
+                result.append(resource)
 
         return result
 
     def _generate_resource_line(self, resource: Any, task: Any,
-                               columns: List[Any],
+                               columns: list[Any],
                                scenario_idx: int) -> ReportTableLine:
         """
         Generate a nested resource row under a task.
