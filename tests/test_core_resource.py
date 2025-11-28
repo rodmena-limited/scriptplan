@@ -1,8 +1,8 @@
 import unittest
 from datetime import datetime
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.resource import Resource
-from rodmena_resource_management.core.task import Task
+from scriptplan.core.project import Project
+from scriptplan.core.resource import Resource
+from scriptplan.core.task import Task
 
 class TestResource(unittest.TestCase):
     def test_resource_initialization(self):

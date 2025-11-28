@@ -1,7 +1,7 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.task import Task
-from rodmena_resource_management.core.property import PropertySet, AttributeDefinition, StringAttribute
+from scriptplan.core.project import Project
+from scriptplan.core.task import Task
+from scriptplan.core.property import PropertySet, AttributeDefinition, StringAttribute
 
 class TestPropertySet(unittest.TestCase):
     def test_standard_attributes(self):

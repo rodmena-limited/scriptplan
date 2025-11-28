@@ -1,5 +1,5 @@
 import unittest
-from rodmena_resource_management.scheduler.batch_processor import (
+from scriptplan.scheduler.batch_processor import (
     BatchProcessor, ThreadBatchProcessor, JobInfo
 )
 

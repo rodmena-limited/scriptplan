@@ -1,7 +1,7 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.resource import Resource
-from rodmena_resource_management.core.allocation import Allocation
+from scriptplan.core.project import Project
+from scriptplan.core.resource import Resource
+from scriptplan.core.allocation import Allocation
 
 class TestAllocation(unittest.TestCase):
     def test_allocation_init(self):

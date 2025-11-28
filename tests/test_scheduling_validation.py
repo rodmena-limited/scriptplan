@@ -20,7 +20,7 @@ from io import StringIO
 from pathlib import Path
 import os
 
-from rodmena_resource_management.parser.tjp_parser import ProjectFileParser
+from scriptplan.parser.tjp_parser import ProjectFileParser
 
 
 def get_csv_as_dataframe(report):

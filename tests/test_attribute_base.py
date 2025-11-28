@@ -1,5 +1,5 @@
 import unittest
-from rodmena_resource_management.core.property import (
+from scriptplan.core.property import (
     AttributeBase,
     ListAttributeBase,
     AttributeDefinition,

@@ -1,5 +1,5 @@
 import unittest
-from rodmena_resource_management.parser.macro_processor import MacroProcessor, preprocess_tjp, strip_shell_comments
+from scriptplan.parser.macro_processor import MacroProcessor, preprocess_tjp, strip_shell_comments
 
 
 class TestStripShellComments(unittest.TestCase):
@@ -185,7 +185,7 @@ project test "Version ${version}" 2024-01-15 +3m {
 class TestPreprocessTjp(unittest.TestCase):
 
     def test_function_exists(self):
-        from rodmena_resource_management.parser.macro_processor import preprocess_tjp
+        from scriptplan.parser.macro_processor import preprocess_tjp
         self.assertTrue(callable(preprocess_tjp))
 
     def test_returns_string(self):

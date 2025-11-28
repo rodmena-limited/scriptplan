@@ -1,6 +1,6 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.account import Account, AccountScenario
+from scriptplan.core.project import Project
+from scriptplan.core.account import Account, AccountScenario
 
 
 class TestAccount(unittest.TestCase):

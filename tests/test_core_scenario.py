@@ -1,6 +1,6 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.scenario import Scenario
+from scriptplan.core.project import Project
+from scriptplan.core.scenario import Scenario
 
 class TestScenario(unittest.TestCase):
     def test_scenario_initialization(self):

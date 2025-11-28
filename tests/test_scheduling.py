@@ -1,9 +1,9 @@
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-from rodmena_resource_management.parser.tjp_parser import ProjectFileParser
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.task import Task
+from scriptplan.parser.tjp_parser import ProjectFileParser
+from scriptplan.core.project import Project
+from scriptplan.core.task import Task
 
 
 class TestSchedulingBasic(unittest.TestCase):

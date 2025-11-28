@@ -1,6 +1,6 @@
 import unittest
-from rodmena_resource_management.parser.tjp_parser import ProjectFileParser
-from rodmena_resource_management.core.project import Project
+from scriptplan.parser.tjp_parser import ProjectFileParser
+from scriptplan.core.project import Project
 from datetime import datetime
 
 class TestTJPParser(unittest.TestCase):

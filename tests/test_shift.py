@@ -1,6 +1,6 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.shift import Shift, ShiftScenario
+from scriptplan.core.project import Project
+from scriptplan.core.shift import Shift, ShiftScenario
 
 
 class TestShift(unittest.TestCase):

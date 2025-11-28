@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta
-from rodmena_resource_management.scheduler.scoreboard import Scoreboard
-from rodmena_resource_management.utils.time import TimeInterval
+from scriptplan.scheduler.scoreboard import Scoreboard
+from scriptplan.utils.time import TimeInterval
 
 class TestScoreboard(unittest.TestCase):
     def test_init(self):

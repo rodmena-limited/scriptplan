@@ -14,15 +14,15 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
 
-from rodmena_resource_management.report import (
+from scriptplan.report import (
     Report, ReportFormat, ReportType, ReportContext, Query,
     ReportBase, TableReport, TaskReport, ResourceReport, TextReport,
     ReportTable, ReportTableLine, ReportTableCell, ReportTableLegend,
     Alignment
 )
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.task import Task
-from rodmena_resource_management.core.resource import Resource
+from scriptplan.core.project import Project
+from scriptplan.core.task import Task
+from scriptplan.core.resource import Resource
 
 
 class TestQuery:

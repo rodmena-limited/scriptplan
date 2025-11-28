@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from rodmena_resource_management.utils.time import TjTime
+from scriptplan.utils.time import TjTime
 
 class TestTjTime(unittest.TestCase):
     def test_init(self):

@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from rodmena_resource_management.cli.main import (
-    main, Rodmena, create_parser, setup_logging
+from scriptplan.cli.main import (
+    main, ScriptPlan, create_parser, setup_logging
 )
 
 
@@ -23,7 +23,7 @@ class TestCreateParser:
         """Test parser is created successfully."""
         parser = create_parser()
         assert parser is not None
-        assert parser.prog == 'rodmena'
+        assert parser.prog == 'scriptplan'
 
     def test_parser_version(self):
         """Test version argument."""
@@ -138,8 +138,8 @@ class TestSetupLogging:
         setup_logging(debug_level=2, debug_modules=['core', 'scheduler'])
 
 
-class TestRodmena:
-    """Tests for the Rodmena application class."""
+class TestScriptPlan:
+    """Tests for the ScriptPlan application class."""
 
     @pytest.fixture
     def simple_project_file(self, tmp_path):
@@ -166,7 +166,7 @@ task project "Project" {
         """Test error when no files provided."""
         parser = create_parser()
         args = parser.parse_args([])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 1
 
@@ -174,7 +174,7 @@ task project "Project" {
         """Test error when file doesn't exist."""
         parser = create_parser()
         args = parser.parse_args(['nonexistent.tjp'])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 1
 
@@ -182,7 +182,7 @@ task project "Project" {
         """Test error when output directory doesn't exist."""
         parser = create_parser()
         args = parser.parse_args(['-o', '/nonexistent/path', simple_project_file])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 1
 
@@ -190,7 +190,7 @@ task project "Project" {
         """Test syntax check only."""
         parser = create_parser()
         args = parser.parse_args(['--check-syntax', simple_project_file])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 0
 
@@ -198,7 +198,7 @@ task project "Project" {
         """Test parsing and scheduling."""
         parser = create_parser()
         args = parser.parse_args(['--no-reports', simple_project_file])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 0
         assert app.project is not None
@@ -210,7 +210,7 @@ task project "Project" {
 
         parser = create_parser()
         args = parser.parse_args(['-o', str(output_dir), '--no-reports', simple_project_file])
-        app = Rodmena(args)
+        app = ScriptPlan(args)
         result = app.run()
         assert result == 0
 

@@ -3,44 +3,85 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "planscript"
+name = "scriptplan"
 version = "0.9.0"
-description = "A powerful project management tool for resource allocation and scheduling."
+description = "A powerful project management tool for resource allocation and scheduling, compatible with TaskJuggler."
 authors = [
-  { name="Rodmena Team", email="team@rodmena.com" },
+  { name="ScriptPlan Team" },
 ]
+license = { text = "Apache-2.0" }
+readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Scheduling",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+keywords = ["scheduling", "project-management", "resource-allocation", "taskjuggler", "gantt"]
 dependencies = [
-    "lark", # For parsing TJP files
-    "python-dateutil",
+    "lark>=1.0.0",
+    "python-dateutil>=2.8.0",
 ]
 
-dev-dependencies = [
-    "pytest",
-    "pytest-xdist",
-    "pandas",
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-xdist>=3.0.0",
+    "pandas>=1.5.0",
     "ruff",
     "black",
     "isort",
-    "flake8",
     "mypy",
 ]
 
 [project.scripts]
-rodmena = "rodmena_resource_management.cli.main:main"
+scriptplan = "scriptplan.cli.main:main"
+
+[project.urls]
+"Homepage" = "https://github.com/scriptplan/scriptplan"
+"Bug Tracker" = "https://github.com/scriptplan/scriptplan/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["scriptplan*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short -n 8"
-filterwarnings = ["ignore::DeprecationWarning"]
+addopts = "-v --tb=short -n auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 120
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

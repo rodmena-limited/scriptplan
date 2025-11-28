@@ -1,7 +1,7 @@
 import unittest
 import sys
 from io import StringIO
-from rodmena_resource_management.utils.logger import Log, ANSIColor, get_logger
+from scriptplan.utils.logger import Log, ANSIColor, get_logger
 
 
 class TestANSIColor(unittest.TestCase):

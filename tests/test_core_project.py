@@ -1,6 +1,6 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.property import PropertySet
+from scriptplan.core.project import Project
+from scriptplan.core.property import PropertySet
 
 class TestProject(unittest.TestCase):
     def test_initialization(self):

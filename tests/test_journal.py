@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from rodmena_resource_management.core.journal import Journal, JournalEntry, JournalEntryList, AlertLevel
+from scriptplan.core.journal import Journal, JournalEntry, JournalEntryList, AlertLevel
 
 
 class TestAlertLevel(unittest.TestCase):

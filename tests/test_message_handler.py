@@ -3,7 +3,7 @@ import sys
 import os
 import tempfile
 from io import StringIO
-from rodmena_resource_management.utils.message_handler import (
+from scriptplan.utils.message_handler import (
     Message, MessageType, MessageHandler, MessageHandlerInstance,
     SourceFileInfo, TjRuntimeError, TjException, get_message_handler_instance
 )

@@ -1,7 +1,7 @@
 import unittest
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.task import Task
-from rodmena_resource_management.core.property import PropertyList, PTNProxy
+from scriptplan.core.project import Project
+from scriptplan.core.task import Task
+from scriptplan.core.property import PropertyList, PTNProxy
 
 
 class TestPropertyList(unittest.TestCase):

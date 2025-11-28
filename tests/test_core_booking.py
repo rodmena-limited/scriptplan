@@ -1,10 +1,10 @@
 import unittest
 from datetime import datetime, timedelta
-from rodmena_resource_management.core.booking import Booking
-from rodmena_resource_management.core.project import Project
-from rodmena_resource_management.core.resource import Resource
-from rodmena_resource_management.core.task import Task
-from rodmena_resource_management.utils.time import TimeInterval
+from scriptplan.core.booking import Booking
+from scriptplan.core.project import Project
+from scriptplan.core.resource import Resource
+from scriptplan.core.task import Task
+from scriptplan.utils.time import TimeInterval
 
 class TestBooking(unittest.TestCase):
     def test_booking(self):
