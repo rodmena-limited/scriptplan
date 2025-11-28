@@ -1,31 +1,37 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scriptplan"
 version = "0.9.0"
-description = "A powerful project management tool for resource allocation and scheduling, compatible with TaskJuggler."
+description = "A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management."
 authors = [
-  { name="ScriptPlan Team" },
+    { name = "Farshid Ashouri", email = "farsheed.ashouri@gmail.com" },
 ]
-license = { text = "Apache-2.0" }
+maintainers = [
+    { name = "Farshid Ashouri", email = "farsheed.ashouri@gmail.com" },
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Topic :: Office/Business :: Scheduling",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
-keywords = ["scheduling", "project-management", "resource-allocation", "taskjuggler", "gantt"]
+keywords = ["scheduling", "project-management", "resource-allocation", "gantt", "critical-path"]
 dependencies = [
     "lark>=1.0.0",
     "python-dateutil>=2.8.0",
@@ -36,22 +42,30 @@ dev = [
     "pytest>=7.0.0",
     "pytest-xdist>=3.0.0",
     "pandas>=1.5.0",
-    "ruff",
-    "black",
-    "isort",
-    "mypy",
+    "build",
+    "twine",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
 ]
 
 [project.scripts]
 scriptplan = "scriptplan.cli.main:main"
 
 [project.urls]
-"Homepage" = "https://github.com/scriptplan/scriptplan"
-"Bug Tracker" = "https://github.com/scriptplan/scriptplan/issues"
+"Homepage" = "https://github.com/farshidash/scriptplan"
+"Documentation" = "https://github.com/farshidash/scriptplan#readme"
+"Bug Tracker" = "https://github.com/farshidash/scriptplan/issues"
+"Source" = "https://github.com/farshidash/scriptplan"
+
+[tool.setuptools]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["scriptplan*"]
+
+[tool.setuptools.package-data]
+scriptplan = ["py.typed", "parser/*.lark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -69,19 +83,11 @@ line-length = 120
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
-ignore = ["E501"]
-
-[tool.black]
-line-length = 120
-target-version = ["py39", "py310", "py311", "py312"]
-
-[tool.isort]
-profile = "black"
-line_length = 120
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 
 [tool.mypy]
 python_version = "3.9"
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
