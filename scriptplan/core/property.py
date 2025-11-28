@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Optional, Union, Iterator, Tuple, Type, Callable
+from collections.abc import Iterator
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+
 from scriptplan.utils.message_handler import MessageHandler
 
 
@@ -8,8 +10,8 @@ class PropertySet:
         self.flat_namespace = flat_namespace
         self.attributes: List[AttributeDefinition] = []
         self.attributeDefinitions: Dict[str, AttributeDefinition] = {}
-        self._properties: List['PropertyTreeNode'] = [] # List for order
-        self._propertyMap: Dict[str, 'PropertyTreeNode'] = {} # Dict fullId -> PropertyTreeNode
+        self._properties: List[PropertyTreeNode] = [] # List for order
+        self._propertyMap: Dict[str, PropertyTreeNode] = {} # Dict fullId -> PropertyTreeNode
 
         # Add standard attributes
         # In Ruby: id, name, seqno
@@ -251,7 +253,7 @@ class PTNProxy:
         if self._level >= 0:
             return self._level
 
-        t: Union['PropertyTreeNode', 'PTNProxy'] = self
+        t: Union[PropertyTreeNode, PTNProxy] = self
         self._level = 0
         while t.parent is not None:
             t = t.parent
@@ -259,7 +261,7 @@ class PTNProxy:
         return self._level
 
     def isChildOf(self, ancestor: Union['PropertyTreeNode', 'PTNProxy']) -> bool:
-        parent: Union['PropertyTreeNode', 'PTNProxy'] = self
+        parent: Union[PropertyTreeNode, PTNProxy] = self
         while parent.parent is not None:
             parent = parent.parent
             if parent == ancestor:
@@ -268,7 +270,7 @@ class PTNProxy:
 
     def getIndicies(self) -> List[int]:
         idcs: List[int] = []
-        p: Optional[Union['PropertyTreeNode', 'PTNProxy']] = self
+        p: Optional[Union[PropertyTreeNode, PTNProxy]] = self
         while p is not None:
             parent = p.parent
             idcs.insert(0, p.get('index'))
@@ -317,7 +319,7 @@ class PropertyList:
 
     def __init__(self, arg: Union[PropertySet, 'PropertyList', List[Union['PropertyTreeNode', PTNProxy]]], copyItems: bool = True) -> None:
         if isinstance(arg, PropertySet):
-            self._items: List[Union['PropertyTreeNode', PTNProxy]] = list(arg._properties) if copyItems else []
+            self._items: List[Union[PropertyTreeNode, PTNProxy]] = list(arg._properties) if copyItems else []
             self._propertySet: Optional[PropertySet] = arg
             self._query: Optional[Any] = None
             self.resetSorting()
@@ -367,7 +369,7 @@ class PropertyList:
         return self._scenarioIdx
 
     def includeAdopted(self) -> None:
-        adopted: List[Union['PropertyTreeNode', PTNProxy]] = []
+        adopted: List[Union[PropertyTreeNode, PTNProxy]] = []
         for p in self._items:
             for ap in p.adoptees:
                 adopted.extend(self._includeAdoptedR(ap, p))
@@ -383,7 +385,7 @@ class PropertyList:
         return adopted
 
     def checkForDuplicates(self, sourceFileInfo: Optional[Any] = None) -> None:
-        ptns: Dict['PropertyTreeNode', Union['PropertyTreeNode', PTNProxy]] = {}
+        ptns: Dict[PropertyTreeNode, Union[PropertyTreeNode, PTNProxy]] = {}
         for i in self._items:
             ptn = i.ptn if isinstance(i, PTNProxy) else i
             if ptn in ptns:
@@ -522,7 +524,7 @@ class PropertyList:
 
     def _getIndicies(self, property: 'PropertyTreeNode') -> List[int]:
         idcs: List[int] = []
-        p: Optional['PropertyTreeNode'] = property
+        p: Optional[PropertyTreeNode] = property
         while p is not None:
             parent = p.parent
             idx = p.get('index')
@@ -1021,9 +1023,9 @@ class PropertyTreeNode(MessageHandler):
         self.name: str = name
         self.sourceFileInfo: Optional[Any] = None
         self.sequenceNo: int = self.propertySet.items() + 1
-        self.children: List['PropertyTreeNode'] = []
-        self.adoptees: List['PropertyTreeNode'] = []
-        self.stepParents: List['PropertyTreeNode'] = []
+        self.children: List[PropertyTreeNode] = []
+        self.adoptees: List[PropertyTreeNode] = []
+        self.stepParents: List[PropertyTreeNode] = []
 
         self.set('id', self.fullId)
         self.set('name', name)
@@ -1038,7 +1040,7 @@ class PropertyTreeNode(MessageHandler):
     def fullId(self) -> str:
         res = self.subId
         if not self.propertySet.flat_namespace:
-            t: 'PropertyTreeNode' = self
+            t: PropertyTreeNode = self
             while t.parent is not None:
                 t = t.parent
                 res = f"{t.subId}.{res}"
@@ -1084,7 +1086,7 @@ class PropertyTreeNode(MessageHandler):
 
     def level(self) -> int:
         lvl = 0
-        t: 'PropertyTreeNode' = self
+        t: PropertyTreeNode = self
         while t.parent is not None:
             lvl += 1
             t = t.parent
@@ -1092,7 +1094,7 @@ class PropertyTreeNode(MessageHandler):
 
     def getBSIndicies(self) -> List[int]:
         idcs: List[int] = []
-        p: Optional['PropertyTreeNode'] = self
+        p: Optional[PropertyTreeNode] = self
         while p:
             parent = p.parent
             idx = parent.levelSeqNo(p) if parent else self.propertySet.levelSeqNo(p)
@@ -1158,20 +1160,20 @@ class PropertyTreeNode(MessageHandler):
                                  my_attr.inherit(val)
 
     def ancestors(self, includeStepParents: bool = False) -> List['PropertyTreeNode']:
-        nodes: List['PropertyTreeNode'] = []
+        nodes: List[PropertyTreeNode] = []
         if includeStepParents:
             for p in self.parents():
                 nodes.append(p)
                 nodes.extend(p.ancestors(True))
         else:
-            n: 'PropertyTreeNode' = self
+            n: PropertyTreeNode = self
             while n.parent is not None:
                 n = n.parent
                 nodes.append(n)
         return nodes
 
     def root(self) -> 'PropertyTreeNode':
-        n: 'PropertyTreeNode' = self
+        n: PropertyTreeNode = self
         while n.parent:
             n = n.parent
         return n
@@ -1277,7 +1279,7 @@ class PropertyTreeNode(MessageHandler):
         return self.children + self.adoptees
 
     def allLeaves(self, without_self: bool = False) -> List['PropertyTreeNode']:
-        res: List['PropertyTreeNode'] = []
+        res: List[PropertyTreeNode] = []
         if self.leaf():
             if not without_self:
                 res.append(self)

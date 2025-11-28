@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 from scriptplan.utils.message_handler import MessageHandler
 
 if TYPE_CHECKING:
-    from scriptplan.core.resource import Resource
+    pass
 
 
 class TimeSheetRecord(MessageHandler):

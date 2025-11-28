@@ -7,7 +7,6 @@ from scriptplan.core.scenario_data import ScenarioData
 
 if TYPE_CHECKING:
     from scriptplan.core.property import PropertyTreeNode
-    from scriptplan.core.resource import Resource
 
 # Default working hours: 9am-5pm (0-indexed: hours 9-16 are working)
 DEFAULT_WORK_START_HOUR = 9

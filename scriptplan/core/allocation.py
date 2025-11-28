@@ -2,7 +2,7 @@ import random
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
 if TYPE_CHECKING:
-    from scriptplan.core.resource import Resource
+    pass
 
 
 class Allocation:

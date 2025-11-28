@@ -17,7 +17,7 @@ from scriptplan.report.html_generator import build_html_document, get_default_cs
 from scriptplan.utils.message_handler import MessageHandler
 
 # Re-export for backwards compatibility
-__all__ = ['build_html_document', 'get_default_css', 'Report', 'ReportFormat']
+__all__ = ['Report', 'ReportFormat', 'build_html_document', 'get_default_css']
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project

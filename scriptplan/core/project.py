@@ -1,5 +1,5 @@
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Set, Union
-from datetime import datetime, timedelta
 
 from scriptplan.core.journal import Journal
 from scriptplan.core.property import (
