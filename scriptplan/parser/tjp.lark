@@ -1,0 +1,412 @@
+// TJP Grammar for Lark - Extended version
+// Supports a substantial subset of TaskJuggler syntax
+
+start: statements
+
+statements: statement*
+
+statement: project
+         | global_attribute
+         | property_declaration
+         | navigator
+         | report_definition
+
+// Project definition
+// project_name is optional in TaskJuggler syntax
+project: "project" project_id project_name? project_timeframe "{" project_attributes "}"
+
+project_id: STRING | ID
+project_name: STRING
+project_timeframe: date duration_spec?
+
+duration_spec: "+" DURATION_SPEC
+DURATION_SPEC: /\d+[dwmyhmin]+/
+
+project_attributes: project_attribute*
+
+project_attribute: timezone
+                 | timeformat
+                 | numberformat
+                 | currencyformat
+                 | currency
+                 | now
+                 | scenario_def
+                 | extend
+                 | dailyworkinghours
+                 | yearlyworkingdays
+                 | weekstartsmonday
+                 | workinghours
+                 | timingresolution
+                 | project_scheduling
+
+project_scheduling: "scheduling" SCHEDULING_MODE
+
+// Global attributes (outside project block)
+global_attribute: copyright
+                | rate
+                | leaves_global
+                | flags_global
+                | balance
+                | vacation_global
+
+copyright: "copyright" STRING
+rate: "rate" NUMBER
+leaves_global: "leaves" ID STRING date (("-" | "~") date)?
+flags_global: "flags" ID ("," ID)*
+balance: "balance" ID ID
+vacation_global: "vacation" STRING? date ("-" date)?
+
+// Scenario definition (within project)
+// Scenarios can have optional body with nested scenarios
+scenario_def: "scenario" ID STRING ("{" scenario_body "}")?
+scenario_body: scenario_def*
+
+// Extend declaration
+extend: "extend" ID "{" extend_body "}"
+extend_body: extend_attribute*
+extend_attribute: "text" ID STRING
+
+// Project attributes
+timezone: "timezone" STRING
+timeformat: "timeformat" STRING
+numberformat: "numberformat" STRING STRING STRING STRING NUMBER
+currencyformat: "currencyformat" STRING STRING STRING STRING NUMBER
+currency: "currency" STRING
+now: "now" date
+dailyworkinghours: "dailyworkinghours" NUMBER
+yearlyworkingdays: "yearlyworkingdays" NUMBER
+weekstartsmonday: "weekstartsmonday"
+timingresolution: "timingresolution" duration_value
+workinghours: "workinghours" workinghours_spec
+workinghours_spec: day_list duration_range ("," duration_range)*
+day_list: day_spec ("," day_spec)*
+day_spec: DAY_NAME ("-" DAY_NAME)?  // Single day or day range like "mon - fri"
+DAY_NAME.2: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
+duration_range: TIME "-" TIME
+TIME: /\d{1,2}:\d{2}/
+
+// Macro definition - disabled for now due to parser complexity
+// macro_definition: "macro" ID "[" MACRO_CONTENT "]"
+// MACRO_CONTENT.1: /[^\[\]]+/
+
+// Navigator
+navigator: "navigator" ID "{" navigator_body "}"
+navigator_body: navigator_attr*
+navigator_attr: "hidereport" (ID | FILTER_EXPR)
+
+// Property declarations
+property_declaration: resource
+                    | task
+                    | account
+                    | shift
+
+// Resource
+resource: "resource" ID STRING "{" resource_body "}"
+resource_body: resource_attr*
+
+resource_attr: resource_email
+             | resource_rate
+             | resource_efficiency
+             | resource_managers
+             | resource_limits
+             | resource_leaves
+             | resource_vacation
+             | resource_booking
+             | resource_workinghours
+             | resource_timezone
+             | resource_chargeset
+             | resource_flags
+             | resource
+             | extended_attr
+
+resource_email: "email" STRING
+resource_rate: "rate" NUMBER
+resource_efficiency: "efficiency" NUMBER
+resource_managers: "managers" ID ("," ID)*
+resource_limits: "limits" "{" limits_body "}"
+resource_leaves: "leaves" leaves_type date ("-" date)?
+resource_vacation: "vacation" date ("-" date)?
+resource_booking: "booking" STRING date ("+" duration_value | duration_value)
+resource_workinghours: "workinghours" (workinghours_spec | ID)
+resource_timezone: "timezone" STRING
+resource_chargeset: "chargeset" ID
+resource_flags: "flags" ID ("," ID)*
+
+leaves_type: "annual" | "sick" | "holiday" | "special" | "unpaid"
+
+limits_body: limit_attr*
+limit_attr: limit_dailymax | limit_weeklymax
+limit_dailymax: "dailymax" duration_value limits_resources?
+limit_weeklymax: "weeklymax" duration_value limits_resources?
+limits_resources: "{" "resources" ID ("," ID)* "}"
+
+// Task
+task: "task" ID STRING "{" task_body "}"
+task_body: task_attr*
+
+task_attr: task_start
+         | task_end
+         | task_effort
+         | task_duration
+         | task_length
+         | task_milestone
+         | task_depends
+         | task_precedes
+         | task_allocate
+         | task_responsible
+         | task_priority
+         | task_complete
+         | task_note
+         | task_chargeset
+         | task_purge_chargeset
+         | task_charge
+         | task_limits
+         | task_journalentry
+         | task_flags
+         | task_scheduling
+         | scenario_attr
+         | task
+         | extended_attr
+
+task_scheduling: "scheduling" SCHEDULING_MODE
+SCHEDULING_MODE: "asap" | "alap"
+
+task_start: "start" (date | MACRO_REF)
+task_end: "end" date
+task_effort: "effort" effort_value
+task_duration: "duration" duration_value
+task_length: "length" duration_value
+task_milestone: "milestone"
+task_depends: "depends" depends_list
+task_precedes: "precedes" depends_list
+task_allocate: "allocate" allocate_spec
+task_responsible: "responsible" ID
+task_priority: "priority" NUMBER
+task_complete: "complete" NUMBER
+task_note: "note" (STRING | rich_text)
+task_chargeset: "chargeset" ID
+task_purge_chargeset: "purge" "chargeset"
+task_charge: "charge" NUMBER charge_mode
+task_limits: "limits" "{" limits_body "}"
+task_journalentry: "journalentry" date STRING? "{" journal_body "}"
+task_flags: "flags" ID ("," ID)*
+
+effort_value: NUMBER EFFORT_UNIT
+EFFORT_UNIT: /[dwhminy]+/
+
+duration_value: NUMBER DURATION_UNIT
+DURATION_UNIT: /[dwhminy]+/
+
+depends_list: depends_item ("," depends_item)*
+depends_item: DEPENDS_REF depends_options?
+depends_options: "{" depends_option* "}"
+depends_option: "gapduration" duration_value -> dep_gapduration
+              | "gaplength" duration_value -> dep_gaplength
+              | "maxgapduration" duration_value -> dep_maxgapduration
+              | "onend" -> dep_onend
+              | "onstart" -> dep_onstart
+DEPENDS_REF: /[!.a-zA-Z_][!.a-zA-Z0-9_]*/
+
+allocate_spec: ID ("," ID)* allocate_options?
+allocate_options: "{" allocate_option* "}"
+allocate_option: "persistent"
+               | "mandatory"
+               | "alternative" ID ("," ID)*
+               | "limits" "{" limits_body "}"
+
+charge_mode: "onstart" | "onend" | "perday"
+
+journal_body: journal_attr*
+journal_attr: journal_author
+            | journal_alert
+            | journal_summary
+            | journal_details
+journal_author: "author" ID
+journal_alert: "alert" alert_level
+journal_summary: "summary" (STRING | rich_text)
+journal_details: "details" (STRING | rich_text)
+alert_level: ALERT_VALUE
+ALERT_VALUE: "green" | "yellow" | "red"
+
+scenario_attr: ID ":" scenario_specific_attr
+scenario_specific_attr: scenario_start
+                      | scenario_end
+                      | scenario_effort
+                      | scenario_duration
+                      | scenario_length
+
+scenario_start: "start" date
+scenario_end: "end" date
+scenario_effort: "effort" effort_value
+scenario_duration: "duration" duration_value
+scenario_length: "length" duration_value
+
+// Account (body is optional for leaf accounts)
+account: "account" ID STRING ("{" account_body "}")?
+account_body: account_attr*
+account_attr: account
+            | "credit" STRING
+            | "aggregate" ID
+
+// Shift
+shift: "shift" ID STRING? "{" shift_body "}"
+shift_body: shift_attr*
+shift_attr: "workinghours" workinghours_spec
+          | "leaves" leaves_type date ("-" date)?
+
+// Reports
+report_definition: textreport
+                 | taskreport
+                 | resourcereport
+
+textreport: "textreport" ID? STRING? "{" textreport_body "}"
+textreport_body: textreport_attr*
+textreport_attr: textreport_header
+               | textreport_footer
+               | textreport_center
+               | textreport_left
+               | textreport_right
+               | textreport_formats
+               | textreport_title
+               | report_definition
+
+textreport_header: "header" (STRING | rich_text)
+textreport_footer: "footer" (STRING | rich_text)
+textreport_center: "center" (STRING | rich_text)
+textreport_left: "left" (STRING | rich_text)
+textreport_right: "right" (STRING | rich_text)
+textreport_formats: "formats" format_list
+textreport_title: "title" STRING
+
+format_list: ID ("," ID)*
+
+taskreport: "taskreport" ID? STRING? "{" taskreport_body "}"
+taskreport_body: taskreport_attr*
+taskreport_attr: taskreport_header
+               | taskreport_footer
+               | taskreport_headline
+               | taskreport_caption
+               | taskreport_columns
+               | taskreport_timeformat
+               | taskreport_loadunit
+               | taskreport_hideresource
+               | taskreport_hidetask
+               | taskreport_sorttasks
+               | taskreport_sortresources
+               | taskreport_scenarios
+               | taskreport_taskroot
+               | taskreport_period
+               | taskreport_balance
+               | taskreport_journalmode
+               | taskreport_journalattributes
+               | taskreport_formats
+               | taskreport_leaftasksonly
+               | taskreport
+
+taskreport_leaftasksonly: "leaftasksonly" BOOLEAN
+
+taskreport_formats: "formats" format_list
+
+taskreport_header: "header" (STRING | rich_text)
+taskreport_footer: "footer" (STRING | rich_text)
+taskreport_headline: "headline" (STRING | rich_text)
+taskreport_caption: "caption" STRING
+taskreport_columns: "columns" column_list
+taskreport_timeformat: "timeformat" STRING
+taskreport_loadunit: "loadunit" ID
+taskreport_hideresource: "hideresource" (ID | FILTER_EXPR)
+taskreport_hidetask: "hidetask" (ID | FILTER_EXPR)
+taskreport_sorttasks: "sorttasks" sort_list
+taskreport_sortresources: "sortresources" sort_list
+taskreport_scenarios: "scenarios" ID ("," ID)*
+taskreport_taskroot: "taskroot" TASK_PATH
+taskreport_period: "period" period_spec
+taskreport_balance: "balance" ID ID
+taskreport_journalmode: "journalmode" ID
+taskreport_journalattributes: "journalattributes" ID ("," ID)*
+
+resourcereport: "resourcereport" ID? STRING? "{" resourcereport_body "}"
+resourcereport_body: resourcereport_attr*
+resourcereport_attr: resourcereport_header
+                   | resourcereport_footer
+                   | resourcereport_headline
+                   | resourcereport_columns
+                   | resourcereport_loadunit
+                   | resourcereport_hideresource
+                   | resourcereport_hidetask
+                   | resourcereport_sorttasks
+                   | resourcereport_sortresources
+                   | resourcereport_scenarios
+
+resourcereport_header: "header" (STRING | rich_text)
+resourcereport_footer: "footer" (STRING | rich_text)
+resourcereport_headline: "headline" (STRING | rich_text)
+resourcereport_columns: "columns" column_list
+resourcereport_loadunit: "loadunit" ID
+resourcereport_hideresource: "hideresource" (ID | FILTER_EXPR)
+resourcereport_hidetask: "hidetask" (ID | FILTER_EXPR)
+resourcereport_sorttasks: "sorttasks" sort_list
+resourcereport_sortresources: "sortresources" sort_list
+resourcereport_scenarios: "scenarios" ID ("," ID)*
+
+column_list: column_spec ("," column_spec)*
+column_spec: ID column_options?
+column_options: "{" column_option* "}"
+column_option: "title" STRING
+             | "width" NUMBER
+             | "scale" ID
+             | "celltext" NUMBER STRING
+             | "cellcolor" cellcolor_spec
+             | "listtype" ID
+             | "listitem" STRING
+             | "start" (MACRO_REF | date)
+             | "end" (MACRO_REF | date)
+             | "tooltip" tooltip_spec
+             | MACRO_REF
+
+cellcolor_spec: dotted_id "=" NUMBER STRING
+
+tooltip_spec: tooltip_condition (STRING | rich_text)?
+tooltip_condition: dotted_id ("(" ")")? (("!=" | "=") STRING)?
+dotted_id: ID ("." ID)*
+
+sort_list: sort_item ("," sort_item)*
+sort_item: SORT_KEY
+SORT_KEY: /[a-zA-Z_.]+\.(up|down)/
+
+period_spec: PERIOD_EXPR
+PERIOD_EXPR: /(%\{[^}]+\}|\d{4}-\d{2}-\d{2})(\s*\+\d+[dwmy])?/
+
+TASK_PATH: /[a-zA-Z_][a-zA-Z0-9_.]+/
+
+FILTER_EXPR: /@(all|none)|~[a-zA-Z_()&|=<>!0-9. -]+/
+
+// Rich text block
+rich_text: RICH_TEXT_BLOCK
+RICH_TEXT_BLOCK: "-8<-" /[\s\S]*?/ "->8-"
+
+// Extended attributes
+extended_attr: ID STRING
+
+// Macro reference
+MACRO_REF: /\$\{[^}]+\}/
+
+// Common tokens
+date: DATE_TIME | DATE
+DATE: /\d{4}-\d{2}-\d{2}/
+DATE_TIME: /\d{4}-\d{2}-\d{2}-\d{2}:\d{2}/
+
+ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+STRING: /"[^"]*"/ | /'[^']*'/
+NUMBER: /-?\d+(\.\d+)?/
+BOOLEAN: /true|false|yes|no|1|0/i
+
+%import common.WS
+%import common.C_COMMENT
+%import common.CPP_COMMENT
+%import common.SH_COMMENT
+
+%ignore WS
+%ignore C_COMMENT
+%ignore CPP_COMMENT
+%ignore SH_COMMENT
