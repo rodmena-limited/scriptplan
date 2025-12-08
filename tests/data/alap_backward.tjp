@@ -1,0 +1,44 @@
+/*
+ * Issue #51: ALAP Backward Scheduling
+ * Tests backward calculation with holiday handling
+ */
+
+project alap "ALAP_Production" 2025-12-01 +3w {
+  timezone "UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-12-01
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+vacation "Holiday" 2025-12-10
+
+resource team "Team" {
+  resource worker "Worker" {
+    workinghours mon - fri 09:00 - 17:00
+  }
+}
+
+task production "Product" {
+  task step1 "Assembly" {
+    effort 16h
+    allocate worker
+    scheduling alap
+    precedes !step2
+  }
+
+  task step2 "Painting" {
+    effort 16h
+    allocate worker
+    scheduling alap
+    end 2025-12-12-17:00
+  }
+}
+
+taskreport alap_output "alap_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
