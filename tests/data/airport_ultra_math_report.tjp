@@ -1,0 +1,152 @@
+/* * GLOBAL AIRPORT SYNCHRONIZATION - ULTRA COMPLEX
+ * Challenge: Floating point efficiency, irregular calendars,
+ * daily limits vs. limits, and priority-based preemption.
+ */
+
+project "AirportUltraMath" 2025-08-01 +3m {
+  timezone "UTC"
+  timeformat "%Y-%m-%d %H:%M:%S"
+  currency "EUR"
+  timingresolution 15min
+
+  # Standard: 8h days. But we will override this per resource.
+  dailyworkinghours 8
+  yearlyworkingdays 260
+}
+
+# ---------------------------------------------------------------------------
+# ACCOUNTS (must be defined before resources that use them)
+# ---------------------------------------------------------------------------
+account cost "Labor Cost" {
+  aggregate resources
+}
+account rev "Revenue" {}
+balance cost rev
+
+# ---------------------------------------------------------------------------
+# 1. THE "SWISS CHEESE" CALENDAR
+# ---------------------------------------------------------------------------
+# This calendar has odd gaps. If your system assumes hourly blocks, it fails.
+resource irregular_shift "Irregular Shift" {
+  workinghours mon, wed, fri 08:15 - 11:45, 13:15 - 16:30
+  workinghours tue, thu      09:00 - 10:30, 14:45 - 16:00
+}
+
+# ---------------------------------------------------------------------------
+# 2. RESOURCES (The Math Hazards)
+# ---------------------------------------------------------------------------
+
+resource r_math "The Math Hazard" {
+  # Efficiency 0.77 forces nasty floating point expansion.
+  # 1 hour effort = 1.2987... hours duration.
+  efficiency 0.77
+  rate 150.0
+  chargeset cost
+
+  # Uses the swiss cheese calendar
+  workinghours mon, wed, fri 08:15 - 11:45, 13:15 - 16:30
+  workinghours tue, thu      09:00 - 10:30, 14:45 - 16:00
+
+  # Leave specifically during a critical Tuesday slot
+  vacation 2025-08-05-09:30 - 2025-08-05-10:00
+}
+
+resource r_limit "The Bottleneck" {
+  efficiency 1.25
+  rate 200.0
+  chargeset cost
+  workinghours mon - fri 08:00 - 18:00
+
+  # LIMIT TEST: Max 3.5 hours per day.
+  # With eff 1.25, they do 4.375h of work in 3.5h calendar time.
+  # Your system must stop scheduling them after 3.5h clock time.
+  limits { dailymax 3.5h }
+}
+
+# ---------------------------------------------------------------------------
+# 3. THE TASKS
+# ---------------------------------------------------------------------------
+
+task airport_math "Complex Calculations" {
+
+  # SCENARIO A: The Floating Point Expansion
+  # ----------------------------------------
+  # Effort: 17.5 hours.
+  # Resource: r_math (Eff 0.77).
+  # Calendar: Irregular.
+  # Leave: 30 mins in the middle of slot.
+  #
+  # Start: Monday Aug 4, 2025.
+  # Logic Check:
+  # Work Required = 17.5 / 0.77 = 22.7272... hours.
+  # Mon Available: (11:45-08:15) + (16:30-13:15) = 3.5 + 3.25 = 6.75h
+  # Tue Available: (10:30-09:00) + (16:00-14:45) = 1.5 + 1.25 = 2.75h
+  # ... MINUS the leave (30m) on Tuesday = 2.25h net.
+  # Your system must navigate these fractions exactly.
+  task t_float "Floating Point Expansion" {
+    priority 100
+    effort 17.5h
+    allocate r_math
+    start 2025-08-04-08:15
+  }
+
+  # SCENARIO B: The Interruption (Preemption)
+  # ----------------------------------------
+  # A high priority task aimed at the EXACT time r_math is working on t_float.
+  # Wed Aug 6 is a work day.
+  # t_float should still be running.
+  # This task MUST pause t_float, run for 45 mins, then t_float resumes.
+  task t_interrupt "Emergency Patch" {
+    priority 1000
+    effort 45min
+    allocate r_math
+    start 2025-08-06-14:00
+  }
+
+  # SCENARIO C: Limits vs Efficiency
+  # ----------------------------------------
+  # Task requires 15 hours of EFFORT.
+  # Resource r_limit has eff 1.25.
+  # Actual work time needed = 15 / 1.25 = 12 hours.
+  # Constraint: dailymax 3.5h.
+  #
+  # Schedule should allow 3.5h/day for 3 days (3.5 * 3 = 10.5h).
+  # Day 4: Remaining 1.5h.
+  # Cost: 12h * 200 rate = 2400 (NOT based on effort 15h, but allocated time).
+  task t_limit "Bottleneck Squeeze" {
+    effort 15h
+    allocate r_limit
+    depends !t_float
+  }
+
+  # SCENARIO D: ALAP + Start-Start Lead
+  # ----------------------------------------
+  # t_finish must end on Friday, Aug 29 at 17:00.
+  # t_pre must start 3 days BEFORE t_finish starts.
+  task t_finish "Hard Deadline" {
+    scheduling alap
+    effort 1d
+    allocate r_limit
+    end 2025-08-29-17:00
+  }
+
+  # NOTE: Negative gapduration is not supported by TJ. Removing this test case.
+  # task t_pre "Lead Time Dependency" {
+  #   scheduling alap
+  #   effort 4h
+  #   allocate r_math
+  #   # Start-Start dependency with a 3 day LEAD (negative gap)
+  #   depends !t_finish { gapduration -3d }
+  # }
+}
+
+# ---------------------------------------------------------------------------
+# 4. REPORT
+# ---------------------------------------------------------------------------
+
+taskreport "math_dump" {
+  formats csv
+  columns id, name, start, end, duration, effort, cost
+  hidetask ~isleaf()
+  loadunit hours
+}
