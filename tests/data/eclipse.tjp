@@ -1,0 +1,41 @@
+/*
+ * Issue #60: The "Eclipse" Protocol
+ * Tests intersection of discontinuous shift patterns
+ * Task requires BOTH resources simultaneously
+ */
+
+project "Eclipse_Protocol" 2025-06-01 +1m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-06-01
+}
+
+shift s_odd "Odd" {
+  workinghours mon, wed, fri 09:00 - 17:00
+}
+
+shift s_mid "Mid" {
+  workinghours mon - sun 12:00 - 14:00
+}
+
+resource r_sun "Sun" {
+  workinghours s_odd
+}
+
+resource r_moon "Moon" {
+  workinghours s_mid
+}
+
+task sys "Alignment" {
+  task sync "Syzygy" {
+    effort 7h
+    allocate r_sun, r_moon
+    start 2025-06-01-00:00
+  }
+}
+
+taskreport eclipse_output "eclipse_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
