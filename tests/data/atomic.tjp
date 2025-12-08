@@ -1,0 +1,31 @@
+/*
+ * Issue #64: The "Indivisible" Protocol - Atomicity
+ * Tests contiguous flag (atomic booking)
+ * Task cannot be split across shift breaks
+ */
+
+project "Atomic_Booking" 2025-11-01 +1w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-11-01
+}
+
+shift broken_day "Broken Day" {
+  workinghours mon - fri 08:00 - 12:00, 13:00 - 18:00
+}
+
+resource kiln "Ceramic Oven" {
+  workinghours broken_day
+}
+
+task production "Firing Phase" {
+  effort 4.5h
+  flags contiguous
+  allocate kiln
+}
+
+taskreport atomic_output "atomic_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
