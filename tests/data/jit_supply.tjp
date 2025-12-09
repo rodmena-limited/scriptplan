@@ -1,0 +1,58 @@
+/*
+ * Issue #54: Just-In-Time Supply Chain
+ * Tests ALAP + Resource Contention + Weekend handling
+ *
+ * Original specification requires:
+ * - Project-level scheduling alap
+ * - End date on parent task
+ * - Complex dependencies with onstart
+ */
+
+project "Just_In_Time" 2025-07-01 +1m {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-07-01
+
+  scheduling alap
+}
+
+shift factory_hours "Factory Hours" {
+  workinghours mon - fri 08:00 - 16:00
+}
+
+resource machine "Press" {
+  workinghours factory_hours
+}
+
+task delivery "Product Launch" {
+  end 2025-07-18-16:00
+
+  task pack "Packaging" {
+    effort 8h
+    allocate machine
+  }
+
+  task assemble_b "Body Assembly" {
+    effort 16h
+    allocate machine
+    depends !!pack { onstart }
+  }
+
+  task assemble_a "Engine Assembly" {
+    effort 16h
+    allocate machine
+  }
+}
+
+task connection_setup "Logic" {
+  task set_deps "Apply" {
+    depends !delivery.assemble_a, !delivery.assemble_b
+    precedes !delivery.pack
+  }
+}
+
+taskreport jit_output "jit_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
