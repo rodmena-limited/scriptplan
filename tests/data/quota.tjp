@@ -1,0 +1,49 @@
+/*
+ * Issue #62: The "Shared Quota" Protocol
+ * Tests hierarchical resource limits (parent dailymax applies to child resources)
+ * 3 tasks using 3 child resources, but parent has dailymax 6h
+ */
+
+project "Shared_Quota" 2025-07-01 +1w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-07-01
+}
+
+shift standard "Standard" {
+  workinghours mon - sun 09:00 - 17:00
+}
+
+resource api_gateway "Global Rate Limiter" {
+  workinghours standard
+  limits { dailymax 6h }
+
+  resource slot_1 "Connection A" { workinghours standard }
+  resource slot_2 "Connection B" { workinghours standard }
+  resource slot_3 "Connection C" { workinghours standard }
+}
+
+task batch "Daily Processing" {
+  task job_a "A" {
+    effort 3h
+    allocate slot_1
+    start 2025-07-01-09:00
+  }
+
+  task job_b "B" {
+    effort 3h
+    allocate slot_2
+    start 2025-07-01-09:00
+  }
+
+  task job_c "C" {
+    effort 3h
+    allocate slot_3
+  }
+}
+
+taskreport quota_output "quota_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
