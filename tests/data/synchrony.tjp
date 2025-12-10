@@ -1,0 +1,70 @@
+project "Zero_Buffer" 2025-10-09 +1w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-10-09
+}
+
+# 1. Shifts
+shift factory_shift {
+  workinghours mon - fri 08:00 - 18:00
+}
+
+# The Train only runs twice a day: 12:00-13:00 and 16:00-17:00
+shift train_schedule {
+  workinghours mon - fri 12:00 - 13:00, 16:00 - 17:00
+}
+
+shift site_shift {
+  workinghours mon - fri 08:00 - 18:00
+}
+
+# 2. Resources
+resource factory "Manufacturing" {
+  workinghours factory_shift
+  # POWER OUTAGE: The factory is down from 10:00 to 11:00
+  booking "Outage" 2025-10-09-10:00 +1h
+}
+
+resource train "Logistics" {
+  workinghours train_schedule
+}
+
+resource site "Construction" {
+  workinghours site_shift
+}
+
+# 3. The Chain
+task supply_chain "JIT Flow" {
+
+  # Step 1: Make (3 Hours Effort)
+  task make "Produce" {
+    effort 3h
+    allocate factory
+  }
+
+  # Step 2: Move (1 Hour Fixed Effort)
+  task move "Transport" {
+    effort 1h
+    allocate train
+
+    # ZERO BUFFER CONSTRAINT:
+    # Must start EXACTLY when 'make' finishes.
+    depends !make { gapduration 0min maxgapduration 0min }
+  }
+
+  # Step 3: Install (3 Hours Effort)
+  task install "Assemble" {
+    effort 3h
+    allocate site
+
+    # ZERO BUFFER CONSTRAINT:
+    # Must start EXACTLY when 'move' finishes.
+    depends !move { gapduration 0min maxgapduration 0min }
+  }
+}
+
+taskreport synchrony_output "synchrony_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
