@@ -1,0 +1,36 @@
+/*
+ * Issue #50: Priority Clash
+ * Tests priority-based scheduling when tasks compete for same resource
+ */
+
+project priority "Priority_War" 2025-08-01 +1w {
+  timezone "UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-08-01
+}
+
+resource consultant "Expert" {
+  workinghours mon - fri 09:00 - 13:00
+}
+
+task conflict "Resource Conflict" {
+  task low_prio "Documentation" {
+    priority 100
+    effort 4h
+    allocate consultant
+    start 2025-08-01-09:00
+  }
+
+  task high_prio "Server Crash Fix" {
+    priority 1000
+    effort 4h
+    allocate consultant
+    start 2025-08-01-09:00
+  }
+}
+
+taskreport priority_output "priority_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
