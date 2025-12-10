@@ -1,0 +1,50 @@
+/*
+ * Simple test project for parser testing
+ */
+project simple "Simple Project" 2024-01-01 +3m {
+  timezone "America/New_York"
+  timeformat "%Y-%m-%d"
+  currency "USD"
+  now 2024-02-01
+
+  scenario plan "Plan" {
+    scenario delayed "Delayed" {}
+  }
+}
+
+copyright "Test Copyright"
+rate 400.0
+flags team
+
+resource dev "Developers" {
+  resource dev1 "Alice" {
+    email "alice@example.com"
+    rate 350.0
+  }
+  resource dev2 "Bob" {
+    email "bob@example.com"
+  }
+}
+
+account cost "Project Cost" {
+  account dev "Development" {}
+}
+
+task project "Project" {
+  task spec "Specification" {
+    effort 10d
+    allocate dev1, dev2
+  }
+
+  task impl "Implementation" {
+    effort 20d
+    depends !spec
+    allocate dev1
+  }
+
+  task test "Testing" {
+    effort 5d
+    depends !impl
+    allocate dev2
+  }
+}
