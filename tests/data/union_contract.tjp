@@ -1,0 +1,53 @@
+/*
+ * Issue #56: The "Union Limit" Split
+ * Tests weeklymax limit enforcement with ISO week boundaries
+ * Task must split across week boundary when hitting 20h weekly cap
+ */
+
+project "Union_Contract" 2025-10-01 +2w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-10-01
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+resource worker "Part Timer" {
+  workinghours mon - fri 09:00 - 17:00
+  limits { weeklymax 20h }
+}
+
+task chain "The Split" {
+
+  task step1 "Wed Work" {
+    effort 8h
+    allocate worker
+    start 2025-10-01-09:00
+  }
+
+  task step2 "Thu Work" {
+    effort 8h
+    allocate worker
+    depends !step1
+  }
+
+  task step3 "The Split Task" {
+    effort 8h
+    allocate worker
+    depends !step2
+  }
+
+  task step4 "Follow Up" {
+    effort 4h
+    allocate worker
+    depends !step3
+  }
+}
+
+taskreport union_output "union_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
