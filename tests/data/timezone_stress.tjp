@@ -1,0 +1,65 @@
+project "Global_Ops" 2025-05-01 +1w {
+  timezone "Etc/UTC" # The project clock is UTC
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-05-01
+}
+
+# 1. Shifts (Defined in Local Time logic, but applied to Timezoned resources)
+# We define a standard "9 to 6" shift.
+shift local_9to6 {
+  workinghours mon - fri 09:00 - 18:00
+}
+
+# 2. Resources with Timezones
+resource team "Global Team" {
+
+  # TOKYO: UTC+9
+  # Local 09:00 is UTC 00:00.
+  # Local 18:00 is UTC 09:00.
+  resource dev_jp "Tokyo Dev" {
+    timezone "Asia/Tokyo"
+    workinghours local_9to6
+  }
+
+  # NEW YORK: UTC-5 (Assuming Standard Time for simplicity in this test date)
+  # Local 09:00 is UTC 14:00.
+  # Local 18:00 is UTC 23:00.
+  resource qa_ny "NY QA" {
+    timezone "America/New_York"
+    workinghours local_9to6
+  }
+}
+
+# 3. The Relay Race
+task follow_sun "Handover" {
+
+  # Step 1: Tokyo Work
+  # Starts: Mon May 1, 09:00 JST (Local) -> May 1, 00:00 UTC.
+  # Effort: 9h (1 Full Day).
+  # Ends: Mon May 1, 18:00 JST -> May 1, 09:00 UTC.
+  task step1_jp "Build" {
+    effort 9h
+    allocate dev_jp
+    start 2025-05-01-00:00 # Explicit UTC start
+  }
+
+  # Step 2: NY Work
+  # Dependency: After Tokyo finishes (May 1, 09:00 UTC).
+  # Challenge:
+  #   At 09:00 UTC, it is 04:00 AM in New York.
+  #   NY cannot start yet. They must wait for their shift (09:00 NY time).
+  #   09:00 NY Time = 14:00 UTC.
+  #   Gap: 5 Hours of "Earth Rotation Delay".
+  # Effort: 4h.
+  task step2_ny "Test" {
+    effort 4h
+    allocate qa_ny
+    depends !step1_jp
+  }
+}
+
+taskreport "timezone_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M" # Output in UTC
+}
