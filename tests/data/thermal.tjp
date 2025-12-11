@@ -1,0 +1,43 @@
+/*
+ * Issue #65: The "Thermal Shock" Protocol
+ * Tests maxgapduration constraint (maximum time between dependent tasks)
+ * Forge must start within 1h of heat ending, or metal cracks
+ */
+
+project "Thermal_Shock" 2025-05-10 +1w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-05-10
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+resource heater "Furnace" {
+  workinghours standard
+}
+
+resource press "Hydraulic Press" {
+  workinghours standard
+  booking "Maintenance" 2025-05-12-09:00 +6h
+}
+
+task process "Forging Line" {
+  task heat "Heat Ingot" {
+    effort 2h
+    allocate heater
+  }
+
+  task forge "Shape Metal" {
+    effort 2h
+    allocate press
+    depends !heat { gapduration 0min maxgapduration 60min }
+  }
+}
+
+taskreport thermal_output "thermal_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
