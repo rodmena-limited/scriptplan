@@ -1,0 +1,63 @@
+/*
+ * Issue #55: The Time Traveler (ALAP + Timezones)
+ * Tests global backward pass with timezone-aware resources
+ */
+
+project "Time_Traveler" 2025-06-01 +2w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-06-01
+
+  # Global ALAP: We plan from the deadline backwards
+  scheduling alap
+}
+
+shift standard "Standard" {
+  workinghours mon - fri 09:00 - 18:00
+}
+
+resource team "Global" {
+
+  # TOKYO: UTC+9
+  resource dev_tokyo "Tokyo Dev" {
+    timezone "Asia/Tokyo"
+    workinghours mon - fri 09:00 - 18:00
+  }
+
+  # LONDON: UTC+1 (British Summer Time in June)
+  resource des_london "London Designer" {
+    timezone "Europe/London"
+    workinghours mon - fri 09:00 - 18:00
+  }
+}
+
+task launch "Global Launch" {
+
+  # HARD CONSTRAINT: Must finish Friday June 13th, 18:00 JST
+  # Note: 18:00 JST = 09:00 UTC
+  end 2025-06-13-09:00
+
+  # Task 2: Implementation (Tokyo)
+  # Effort: 9h (1 Day)
+  # Must finish at the deadline.
+  task impl "Implementation" {
+    effort 9h
+    allocate dev_tokyo
+  }
+
+  # Task 1: Design (London)
+  # Effort: 9h (1 Day)
+  # Implementation depends on Design.
+  # So Design must finish before Tokyo starts.
+  task design "Blueprint" {
+    effort 9h
+    allocate des_london
+    depends !!impl { onstart }
+  }
+}
+
+taskreport time_traveler_output "time_traveler_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+}
