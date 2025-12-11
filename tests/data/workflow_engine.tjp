@@ -1,0 +1,66 @@
+project "Cloud_Migration_Workflow" 2025-11-03 +2w {
+  timezone "Etc/UTC"
+  timeformat "%Y-%m-%d %H:%M"
+  now 2025-11-03
+}
+
+# 1. Shifts
+# Standard: Mon-Fri
+shift standard {
+  workinghours mon - fri 09:00 - 17:00
+}
+
+# Ops Shift: Tue-Sat (Sunday/Monday off)
+shift ops_week {
+  workinghours tue - sat 09:00 - 17:00
+}
+
+# 2. Resources
+resource devops "DevOps Team" {
+
+  # The Intern: 50% efficiency.
+  # 1 hour of effort takes 2 hours of clock time.
+  resource intern "Junior Dev" {
+    workinghours standard
+    efficiency 0.5
+  }
+
+  # The Admin: Standard efficiency, but works Tue-Sat.
+  resource admin "SysAdmin" {
+    workinghours ops_week
+    efficiency 1.0
+  }
+}
+
+# 3. Workflow
+task migration "Migration Pipeline" {
+
+  # Step 1: Code Prep
+  # Effort: 16h
+  # Resource: Intern (0.5 eff) -> Requires 32h of work time.
+  # Calendar: Mon-Fri.
+  # Calculation: Mon(8) + Tue(8) + Wed(8) + Thu(8).
+  task prep "Code Refactor" {
+    effort 16h
+    allocate intern
+    start 2025-11-03-09:00
+  }
+
+  # Step 2: Deployment
+  # Effort: 16h
+  # Resource: Admin (1.0 eff) -> Requires 16h of work time.
+  # Dependency: Must wait for Prep (ends Thu 17:00).
+  # Calendar: Tue-Sat.
+  task deploy "Server Deployment" {
+    effort 16h
+    allocate admin
+    depends !prep
+  }
+}
+
+taskreport "workflow_output" {
+  formats csv
+  columns id, start, end
+  timeformat "%Y-%m-%d-%H:%M"
+  leaftasksonly true
+}
