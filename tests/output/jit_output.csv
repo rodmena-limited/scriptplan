@@ -1,0 +1,7 @@
+Id,Start,End
+delivery,2025-07-14-08:00,2025-07-18-16:00
+delivery.pack,2025-07-18-08:00,2025-07-18-16:00
+delivery.assemble_b,2025-07-16-08:00,2025-07-17-16:00
+delivery.assemble_a,2025-07-14-08:00,2025-07-15-16:00
+connection_setup,2025-07-31-16:00,2025-07-31-16:00
+connection_setup.set_deps,2025-07-31-16:00,2025-07-31-16:00
