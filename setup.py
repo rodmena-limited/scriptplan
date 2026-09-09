@@ -1,66 +1,17 @@
+"""Setup shim.
+
+ScriptPlan is pure Python. The build configuration lives in pyproject.toml;
+this file exists only so that tooling which still shells out to setup.py has
+something to call.
+
+There were once three Cython extensions here. They accelerated the flat
+per-slot scoreboard, and they made the published wheel compute different
+schedules from the source it was built from: under `cdivision=True`,
+`(0 - 1) % 7` is -1 rather than 6, so a resource with a Sunday night shift
+lost its Monday morning in every wheel and kept it in every checkout. One
+implementation that is right is worth more than two that disagree.
 """
-Setup script for building scriptplan with optional Cython extensions.
 
-Cython extensions provide ~25% performance improvement but are optional.
-Pure Python fallbacks are used when extensions are not available.
-"""
+from setuptools import setup
 
-import os
-from setuptools import setup, Extension
-
-# Allow disabling Cython via environment variable
-USE_CYTHON = os.environ.get("SCRIPTPLAN_NO_CYTHON", "0") != "1"
-
-try:
-    if USE_CYTHON:
-        from Cython.Build import cythonize
-        HAS_CYTHON = True
-    else:
-        HAS_CYTHON = False
-except ImportError:
-    HAS_CYTHON = False
-
-
-def get_extensions():
-    """Get Cython extensions if Cython is available."""
-    if not HAS_CYTHON:
-        return []
-
-    extensions = [
-        Extension(
-            "scriptplan._cython.scoreboard_cy",
-            ["scriptplan/_cython/scoreboard_cy.pyx"],
-            language="c",
-        ),
-        Extension(
-            "scriptplan._cython.time_utils_cy",
-            ["scriptplan/_cython/time_utils_cy.pyx"],
-            language="c",
-        ),
-        Extension(
-            "scriptplan._cython.working_hours_cy",
-            ["scriptplan/_cython/working_hours_cy.pyx"],
-            language="c",
-        ),
-    ]
-
-    try:
-        return cythonize(
-            extensions,
-            compiler_directives={
-                "language_level": "3",
-                "boundscheck": False,
-                "wraparound": False,
-                "cdivision": True,
-                "initializedcheck": False,
-            },
-            annotate=False,
-        )
-    except Exception:
-        # Cython compilation failed, fall back to pure Python
-        return []
-
-
-setup(
-    ext_modules=get_extensions(),
-)
+setup()

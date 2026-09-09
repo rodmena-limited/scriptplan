@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "cython>=3.0.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -50,7 +50,6 @@ dev = [
     "twine",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
-    "cython>=3.0.0",
 ]
 
 [project.scripts]
@@ -71,7 +70,7 @@ where = ["."]
 include = ["scriptplan*"]
 
 [tool.setuptools.package-data]
-scriptplan = ["py.typed", "parser/*.lark", "_cython/*.pyx"]
+scriptplan = ["py.typed", "parser/*.lark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -107,6 +107,22 @@ class ResourceScenario(ScenarioData):
         This method must be called at the beginning of each scheduling run.
         """
         self._effort = 0.0
+        self.slotSecondsUsed = {}
+        self.slotTaskUsage = {}
+        self.firstBookedSlot = None
+        self.firstBookedSlots = {}
+        self.lastBookedSlot = None
+        self.lastBookedSlots = {}
+
+        # Daily and weekly limits count periods in this resource's own
+        # calendar, so a resource eight hours west reaches the end of its day
+        # eight hours later than one in UTC.
+        limits = self.property.get("limits", self.scenarioIdx)
+        if limits is not None and hasattr(limits, "setTimeZone"):
+            limits.setTimeZone(self.property.get("timezone", self.scenarioIdx))
+        if limits is not None and hasattr(limits, "reset"):
+            limits.reset()
+
         if self.property.leaf():
             self.initScoreboard()
 
@@ -309,20 +325,26 @@ class ResourceScenario(ScenarioData):
         elif self.scoreboard[sb_idx] is not None:
             return False
 
-        limits = self.property.get("limits", self.scenarioIdx)
-        if limits and hasattr(limits, "ok") and not limits.ok(sb_idx):
-            return False
+        # A limit narrows how much of this slot may be used, down to nothing.
+        return self.limitAllowance(sb_idx) > 0
 
-        # Check parent resource limits (hierarchical limit propagation)
-        # When a child resource is booked, parent limits must also be checked
-        parent = self.property.parent
-        while parent:
-            parent_limits = parent.get("limits", self.scenarioIdx)
-            if parent_limits and hasattr(parent_limits, "ok") and not parent_limits.ok(sb_idx):
-                return False
-            parent = parent.parent
+    def limitAllowance(self, sb_idx: int) -> float:
+        """Seconds of this slot the limits still permit, own and inherited.
 
-        return True
+        The result is capped by what is left of the slot, so it can be handed
+        straight to a booking. A limit smaller than one slot yields part of a
+        slot rather than zero.
+        """
+        allowance = self.getAvailableSecondsInSlot(sb_idx)
+        holder = self.property
+        while holder is not None:
+            limits = holder.get("limits", self.scenarioIdx)
+            if limits is not None and hasattr(limits, "remaining"):
+                remaining = limits.remaining(sb_idx, self.property.id)
+                if remaining is not None:
+                    allowance = min(allowance, remaining)
+            holder = holder.parent
+        return max(0.0, allowance)
 
     def booked(self, sb_idx: int) -> bool:
         """
@@ -412,9 +434,10 @@ class ResourceScenario(ScenarioData):
         if self.scoreboard is None:
             self.initScoreboard()
 
-        # Calculate effort based on available time in slot (for partial slots)
-        self.project.attributes.get("scheduleGranularity", 3600)
-        available_seconds = self.getAvailableSecondsInSlot(sb_idx)
+        # Only as much of the slot as both the slot and the limits allow.
+        available_seconds = self.limitAllowance(sb_idx) if not force else self.getAvailableSecondsInSlot(sb_idx)
+        if available_seconds <= 0:
+            return 0.0
         efficiency = self.property.get("efficiency", self.scenarioIdx) or 1.0
 
         # Effort = (available_seconds / 3600) * efficiency
@@ -436,24 +459,19 @@ class ResourceScenario(ScenarioData):
         if self.scoreboard is not None:
             self.scoreboard[sb_idx] = task
 
-        # Update resource limits
-        limits = self.property.get("limits", self.scenarioIdx)
-        if limits and hasattr(limits, "inc"):
-            limits.inc(sb_idx)
-
-        # Propagate to parent resource limits (hierarchical limit propagation)
-        # When a child resource is booked, parent limits must also be incremented
-        parent = self.property.parent
-        while parent:
-            parent_limits = parent.get("limits", self.scenarioIdx)
-            if parent_limits and hasattr(parent_limits, "inc"):
-                parent_limits.inc(sb_idx)
-            parent = parent.parent
+        # Advance every limit counter by the time actually booked, not by a
+        # whole slot: a partial booking must consume a partial allowance.
+        holder = self.property
+        while holder is not None:
+            limits = holder.get("limits", self.scenarioIdx)
+            if limits is not None and hasattr(limits, "inc"):
+                limits.inc(sb_idx, self.property.id, seconds=available_seconds)
+            holder = holder.parent
 
         # Update task limits (including parent task limits)
         task_scenario = task.data[self.scenarioIdx] if hasattr(task, "data") and task.data else None
         if task_scenario and hasattr(task_scenario, "incLimits"):
-            task_scenario.incLimits(sb_idx, self.property)
+            task_scenario.incLimits(sb_idx, self.property, seconds=available_seconds)
 
         # Track booked slot ranges
         if self.firstBookedSlot is None or self.firstBookedSlot > sb_idx:

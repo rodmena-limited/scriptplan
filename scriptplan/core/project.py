@@ -3,16 +3,6 @@ from typing import Any, Optional, Union
 
 from scriptplan.core.journal import Journal
 
-# Try to import Cython-optimized functions
-try:
-    from scriptplan._cython.time_utils_cy import (
-        project_date_to_idx,
-        project_idx_to_date,
-    )
-
-    _USE_CYTHON = True
-except ImportError:
-    _USE_CYTHON = False
 from scriptplan.core.property import (
     AlertLevelDefinitions,
     AttributeBase,
@@ -797,9 +787,6 @@ class Project(MessageHandler):
         if not self.attributes["start"]:
             return 0
 
-        if _USE_CYTHON:
-            return int(project_date_to_idx(date, self.attributes["start"], self.attributes["scheduleGranularity"]))
-
         try:
             diff_seconds: float = (date - self.attributes["start"]).total_seconds()
         except AttributeError:
@@ -811,9 +798,6 @@ class Project(MessageHandler):
     def idxToDate(self, idx: int) -> Optional[Any]:
         if not self.attributes["start"]:
             return None
-
-        if _USE_CYTHON:
-            return project_idx_to_date(idx, self.attributes["start"], self.attributes["scheduleGranularity"])
 
         # Assuming idx is integer steps of scheduleGranularity from start
         seconds: int = idx * self.attributes["scheduleGranularity"]

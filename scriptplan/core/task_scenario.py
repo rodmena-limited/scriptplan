@@ -350,9 +350,10 @@ class TaskScenario(ScenarioData):
             # Find when successor can start
             successor_earliest = self._getSuccessorEarliestStart(successor)
 
-            # Parse maxgapduration
-            self._parse_duration(maxgap_str)
-            gap_hours = self._parse_duration(gap_str) if gap_str else 0
+            # Both maxgapduration and gapduration are calendar time.
+            maxgap_hours = self._calendarSeconds(maxgap_str) / 3600.0
+            gap_hours = self._calendarSeconds(gap_str) / 3600.0 if gap_str else 0.0
+            self._lastMaxGapHours = maxgap_hours
 
             # This task must end no more than maxgap_hours before successor can start
             # Required end time: successor_earliest - gap_hours (to satisfy gapduration)
@@ -480,23 +481,15 @@ class TaskScenario(ScenarioData):
                         if dep_time:
                             # Add gap if specified
                             if gapduration:
-                                # gapduration is calendar time (e.g., "4h" = 4 hours)
-                                gap_hours = self._parse_duration(gapduration)
                                 from datetime import timedelta
 
-                                dep_time = dep_time + timedelta(hours=gap_hours)
+                                dep_time = dep_time + timedelta(
+                                    seconds=self._calendarSeconds(gapduration)
+                                )
                             elif gaplength:
-                                # gaplength is working time - need to find next working slot after gap
-                                gap_hours = self._parse_duration(gaplength)
-                                gap_slots = int(gap_hours)  # Each slot is 1 hour
-                                dep_time_idx = self.project.dateToIdx(dep_time)
-                                # Skip gap_slots of working time
-                                working_slots = 0
-                                while working_slots < gap_slots:
-                                    if self.isWorkingTime(dep_time_idx):
-                                        working_slots += 1
-                                    dep_time_idx += 1
-                                dep_time = self.project.idxToDate(dep_time_idx)
+                                dep_time = self._advanceWorkingTime(
+                                    dep_time, self._workingSeconds(gaplength)
+                                )
                             if dep_time > earliest_start:
                                 earliest_start = dep_time
 
@@ -551,10 +544,11 @@ class TaskScenario(ScenarioData):
                             if pred_start:
                                 # Apply gapduration - A must end (gapduration) before B starts
                                 if gapduration:
-                                    gap_hours = self._parse_duration(gapduration)
                                     from datetime import timedelta
 
-                                    pred_start = pred_start - timedelta(hours=gap_hours)
+                                    pred_start = pred_start - timedelta(
+                                        seconds=self._calendarSeconds(gapduration)
+                                    )
                                 if pred_start < latest_end:
                                     latest_end = pred_start
 
@@ -732,10 +726,24 @@ class TaskScenario(ScenarioData):
                 self.propagateDate(end_date, forward)
                 return False
         elif duration > 0:
-            self.bookResources()  # Even if just duration, might use resources?
-            self.doneDuration += 1
+            # duration is calendar time: every slot counts towards it, whether
+            # or not anyone is working in it.
+            self.bookResources()
+            self.doneDuration += self._slotSeconds()
             if self.doneDuration >= duration:
                 slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+                date = self.project.idxToDate(slot_idx + (1 if forward else 0))
+                assert date is not None
+                self.propagateDate(date, forward)
+                return False
+        elif length > 0:
+            # length is working time: only slots inside the working calendar
+            # count, so a length task stretches across weekends and holidays.
+            self.bookResources()
+            slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+            if self.isWorkingTime(slot_idx):
+                self.doneLength += self._slotSeconds()
+            if self.doneLength >= length:
                 date = self.project.idxToDate(slot_idx + (1 if forward else 0))
                 assert date is not None
                 self.propagateDate(date, forward)
@@ -753,6 +761,10 @@ class TaskScenario(ScenarioData):
                 return False
 
         return True
+
+    def _slotSeconds(self) -> int:
+        """Length of one scheduling slot, in seconds."""
+        return int(self.project.attributes.get("scheduleGranularity", 3600))
 
     def _calculatePreciseEndTimeAndRelease(
         self, required_effort: float, effort_before_slot: float, forward: bool
@@ -873,22 +885,57 @@ class TaskScenario(ScenarioData):
         end_time, _ = self._calculatePreciseEndTimeAndRelease(required_effort, effort_before_slot, forward)
         return end_time
 
-    def _parse_duration(self, duration_str: Any) -> float:
-        """
-        Parse a duration string like '4h', '2d', '1w', '30min' into hours.
-        """
+    def _calendarSeconds(self, duration_str: Any) -> float:
+        """Wall-clock seconds. `gapduration 2d` is 48 hours, weekend or not."""
         if not duration_str:
-            return 0
-        import re
+            return 0.0
+        from scriptplan.core.units import parse_calendar_duration
 
-        # Match formats: 29min, 4h, 2d, 1w, 3m (months), 1y
-        match = re.match(r"(\d+(?:\.\d+)?)\s*(min|h|d|w|m|y)?", str(duration_str).lower())
-        if not match:
-            return 0
-        num = float(match.group(1))
-        unit = match.group(2) or "h"
-        multipliers = {"min": 1 / 60, "h": 1, "d": 8, "w": 40, "m": 160, "y": 1920}
-        return num * multipliers.get(unit, 1)
+        return parse_calendar_duration(duration_str)
+
+    def _workingSeconds(self, duration_str: Any) -> float:
+        """Working seconds. `gaplength 1d` is one working day."""
+        if not duration_str:
+            return 0.0
+        from scriptplan.core.units import project_seconds, Duration
+
+        return project_seconds(self.project, Duration(duration_str, Duration.WORKING))
+
+    def _parse_duration(self, duration_str: Any) -> float:
+        """Working time in hours (kept for callers that still think in hours)."""
+        return self._workingSeconds(duration_str) / 3600.0
+
+    def _advanceWorkingTime(self, start: datetime, seconds: float) -> datetime:
+        """The moment ``seconds`` of *working* time after ``start``.
+
+        Walks the calendar rather than the clock, so a gap that spans a weekend
+        or a night is measured only in the hours somebody could have worked. A
+        gap shorter than one slot lands inside a slot instead of being rounded
+        away, which is how `gaplength 30min` used to become no gap at all.
+        """
+        from datetime import timedelta
+
+        if seconds <= 0:
+            return start
+
+        slot_seconds = float(self.project.attributes.get("scheduleGranularity", 3600))
+        idx = self.project.dateToIdx(start)
+        slot_start = self.project.idxToDate(idx)
+        offset = max(0.0, (start - slot_start).total_seconds()) if slot_start else 0.0
+        upper = self.project.dateToIdx(self.project["end"])
+
+        remaining = seconds
+        while idx <= upper:
+            if self.isWorkingTime(idx):
+                available = slot_seconds - offset
+                if remaining <= available:
+                    moment = self.project.idxToDate(idx)
+                    return moment + timedelta(seconds=offset + remaining)
+                remaining -= available
+            idx += 1
+            offset = 0.0
+        end_of_project: datetime = self.project["end"]
+        return end_of_project
 
     def isWorkingTime(self, slotIdx: int) -> bool:
         """
@@ -1366,16 +1413,18 @@ class TaskScenario(ScenarioData):
                 return False
         return True
 
-    def incLimits(self, sbIdx: int, resource: Optional[Any] = None) -> None:
+    def incLimits(self, sbIdx: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
         """
         Increment all task limit counters (including parent limits).
 
         Args:
             sbIdx: Scoreboard index
             resource: Resource being booked (for resource-specific limits)
+            seconds: Time actually booked, so a partial slot consumes a
+                partial allowance rather than a whole one.
         """
         for limits in self.getAllLimits():
-            limits.inc(sbIdx, resource=resource.id if resource else None)
+            limits.inc(sbIdx, resource=resource.id if resource else None, seconds=seconds)
 
     def bookResource(self, resource: Any) -> float:
         """

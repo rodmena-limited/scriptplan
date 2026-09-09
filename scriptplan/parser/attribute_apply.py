@@ -41,12 +41,47 @@ def _definition_of(obj: Any, key: str) -> Optional[Any]:
     return getattr(holder, "attributeDefinitions", {}).get(key)
 
 
+# How a resolved duration is stored, per attribute. `effort` stays in hours
+# because that is what the scheduler and the reports already read; `duration`
+# and `length` are stored in seconds so they do not depend on the slot size.
+_DURATION_AS_HOURS = frozenset({"effort", "effortdone", "effortleft"})
+_DURATION_AS_SECONDS = frozenset({"duration", "length"})
+
+
+# A duration is stored to the minute. That is the finest unit the grammar can
+# express and the finest resolution the scheduler will run at, and rounding
+# there keeps a declared constant behaving as written: `yearlyworkingdays
+# 260.714` is a rounded decimal, and carrying its error through means a week of
+# effort is 39.99996 hours and a task ends a second before the hour.
+_STORAGE_RESOLUTION_SECONDS = 60
+
+
+def _to_stored_seconds(project: Any, value: Any) -> float:
+    from scriptplan.core.units import project_seconds
+
+    seconds = project_seconds(project, value)
+    return round(seconds / _STORAGE_RESOLUTION_SECONDS) * _STORAGE_RESOLUTION_SECONDS
+
+
+def resolve_duration(obj: Any, key: str, value: Any) -> Any:
+    """Convert a parsed Duration into the unit this attribute is stored in."""
+    from scriptplan.core.units import Duration
+
+    if not isinstance(value, Duration):
+        return value
+    seconds = _to_stored_seconds(obj.project, value)
+    if key in _DURATION_AS_HOURS:
+        return seconds / 3600.0
+    return int(seconds)
+
+
 def _apply_generic(obj: Any, key: str, value: Any, prop_type: str) -> None:
     """Set an attribute that needs no special handling.
 
     Scenario-specific attributes are written to every scenario, which is what a
     bare (non ``scenario:``-prefixed) declaration in the file means.
     """
+    value = resolve_duration(obj, key, value)
     definition = _definition_of(obj, key)
     if definition is None:
         name = getattr(obj, "fullId", None) or getattr(obj, "id", "?")
@@ -92,7 +127,7 @@ def _handle_scenario_attr(builder: Any, obj: Any, value: Any, _pt: str) -> None:
         )
     if attr_data and isinstance(attr_data, tuple):
         attr_key, attr_value = attr_data
-        obj[(attr_key, scenario_idx)] = attr_value
+        obj[(attr_key, scenario_idx)] = resolve_duration(obj, attr_key, attr_value)
 
 
 def _handle_journalentry(builder: Any, obj: Any, value: Any, _pt: str) -> None:

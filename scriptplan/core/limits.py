@@ -1,70 +1,87 @@
-"""
-Limits implementation for resource allocation constraints.
+"""Limits: how much of a period a resource or task may consume.
 
-Implements the limit mechanism that can restrict resource allocation within
-certain time periods (daily, weekly, etc.). Supports both upper and lower limits.
+A limit is an amount of working time per period -- per calendar day, per ISO
+week, per calendar month, or over the whole project. Two details matter and
+both used to be wrong:
+
+* **Limits count seconds, not slots.** Counting whole slots cannot express a
+  cap smaller than the slot size, and rounding one down turns a 30-minute cap
+  into no cap at all or into a total block, depending on which way it rounds.
+* **A period is a period in the resource's own calendar.** A resource in Los
+  Angeles reaches the end of its day eight hours after a resource in London
+  does. Bucketing by UTC date lets a "4 hours a day" resource work five hours
+  in one of its own days.
+
+A limit admits a booking only when the whole booking fits, so a cap is never
+exceeded by part of a slot.
 """
+
+from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
     from scriptplan.core.resource import Resource
 
+__all__ = ["Limit", "Limits", "PERIOD_KINDS"]
+
+# name -> (period kind, is an upper limit)
+PERIOD_KINDS: dict[str, tuple[str, bool]] = {
+    "dailymax": ("day", True),
+    "dailymin": ("day", False),
+    "weeklymax": ("week", True),
+    "weeklymin": ("week", False),
+    "monthlymax": ("month", True),
+    "monthlymin": ("month", False),
+    "maximum": ("interval", True),
+    "minimum": ("interval", False),
+}
+
+
+def _zone(name: Optional[str]) -> Any:
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(name)
+    except Exception:  # pragma: no cover - unknown zone falls back to UTC
+        return None
+
 
 class Limit:
-    """
-    A single limit constraint that tracks usage within time periods.
-
-    Limits can be:
-    - dailymax/dailymin: Limit per day
-    - weeklymax/weeklymin: Limit per week
-    - monthlymax/monthlymin: Limit per month
-    - maximum/minimum: Limit for the entire interval
-
-    Limits can optionally be restricted to specific resources.
-    """
+    """One cap: an amount of time per period, optionally for one resource."""
 
     def __init__(
         self,
         name: str,
         interval_start: datetime,
         interval_end: datetime,
-        period: Union[int, float],
-        value: int,
+        period: Union[int, float, str],
+        value: Union[int, float],
         upper: bool,
         resource: Optional["Resource"] = None,
         slot_duration: int = 3600,
+        timezone: Optional[str] = None,
     ) -> None:
-        """
-        Create a new Limit.
-
-        Args:
-            name: Limit type name ('dailymax', 'weeklymax', etc.)
-            interval_start: Start of the interval (datetime)
-            interval_end: End of the interval (datetime)
-            period: Duration of each period in seconds (86400 for daily)
-            value: The limit value in slots
-            upper: True for upper limit, False for lower limit
-            resource: Optional resource this limit applies to
-            slot_duration: Duration of each scheduling slot in seconds (default 1 hour)
-        """
         self.name = name
         self.interval_start = interval_start
         self.interval_end = interval_end
-        self.period = period
-        self.value = value
+        # `period` is the period kind ("day"/"week"/"month"/"interval"). Numbers
+        # are accepted for callers that still pass seconds.
+        self.period = period if isinstance(period, str) else _period_kind_for_seconds(period)
+        self.value = value  # seconds
         self.upper = upper
         self.resource = resource
         self.slot_duration = slot_duration
+        self.timezone = timezone
+        self._counters: dict[Any, float] = {}
 
-        self._dirty = True
-        self._scoreboard: list[int] = []
-        self.reset()
+    # -- construction ------------------------------------------------------
 
     def copy(self) -> "Limit":
-        """Return a deep copy of this limit."""
         return Limit(
             self.name,
             self.interval_start,
@@ -74,195 +91,157 @@ class Limit:
             self.upper,
             self.resource,
             self.slot_duration,
+            self.timezone,
         )
 
     def reset(self, index: Optional[int] = None) -> None:
-        """
-        Reset counters for all periods or a specific period.
-
-        Args:
-            index: If provided, reset only the counter for this scoreboard index
-        """
-        if not self._dirty:
-            return
-
+        """Clear the counters, or just the one covering ``index``."""
         if index is None:
-            # Calculate number of periods in the interval
-            total_seconds = (self.interval_end - self.interval_start).total_seconds()
-            num_periods = max(1, int(total_seconds / self.period) + 1)
-            self._scoreboard = [0] * num_periods
+            self._counters.clear()
         else:
-            # Reset only the specific period
-            if self._contains(index):
-                sb_idx = self._idx_to_sb_idx(index)
-                if 0 <= sb_idx < len(self._scoreboard):
-                    self._scoreboard[sb_idx] = 0
+            self._counters.pop(self._period_key(index), None)
 
-        self._dirty = False
+    # -- period bucketing --------------------------------------------------
+
+    def _slot_datetime(self, index: int) -> datetime:
+        return self.interval_start + timedelta(seconds=index * self.slot_duration)
+
+    def _period_key(self, index: int) -> Any:
+        moment = self._slot_datetime(index)
+        zone = _zone(self.timezone)
+        if zone is not None:
+            from datetime import timezone as _utc
+
+            aware = moment.replace(tzinfo=_utc.utc) if moment.tzinfo is None else moment
+            moment = aware.astimezone(zone)
+        if self.period == "day":
+            return moment.date()
+        if self.period == "week":
+            year, week, _ = moment.isocalendar()
+            return (year, week)
+        if self.period == "month":
+            return (moment.year, moment.month)
+        return "interval"
 
     def _contains(self, index: int) -> bool:
-        """Check if a scoreboard index falls within this limit's interval."""
-        # Convert index to datetime for comparison
-        # index is the project scoreboard index
-        return True  # We'll check bounds in _idx_to_sb_idx
+        """Whether ``index`` falls inside the limit's interval."""
+        moment = self._slot_datetime(index)
+        return self.interval_start <= moment < self.interval_end
 
-    def _idx_to_sb_idx(self, index: int) -> int:
-        """
-        Convert project scoreboard index to limit scoreboard index.
+    # -- counting ----------------------------------------------------------
 
-        The limit scoreboard has larger slots (e.g., one per day/week) while
-        the project scoreboard has hourly slots.
-
-        For weekly limits, uses ISO week boundaries (Monday-Sunday) rather than
-        arbitrary 7-day chunks from project start. This ensures weeklymax resets
-        properly on Monday regardless of when the project started.
-
-        For daily limits, uses calendar day boundaries.
-        """
-        # Calculate the actual datetime for this slot
-        slot_datetime = self.interval_start + timedelta(seconds=index * self.slot_duration)
-
-        if self.period == 60 * 60 * 24 * 7:  # Weekly
-            # Use ISO week number for proper Monday-Sunday week boundaries
-            # isocalendar() returns (year, week_number, weekday)
-            iso_year, iso_week, _ = slot_datetime.isocalendar()
-            start_year, start_week, _ = self.interval_start.isocalendar()
-
-            # Calculate week offset from project start
-            # Account for year boundaries
-            if iso_year == start_year:
-                return iso_week - start_week
-            else:
-                # Handle year boundary - weeks from start year + weeks in new year
-                # ISO week 1 of new year follows week 52 or 53 of previous year
-                weeks_in_start_year = self.interval_start.replace(month=12, day=28).isocalendar()[1]
-                return (weeks_in_start_year - start_week + 1) + (iso_week - 1) + 52 * (iso_year - start_year - 1)
-
-        elif self.period == 60 * 60 * 24:  # Daily
-            # Use calendar day boundaries
-            start_date = self.interval_start.date()
-            slot_date = slot_datetime.date()
-            return (slot_date - start_date).days
-
-        else:
-            # For other periods, use simple division from project start
-            slot_seconds = index * self.slot_duration
-            return int(slot_seconds / self.period)
-
-    def inc(self, index: int, resource: Optional["Resource"] = None) -> None:
-        """
-        Increment the counter if index matches the interval and resource.
-
-        Args:
-            index: Project scoreboard index
-            resource: Resource being booked (for resource-specific limits)
-        """
-        # Check resource match:
-        # If self.resource is None, always increment
-        # If self.resource is set, only increment if it matches
-        if self.resource is not None and self.resource != resource:
-            return
-
-        sb_idx = self._idx_to_sb_idx(index)
-        if 0 <= sb_idx < len(self._scoreboard):
-            self._dirty = True
-            self._scoreboard[sb_idx] += 1
-
-    def dec(self, index: int, resource: Optional["Resource"] = None) -> None:
-        """
-        Decrement the counter if index matches the interval and resource.
-
-        Args:
-            index: Project scoreboard index
-            resource: Resource being unbooked (for resource-specific limits)
-        """
-        if self.resource is not None and self.resource != resource:
-            return
-
-        sb_idx = self._idx_to_sb_idx(index)
-        if 0 <= sb_idx < len(self._scoreboard):
-            self._dirty = True
-            self._scoreboard[sb_idx] -= 1
-
-    def ok(self, index: Optional[int], upper: bool, resource: Optional["Resource"] = None) -> bool:
-        """
-        Check if the counter is within the limit.
-
-        Args:
-            index: Project scoreboard index (or None to check all)
-            upper: True to check upper limits, False for lower limits
-            resource: Resource to check (for resource-specific limits)
-
-        Returns:
-            True if within limit, False if exceeded
-        """
-        # If this limit's type (upper/lower) doesn't match what we're checking, return True
-        if self.upper != upper:
+    def _applies_to(self, resource: Optional[Any]) -> bool:
+        if self.resource is None:
             return True
+        return self.resource == resource
 
-        # For resource-specific limits:
-        # - If self.resource is set and doesn't match the provided resource, return True
-        # - If self.resource is None, check regardless of resource (general limit)
-        if self.resource is not None and self.resource != resource:
+    def inc(self, index: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
+        if not self._applies_to(resource) or not self._contains(index):
+            return
+        amount = self.slot_duration if seconds is None else seconds
+        key = self._period_key(index)
+        self._counters[key] = self._counters.get(key, 0.0) + amount
+
+    def dec(self, index: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
+        if not self._applies_to(resource) or not self._contains(index):
+            return
+        amount = self.slot_duration if seconds is None else seconds
+        key = self._period_key(index)
+        self._counters[key] = self._counters.get(key, 0.0) - amount
+
+    def used(self, index: int) -> float:
+        return self._counters.get(self._period_key(index), 0.0)
+
+    def ok(
+        self,
+        index: Optional[int],
+        upper: bool,
+        resource: Optional[Any] = None,
+        seconds: Optional[float] = None,
+    ) -> bool:
+        """Whether a booking of ``seconds`` at ``index`` is within this limit.
+
+        An upper limit admits the booking only if the whole of it fits, so the
+        cap is never overshot by part of a slot.
+        """
+        if self.upper != upper or not self._applies_to(resource):
             return True
 
         if index is None:
-            # Check all periods
-            for count in self._scoreboard:
-                if self.upper:
-                    if count >= self.value:
-                        return False
-                else:
-                    if count < self.value:
-                        return False
-            return True
-        else:
-            sb_idx = self._idx_to_sb_idx(index)
-            if sb_idx < 0 or sb_idx >= len(self._scoreboard):
-                return True  # Outside interval, OK
-
-            count = self._scoreboard[sb_idx]
             if self.upper:
-                return count < self.value
-            else:
-                return count >= self.value
+                return all(used < self.value for used in self._counters.values())
+            return all(used >= self.value for used in self._counters.values())
+
+        if not self._contains(index):
+            return True
+
+        used = self.used(index)
+        if self.upper:
+            wanted = self.slot_duration if seconds is None else seconds
+            return used + wanted <= self.value
+        return used >= self.value
+
+    def remaining(self, index: int, resource: Optional[Any] = None) -> Optional[float]:
+        """Seconds still allowed in the period covering ``index``.
+
+        None means this limit does not constrain that booking. A cap smaller
+        than one slot returns a part of a slot rather than zero, so a resource
+        held to 30 minutes a day works 30 minutes a day instead of not at all.
+        """
+        if not self.upper or not self._applies_to(resource) or not self._contains(index):
+            return None
+        return max(0.0, self.value - self.used(index))
+
+    def shortfall(self) -> list[tuple[Any, float]]:
+        """Periods that did not reach a lower limit, as (period, seconds)."""
+        if self.upper:
+            return []
+        return [(key, self.value - used) for key, used in sorted(self._counters.items()) if used < self.value]
+
+
+def _period_kind_for_seconds(period: Union[int, float]) -> str:
+    """Map a legacy period expressed in seconds onto a period kind."""
+    if period >= 60 * 60 * 24 * 28:
+        return "month"
+    if period >= 60 * 60 * 24 * 7:
+        return "week"
+    if period >= 60 * 60 * 24:
+        return "day"
+    return "interval"
 
 
 class Limits:
-    """
-    A collection of Limit objects for a task or resource.
-
-    Supports setting multiple limits and checking/incrementing them all at once.
-    """
+    """The limits declared on one task or resource."""
 
     def __init__(self, limits: Optional["Limits"] = None) -> None:
-        """
-        Create a new Limits collection.
-
-        Args:
-            limits: Optional existing Limits to copy from
-        """
         self._limits: list[Limit] = []
         self.project: Optional[Project] = None
+        self.timezone: Optional[str] = None
 
         if limits is not None:
-            # Deep copy from existing
-            for limit in limits._limits:
-                self._limits.append(limit.copy())
+            self._limits = [limit.copy() for limit in limits._limits]
             self.project = limits.project
+            self.timezone = limits.timezone
 
     def copy(self) -> "Limits":
-        """Return a deep copy of this Limits collection."""
         return Limits(self)
 
     def setProject(self, project: "Project") -> None:
-        """Set the project reference."""
         if self._limits:
             raise RuntimeError("Cannot change project after limits have been set!")
         self.project = project
 
+    def setTimeZone(self, timezone: Optional[str]) -> None:
+        """Count periods in this zone's calendar.
+
+        Called once the owning resource's timezone is known, which is after the
+        limits themselves have been read.
+        """
+        self.timezone = timezone
+        for limit in self._limits:
+            limit.timezone = timezone
+
     def reset(self) -> None:
-        """Reset all limit counters."""
         for limit in self._limits:
             limit.reset()
 
@@ -273,96 +252,70 @@ class Limits:
         interval: Optional[tuple[datetime, datetime]] = None,
         resource: Optional["Resource"] = None,
     ) -> None:
-        """
-        Create or update a limit.
-
-        Args:
-            name: Limit type ('dailymax', 'weeklymax', etc.)
-            value: Limit value in slots (e.g., 6 for 6 hours)
-            interval: Optional (start, end) tuple for the limit interval
-            resource: Optional resource this limit applies to
-        """
+        """Declare a limit of ``value`` hours per period."""
         if self.project is None:
             raise RuntimeError("Project must be set before adding limits")
+        if name not in PERIOD_KINDS:
+            raise ValueError(
+                f"Unknown limit type: {name}. Expected one of {', '.join(sorted(PERIOD_KINDS))}."
+            )
 
-        # Use project interval if not specified
-        if interval is None:
-            interval_start = self.project["start"]
-            interval_end = self.project["end"]
-        else:
-            interval_start, interval_end = interval
-
-        # Determine period and slot duration based on project settings
+        interval_start, interval_end = interval if interval else (self.project["start"], self.project["end"])
         slot_duration: int = self.project.attributes.get("scheduleGranularity", 3600)
+        period_kind, upper = PERIOD_KINDS[name]
 
-        # Convert value from hours to slots
-        # e.g., 3.5h with 15-min (0.25h) slots = 14 slots
-        slot_duration_hours = slot_duration / 3600.0
-        value_in_slots = int(value / slot_duration_hours)
-
-        period: float
-        upper: bool
-        if name == "dailymax":
-            period = 60 * 60 * 24  # 1 day in seconds
-            upper = True
-        elif name == "dailymin":
-            period = 60 * 60 * 24
-            upper = False
-        elif name == "weeklymax":
-            period = 60 * 60 * 24 * 7  # 1 week in seconds
-            upper = True
-        elif name == "weeklymin":
-            period = 60 * 60 * 24 * 7
-            upper = False
-        elif name == "monthlymax":
-            period = 60 * 60 * 24 * 30  # ~1 month
-            upper = True
-        elif name == "monthlymin":
-            period = 60 * 60 * 24 * 30
-            upper = False
-        elif name == "maximum":
-            period = (interval_end - interval_start).total_seconds()
-            upper = True
-        elif name == "minimum":
-            period = (interval_end - interval_start).total_seconds()
-            upper = False
-        else:
-            raise ValueError(f"Unknown limit type: {name}")
-
-        # Remove existing limit with same name + resource combination
-        self._limits = [limit for limit in self._limits if not (limit.name == name and limit.resource == resource)]
-
-        # Add new limit (using value_in_slots which is calculated from hours)
+        self._limits = [
+            limit for limit in self._limits if not (limit.name == name and limit.resource == resource)
+        ]
         self._limits.append(
-            Limit(name, interval_start, interval_end, period, value_in_slots, upper, resource, slot_duration)
+            Limit(
+                name,
+                interval_start,
+                interval_end,
+                period_kind,
+                float(value) * 3600.0,
+                upper,
+                resource,
+                slot_duration,
+                self.timezone,
+            )
         )
 
-    def inc(self, index: int, resource: Optional["Resource"] = None) -> None:
-        """Increment all limit counters for the given index."""
+    def inc(self, index: int, resource: Optional["Resource"] = None, seconds: Optional[float] = None) -> None:
         for limit in self._limits:
-            limit.inc(index, resource)
+            limit.inc(index, resource, seconds)
 
-    def dec(self, index: int, resource: Optional["Resource"] = None) -> None:
-        """Decrement all limit counters for the given index."""
+    def dec(self, index: int, resource: Optional["Resource"] = None, seconds: Optional[float] = None) -> None:
         for limit in self._limits:
-            limit.dec(index, resource)
+            limit.dec(index, resource, seconds)
 
-    def ok(self, index: Optional[int] = None, upper: bool = True, resource: Optional["Resource"] = None) -> bool:
-        """
-        Check if all limits are satisfied.
+    def ok(
+        self,
+        index: Optional[int] = None,
+        upper: bool = True,
+        resource: Optional["Resource"] = None,
+        seconds: Optional[float] = None,
+    ) -> bool:
+        return all(limit.ok(index, upper, resource, seconds) for limit in self._limits)
 
-        Args:
-            index: Scoreboard index to check (or None for all)
-            upper: True to check upper limits, False for lower
-            resource: Resource to check for resource-specific limits
+    def remaining(self, index: int, resource: Optional["Resource"] = None) -> Optional[float]:
+        """The tightest amount of time still allowed at ``index``."""
+        allowances = [
+            value
+            for value in (limit.remaining(index, resource) for limit in self._limits)
+            if value is not None
+        ]
+        return min(allowances) if allowances else None
 
-        Returns:
-            True if all limits are satisfied
-        """
-        return all(limit.ok(index, upper, resource) for limit in self._limits)
+    def lowerLimitShortfalls(self) -> list[tuple[str, Any, float]]:
+        """Every period that fell short of a lower limit."""
+        found: list[tuple[str, Any, float]] = []
+        for limit in self._limits:
+            for period, missing in limit.shortfall():
+                found.append((limit.name, period, missing))
+        return found
 
     def __bool__(self) -> bool:
-        """Return True if there are any limits."""
         return len(self._limits) > 0
 
     def __len__(self) -> int:

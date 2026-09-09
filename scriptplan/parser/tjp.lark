@@ -135,9 +135,18 @@ resource_flags: "flags" ID ("," ID)*
 leaves_type: "annual" | "sick" | "holiday" | "special" | "unpaid"
 
 limits_body: limit_attr*
-limit_attr: limit_dailymax | limit_weeklymax
+limit_attr: limit_dailymax | limit_dailymin
+          | limit_weeklymax | limit_weeklymin
+          | limit_monthlymax | limit_monthlymin
+          | limit_maximum | limit_minimum
 limit_dailymax: "dailymax" duration_value limits_resources?
+limit_dailymin: "dailymin" duration_value limits_resources?
 limit_weeklymax: "weeklymax" duration_value limits_resources?
+limit_weeklymin: "weeklymin" duration_value limits_resources?
+limit_monthlymax: "monthlymax" duration_value limits_resources?
+limit_monthlymin: "monthlymin" duration_value limits_resources?
+limit_maximum: "maximum" duration_value limits_resources?
+limit_minimum: "minimum" duration_value limits_resources?
 limits_resources: "{" "resources" ID ("," ID)* "}"
 
 // Task
@@ -164,6 +173,10 @@ task_attr: task_start
          | task_journalentry
          | task_flags
          | task_scheduling
+         | task_maxend
+         | task_maxstart
+         | task_minend
+         | task_minstart
          | scenario_attr
          | task
          | extended_attr
@@ -188,6 +201,10 @@ task_chargeset: "chargeset" ID
 task_purge_chargeset: "purge" "chargeset"
 task_charge: "charge" NUMBER charge_mode
 task_limits: "limits" "{" limits_body "}"
+task_maxend: "maxend" date
+task_maxstart: "maxstart" date
+task_minend: "minend" date
+task_minstart: "minstart" date
 task_journalentry: "journalentry" date STRING? "{" journal_body "}"
 task_flags: "flags" ID ("," ID)*
 

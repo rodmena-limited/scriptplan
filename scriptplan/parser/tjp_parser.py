@@ -8,6 +8,7 @@ from typing import Any, Optional, Union
 from lark import Lark, Token, Transformer, Tree  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.core.exceptions import DuplicateDefinitionError, SemanticError
+from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
@@ -228,69 +229,51 @@ class TJPTransformer(Transformer[Any, Any]):
         """Parse a single limit attribute - pass through the dailymax/weeklymax result."""
         return items[0] if items else None
 
-    def limit_dailymax(self, items: list[Any]) -> dict[str, Any]:
-        """Parse dailymax limit."""
+    def _limit(self, kind: str, items: list[Any]) -> dict[str, Any]:
+        """One limit of any kind: an amount of working time per period."""
         duration: Any = items[0] if items else "0h"
         resources: Optional[Any] = items[1] if len(items) > 1 else None
-        # Store value in hours - conversion to slots happens in Limits class
         hours: Union[float, int] = (
-            self._parse_duration_to_hours(duration, round_to_slots=False)
-            if isinstance(duration, str)
-            else float(duration)
+            self._parse_duration_to_hours(duration) if isinstance(duration, str) else float(duration)
         )
-        return {"type": "dailymax", "value": hours, "resources": resources}
+        return {"type": kind, "value": hours, "resources": resources}
+
+    def limit_dailymax(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("dailymax", items)
+
+    def limit_dailymin(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("dailymin", items)
 
     def limit_weeklymax(self, items: list[Any]) -> dict[str, Any]:
-        """Parse weeklymax limit."""
-        duration: Any = items[0] if items else "0h"
-        resources: Optional[Any] = items[1] if len(items) > 1 else None
-        # Store value in hours - conversion to slots happens in Limits class
-        hours: Union[float, int] = (
-            self._parse_duration_to_hours(duration, round_to_slots=False)
-            if isinstance(duration, str)
-            else float(duration)
-        )
-        return {"type": "weeklymax", "value": hours, "resources": resources}
+        return self._limit("weeklymax", items)
+
+    def limit_weeklymin(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("weeklymin", items)
+
+    def limit_monthlymax(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("monthlymax", items)
+
+    def limit_monthlymin(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("monthlymin", items)
+
+    def limit_maximum(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("maximum", items)
+
+    def limit_minimum(self, items: list[Any]) -> dict[str, Any]:
+        return self._limit("minimum", items)
 
     def limits_resources(self, items: list[Any]) -> list[str]:
         """Parse limits resources: { resources id1, id2, ... }."""
         return [self._get_value(i) for i in items]
 
     def _parse_duration_to_hours(self, duration_str: str, round_to_slots: bool = False) -> Union[float, int]:
-        """Parse duration string to hours.
+        """A limit is an amount of working time, read with the shared table.
 
-        Args:
-            duration_str: Duration string like '6.4h', '2d', '1w'
-            round_to_slots: If True, round to integer hours (for limits)
-
-        Returns:
-            Duration in hours (float or int depending on round_to_slots)
+        The previous regex matched a single optional unit letter, so `30min`
+        was read as 30 months: a 30-minute cap became a 4800-hour one.
         """
-        import re
-
-        match = re.match(r"(\d+(?:\.\d+)?)\s*([hdwmy]?)", str(duration_str))
-        if match:
-            value: float = float(match.group(1))
-            unit: str = match.group(2) or "h"
-            hours: float
-            if unit == "h":
-                hours = value
-            elif unit == "d":
-                hours = value * 8  # 8 hours per day
-            elif unit == "w":
-                hours = value * 40  # 40 hours per week
-            elif unit == "m":
-                hours = value * 160  # ~160 hours per month
-            elif unit == "y":
-                hours = value * 2000  # ~2000 hours per year
-            else:
-                hours = 0
-
-            # TaskJuggler rounds limit values to integer slots
-            if round_to_slots:
-                return round(hours)
-            return hours
-        return 0
+        hours = parse_working_hours(duration_str)
+        return round(hours) if round_to_slots else hours
 
     def resource_leaves(self, items: list[Any]) -> tuple[str, dict[str, Any]]:
         """Handle resource leaves: leaves type start_date [- end_date]."""
@@ -339,23 +322,7 @@ class TJPTransformer(Transformer[Any, Any]):
         """Handle timingresolution: timingresolution duration_value."""
         # Parse duration to seconds
         duration: Any = items[0] if items else "1h"
-        import re
-
-        match = re.match(r"(\d+(?:\.\d+)?)\s*([hdwmymin]+)", str(duration))
-        if match:
-            value: float = float(match.group(1))
-            unit: str = match.group(2) or "h"
-            seconds: int
-            if unit == "min":
-                seconds = int(value * 60)
-            elif unit == "h":
-                seconds = int(value * 3600)
-            elif unit == "d":
-                seconds = int(value * 86400)
-            else:
-                seconds = 3600  # default 1 hour
-            return ("timingresolution", seconds)
-        return ("timingresolution", 3600)
+        return ("timingresolution", int(parse_calendar_duration(duration)))
 
     def workinghours(self, items: list[Any]) -> tuple[str, Any]:
         """Handle workinghours at project or shift level."""
@@ -440,10 +407,24 @@ class TJPTransformer(Transformer[Any, Any]):
         return items[0]  # effort_value returns a tuple
 
     def task_duration(self, items: list[Any]) -> tuple[str, Any]:
-        return ("duration", items[0])
+        """duration is calendar time: 2d is 48 hours, weekend or not."""
+        return ("duration", Duration(items[0], Duration.CALENDAR))
 
     def task_length(self, items: list[Any]) -> tuple[str, Any]:
-        return ("length", items[0])
+        """length is working time: 2d is two working days."""
+        return ("length", Duration(items[0], Duration.WORKING))
+
+    def task_maxend(self, items: list[Any]) -> tuple[str, Any]:
+        return ("maxend", items[0])
+
+    def task_maxstart(self, items: list[Any]) -> tuple[str, Any]:
+        return ("maxstart", items[0])
+
+    def task_minend(self, items: list[Any]) -> tuple[str, Any]:
+        return ("minend", items[0])
+
+    def task_minstart(self, items: list[Any]) -> tuple[str, Any]:
+        return ("minstart", items[0])
 
     def task_milestone(self, items: list[Any]) -> tuple[str, bool]:
         return ("milestone", True)
@@ -585,22 +566,19 @@ class TJPTransformer(Transformer[Any, Any]):
         return items[0]  # effort_value already returns ('effort', value)
 
     def scenario_duration(self, items: list[Any]) -> tuple[str, Any]:
-        """Handle scenario-specific duration attribute."""
-        return ("duration", items[0])
+        """Handle scenario-specific duration attribute (calendar time)."""
+        return ("duration", Duration(items[0], Duration.CALENDAR))
 
     def scenario_length(self, items: list[Any]) -> tuple[str, Any]:
-        """Handle scenario-specific length attribute."""
-        return ("length", items[0])
+        """Handle scenario-specific length attribute (working time)."""
+        return ("length", Duration(items[0], Duration.WORKING))
 
     # Task attribute helpers
-    def effort_value(self, items: list[Any]) -> tuple[str, float]:
-        num: float = float(self._get_value(items[0]))
+    def effort_value(self, items: list[Any]) -> tuple[str, Duration]:
+        """effort is working time: a day is dailyworkinghours long, m is months."""
+        num: str = self._get_value(items[0])
         unit: str = self._get_value(items[1])
-        # Convert to hours (the base unit internally)
-        # d=day (8h), w=week (40h), h=hour, m=minute, y=year (2080h)
-        multipliers: dict[str, float] = {"d": 8, "w": 40, "h": 1, "m": 1 / 60, "y": 2080, "min": 1 / 60}
-        hours: float = num * multipliers.get(unit.lower(), 1)
-        return ("effort", hours)
+        return ("effort", Duration(f"{num}{unit}", Duration.WORKING))
 
     def duration_value(self, items: list[Any]) -> str:
         num: str = self._get_value(items[0])

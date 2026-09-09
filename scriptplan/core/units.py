@@ -29,12 +29,18 @@ __all__ = [
     "parse_working_hours",
     "parse_time_of_day",
     "split_duration",
+    "Duration",
+    "project_seconds",
+    "project_hours",
 ]
 
 DEFAULT_DAILY_WORKING_HOURS = 8.0
-DEFAULT_YEARLY_WORKING_DAYS = 260.714
-# TaskJuggler's constant; 365.25 / 7.
-WEEKS_PER_YEAR = 52.1429
+# Weeks in a year, and the working days in one, kept as exact expressions
+# rather than the decimals TaskJuggler prints (52.1429 and 260.714). Those are
+# the same numbers truncated, and truncating them makes a week 39.99992 hours
+# instead of 40, which shows up as a task ending a second early.
+WEEKS_PER_YEAR = 365.0 / 7.0
+DEFAULT_YEARLY_WORKING_DAYS = WEEKS_PER_YEAR * 5.0
 
 # Calendar seconds per unit. Months and years follow TaskJuggler's
 # rule_calendarDuration: a month is 30.4167 days, a year is 365 days.
@@ -120,3 +126,66 @@ def parse_time_of_day(text: str) -> int:
     except (TypeError, ValueError):
         raise DurationError(f"{text!r} is not a time of day; expected HH:MM") from None
     return hour * 60 + minute
+
+
+class Duration:
+    """A duration as written in the file, with the kind of time it counts.
+
+    The conversion needs ``dailyworkinghours`` and ``yearlyworkingdays``, which
+    belong to the project and are not known while the grammar is being
+    transformed. So the text and its kind travel together and are resolved once
+    the project exists.
+    """
+
+    __slots__ = ("text", "kind")
+
+    CALENDAR = "calendar"
+    WORKING = "working"
+
+    def __init__(self, text: Union[str, int, float], kind: str) -> None:
+        self.text = text
+        self.kind = kind
+        # Fail at parse time on an unreadable duration rather than at use.
+        split_duration(text)
+
+    def seconds(
+        self,
+        daily_working_hours: float = DEFAULT_DAILY_WORKING_HOURS,
+        yearly_working_days: float = DEFAULT_YEARLY_WORKING_DAYS,
+    ) -> float:
+        if self.kind == Duration.CALENDAR:
+            return parse_calendar_duration(self.text)
+        return parse_working_duration(self.text, daily_working_hours, yearly_working_days)
+
+    def hours(
+        self,
+        daily_working_hours: float = DEFAULT_DAILY_WORKING_HOURS,
+        yearly_working_days: float = DEFAULT_YEARLY_WORKING_DAYS,
+    ) -> float:
+        return self.seconds(daily_working_hours, yearly_working_days) / 3600.0
+
+    def __repr__(self) -> str:
+        return f"Duration({self.text!r}, {self.kind})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Duration):
+            return NotImplemented
+        return (str(self.text), self.kind) == (str(other.text), other.kind)
+
+    def __hash__(self) -> int:
+        return hash((str(self.text), self.kind))
+
+
+def project_seconds(project: object, value: object) -> float:
+    """Resolve a Duration against a project's working-hours settings."""
+    attributes = getattr(project, "attributes", {})
+    daily = attributes.get("dailyworkinghours") or DEFAULT_DAILY_WORKING_HOURS
+    yearly = attributes.get("yearlyworkingdays") or DEFAULT_YEARLY_WORKING_DAYS
+    if isinstance(value, Duration):
+        return value.seconds(float(daily), float(yearly))
+    return parse_calendar_duration(value)  # type: ignore[arg-type]
+
+
+def project_hours(project: object, value: object) -> float:
+    """Resolve a Duration to hours against a project's settings."""
+    return project_seconds(project, value) / 3600.0

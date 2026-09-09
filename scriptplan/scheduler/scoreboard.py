@@ -5,19 +5,6 @@ from typing import Any, Callable, Optional, Union, cast
 
 from scriptplan.utils.time import TimeInterval
 
-# Try to import Cython-optimized functions
-try:
-    from scriptplan._cython.scoreboard_cy import (
-        collect_intervals_fast,
-        date_to_idx_fast,
-        idx_to_date_fast,
-    )
-
-    _USE_CYTHON = True
-except ImportError:
-    _USE_CYTHON = False
-
-
 class Scoreboard:
     def __init__(self, start: datetime, end: datetime, granularity: int, init_val: Optional[Any] = None) -> None:
         self.startDate = start
@@ -37,14 +24,6 @@ class Scoreboard:
         self.sb = [init_val] * self.size
 
     def idxToDate(self, idx: int, forceIntoProject: bool = False) -> datetime:
-        if _USE_CYTHON:
-            # Cython handles clamping but not error raising
-            if not forceIntoProject and (idx < 0 or idx >= self.size):
-                raise IndexError(f"Index {idx} is out of scoreboard range ({self.size - 1})")
-            result = idx_to_date_fast(idx, self.startDate, self.resolution, self.size, forceIntoProject, self.endDate)
-            if result is not None:
-                return cast(datetime, result)
-
         if forceIntoProject:
             if idx < 0:
                 return self.startDate
@@ -56,13 +35,6 @@ class Scoreboard:
         return self.startDate + timedelta(seconds=idx * self.resolution)
 
     def dateToIdx(self, date: datetime, forceIntoProject: bool = True) -> int:
-        if _USE_CYTHON:
-            idx = date_to_idx_fast(date, self.startDate, self.resolution, self.size, forceIntoProject)
-            # Cython version handles clamping, but not error raising
-            if not forceIntoProject and (idx < 0 or idx >= self.size):
-                raise IndexError(f"Date {date} is out of project time range ({self.startDate} - {self.endDate})")
-            return int(idx)
-
         diff_result = date - self.startDate
         diff: float = diff_result.total_seconds()
         idx = int(diff / self.resolution)
@@ -124,25 +96,6 @@ class Scoreboard:
         endIdx += minDurationSlots
         if endIdx > self.size - 1:
             endIdx = self.size - 1
-
-        # Use Cython-optimized version if available
-        if _USE_CYTHON:
-            return cast(
-                list[TimeInterval],
-                collect_intervals_fast(
-                    self.sb,
-                    startIdx,
-                    endIdx,
-                    sIdx,
-                    eIdx,
-                    minDurationSlots,
-                    self.size,
-                    self.startDate,
-                    self.resolution,
-                    predicate,
-                    TimeInterval,
-                ),
-            )
 
         intervals: list[TimeInterval] = []
         duration = 0

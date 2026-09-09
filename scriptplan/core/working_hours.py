@@ -8,17 +8,6 @@ for specific days of the week.
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-# Try to import Cython-optimized functions
-try:
-    from scriptplan._cython.working_hours_cy import (
-        calculate_daily_hours,
-        check_working_hours_fast,
-    )
-
-    _USE_CYTHON = True
-except ImportError:
-    _USE_CYTHON = False
-
 try:
     import zoneinfo
 
@@ -92,16 +81,33 @@ class WorkingHours:
             end_h, end_m = self._parse_time(end_str)
             time_intervals.append(((start_h, start_m), (end_h, end_m)))
 
-        # Set hours for each day
-        # NOTE: Multiple workinghours directives for the same resource will
-        # result in multiple calls. The behavior depends on whether days overlap:
-        # - Different days: each gets its own time intervals
-        # - Same day called multiple times: extends (adds more intervals)
+        # Set hours for each day.
+        #
+        # An interval whose end is at or before its start crosses midnight:
+        # "fri 22:00 - 06:00" is Friday evening plus Saturday morning. It is
+        # split here, at definition time, so that a later lookup is a plain
+        # "is this minute inside one of today's intervals" question. Deciding
+        # it at lookup time means consulting the previous day, which is easy to
+        # get wrong in one implementation and not the other.
+        #
+        # Several workinghours directives for the same resource accumulate, so
+        # a resource can have more than one block per day.
         for day_num in day_nums:
-            if day_num not in self._hours:
-                self._hours[day_num] = []
-            # Extend with new intervals (allows multiple non-contiguous ranges per day)
-            self._hours[day_num].extend(time_intervals)
+            for (start_h, start_m), (end_h, end_m) in time_intervals:
+                start_minutes = start_h * 60 + start_m
+                end_minutes = end_h * 60 + end_m
+                if end_minutes <= start_minutes:
+                    self._add_interval(day_num, (start_h, start_m), (24, 0))
+                    if end_minutes > 0:
+                        self._add_interval((day_num + 1) % 7, (0, 0), (end_h, end_m))
+                else:
+                    self._add_interval(day_num, (start_h, start_m), (end_h, end_m))
+
+    def _add_interval(
+        self, day_num: int, start: tuple[int, int], end: tuple[int, int]
+    ) -> None:
+        """Record one same-day interval for a weekday."""
+        self._hours.setdefault(day_num, []).append((start, end))
 
     def _parse_time(self, time_str: str) -> tuple[int, int]:
         """Parse a time string like '08:15' to (hour, minute) tuple."""
@@ -148,38 +154,11 @@ class WorkingHours:
 
         slot_minutes = dt.hour * 60 + dt.minute
 
-        # Use Cython-optimized version if available
-        if _USE_CYTHON:
-            return bool(check_working_hours_fast(slot_minutes, weekday, self._hours, True))
-
-        # Check if slot falls within any working interval
+        # Intervals are normalised at definition time, so every one of them
+        # lies inside its own day and this is a plain containment test.
         for (start_h, start_m), (end_h, end_m) in self._hours[weekday]:
-            start_minutes = start_h * 60 + start_m
-            end_minutes = end_h * 60 + end_m
-
-            # Check for cross-midnight shift (e.g., 22:00 - 06:00)
-            if end_minutes <= start_minutes:
-                # This interval crosses midnight
-                # Working time is: start_minutes <= slot < 1440 OR 0 <= slot < end_minutes
-                if slot_minutes >= start_minutes or slot_minutes < end_minutes:
-                    return True
-            else:
-                # Normal interval within same day
-                if start_minutes <= slot_minutes < end_minutes:
-                    return True
-
-        # Also check if we're in the early morning part of a cross-midnight shift from previous day
-        prev_weekday = (weekday - 1) % 7
-        if self._hours.get(prev_weekday):
-            for (start_h, start_m), (end_h, end_m) in self._hours[prev_weekday]:
-                start_minutes = start_h * 60 + start_m
-                end_minutes = end_h * 60 + end_m
-
-                # If previous day had a cross-midnight shift
-                if end_minutes <= start_minutes and slot_minutes < end_minutes:
-                    # Check if current slot is in the morning part (0 <= slot < end)
-                    return True
-
+            if start_h * 60 + start_m <= slot_minutes < end_h * 60 + end_m:
+                return True
         return False
 
     def get_daily_hours(self, weekday: int) -> float:
@@ -195,15 +174,10 @@ class WorkingHours:
         if weekday not in self._hours:
             return 0.0
 
-        # Use Cython-optimized version if available
-        if _USE_CYTHON:
-            return float(calculate_daily_hours(self._hours[weekday]))
-
         total_minutes = 0
         for (start_h, start_m), (end_h, end_m) in self._hours[weekday]:
-            start_minutes = start_h * 60 + start_m
-            end_minutes = end_h * 60 + end_m
-            total_minutes += end_minutes - start_minutes
+            # Normalised intervals never wrap, so this cannot go negative.
+            total_minutes += (end_h * 60 + end_m) - (start_h * 60 + start_m)
 
         return total_minutes / 60.0
 
