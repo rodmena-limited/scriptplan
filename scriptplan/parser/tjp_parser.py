@@ -627,64 +627,44 @@ class TJPTransformer(Transformer[Any, Any]):
         return {"onstart": True}
 
     def allocate_spec(self, items: list[Any]) -> tuple[str, Any]:
-        resources = []
-        options = {}
-        for item in items:
-            if isinstance(item, Token):
-                resources.append(item.value)
-            elif isinstance(item, dict):
-                # allocate_options dict
-                options.update(item)
-        # If there are alternatives, include them in the allocation structure
-        if options:
-            return ("allocate", {"resources": resources, "options": options})
-        return ("allocate", resources)
+        """One allocate statement: a list of allocations, each with its options."""
+        allocations = [item for item in items if isinstance(item, dict)]
+        return ("allocate", {"allocations": allocations})
+
+    def allocate_item(self, items: list[Any]) -> dict[str, Any]:
+        """One resource in an allocate statement, with the options bound to it."""
+        resource_id = self._get_value(items[0])
+        options: dict[str, Any] = {}
+        for extra in items[1:]:
+            if isinstance(extra, dict):
+                options.update(extra)
+        return {"resource": resource_id, **options}
 
     def allocate_options(self, items: list[Any]) -> dict[str, Any]:
-        """Process allocation options like persistent, mandatory, alternative."""
-        result = {}
+        """Merge the options written for one resource."""
+        merged: dict[str, Any] = {}
         for item in items:
             if isinstance(item, dict):
-                result.update(item)
-            elif isinstance(item, list):
-                # Flatten nested lists from allocate_option
-                for subitem in item:
-                    if isinstance(subitem, dict):
-                        result.update(subitem)
-        return result
+                merged.update(item)
+        return merged
 
-    def allocate_option(self, items: list[Any]) -> dict[str, Any]:
-        """
-        Process a single allocation option.
+    def alloc_persistent(self, items: list[Any]) -> dict[str, Any]:
+        """Once a resource is picked for this task, keep it for the whole task."""
+        return {"persistent": True}
 
-        The grammar literals ("alternative", "persistent", etc.) are filtered out,
-        so we detect the option type by the structure:
-        - Empty items -> persistent or mandatory (no IDs)
-        - ID tokens -> alternative (list of resource IDs)
-        - Dict with limits -> limits
-        """
-        if not items:
-            # This shouldn't happen for well-formed input
-            return {}
+    def alloc_mandatory(self, items: list[Any]) -> dict[str, Any]:
+        """This resource must be free for the task to make progress at all."""
+        return {"mandatory": True}
 
-        # Check if it's a limits block (dict)
-        if isinstance(items[0], dict):
-            return items[0]
+    def alloc_alternative(self, items: list[Any]) -> dict[str, Any]:
+        return {"alternative": [self._get_value(i) for i in items]}
 
-        # Check if items are ID tokens -> alternative resources
-        alternatives = []
-        for item in items:
-            if isinstance(item, Token) and item.type == "ID":
-                alternatives.append(item.value)
+    def alloc_select(self, items: list[Any]) -> dict[str, Any]:
+        return {"select": self._get_value(items[0])}
 
-        if alternatives:
-            return {"alternative": alternatives}
+    def alloc_limits(self, items: list[Any]) -> dict[str, Any]:
+        return {"limits": items[0] if items else []}
 
-        # Persistent and mandatory have no child items in the parse tree
-        # They're handled at the grammar level as literals
-        return {}
-
-    # Account
     def account(self, items: list[Any]) -> dict[str, Any]:
         a_id = self._get_value(items[0])
         a_name = self._get_value(items[1])
@@ -1179,20 +1159,16 @@ class ModelBuilder:
 
     @staticmethod
     def _allocation_ids(allocations: Any) -> list[str]:
-        """Resource ids named by an allocate attribute, in any of its shapes."""
-        if not allocations:
-            return []
-        data = allocations
-        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
-            data = data[0]
-        if isinstance(data, dict):
-            names = list(data.get("resources", []))
-            names.extend(data.get("options", {}).get("alternative", []))
-        elif isinstance(data, list):
-            names = list(data)
-        else:
-            names = [data]
-        return [n for n in names if isinstance(n, str)]
+        """Resource ids named by an allocate attribute, primary and alternative."""
+        from scriptplan.core.allocation_plan import AllocationPlan
+
+        names: list[str] = []
+        for entry in AllocationPlan._entries(allocations):
+            resource = entry.get("resource")
+            if isinstance(resource, str):
+                names.append(resource)
+            names.extend(name for name in entry.get("alternative", []) if isinstance(name, str))
+        return names
 
     def _resolve_precedes(self, project: Project) -> None:
         """Resolve precedes relationships by adding dependencies to target tasks.

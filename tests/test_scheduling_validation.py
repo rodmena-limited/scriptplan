@@ -599,8 +599,10 @@ task release "v1.0 Release" {
     depends !coding
   }
   task deploy "Production Push" {
-    effort 4h
-    allocate dev, qa
+    # Both must be on the job together, so `mandatory` on each. effort is
+    # person-time: four hours of the pair side by side is eight hours of it.
+    effort 8h
+    allocate dev { mandatory }, qa { mandatory }
     depends !review
   }
 }

@@ -1,7 +1,9 @@
 /*
  * Issue #60: The "Eclipse" Protocol
  * Tests intersection of discontinuous shift patterns
- * Task requires BOTH resources simultaneously
+ * Task requires BOTH resources simultaneously: `mandatory` on each allocation
+ * says the task makes no progress unless both are free. effort is person-time,
+ * so seven hours of both working together is fourteen hours of effort.
  */
 
 project "Eclipse_Protocol" 2025-06-01 +1m {
@@ -28,8 +30,8 @@ resource r_moon "Moon" {
 
 task sys "Alignment" {
   task sync "Syzygy" {
-    effort 7h
-    allocate r_sun, r_moon
+    effort 14h
+    allocate r_sun { mandatory }, r_moon { mandatory }
     start 2025-06-01-00:00
   }
 }

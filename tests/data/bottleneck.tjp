@@ -40,8 +40,10 @@ task release "v1.0 Release" {
   }
 
   task deploy "Deploy to Prod" {
-    effort 4h
-    allocate dev, qa
+    # Both must be on the job together. effort is person-time, so four hours
+    # of the pair working side by side is eight hours of effort.
+    effort 8h
+    allocate dev { mandatory }, qa { mandatory }
     depends !review
   }
 }

@@ -2,6 +2,7 @@ import contextlib
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
+from scriptplan.core.allocation_plan import AllocationPlan
 from scriptplan.core.property import AttributeBase
 from scriptplan.core.scenario_data import ScenarioData
 
@@ -25,6 +26,7 @@ class TaskScenario(ScenarioData):
         self.doneEffort: float = 0.0
         self.slotStartOffset: float = 0.0
         self._selectedResources: Optional[list[Any]] = None
+        self._allocationPlan: Optional[AllocationPlan] = None
         self._lastBookedResource: Optional[Any] = None
         self._lastBookedSlot: Optional[int] = None
 
@@ -90,6 +92,7 @@ class TaskScenario(ScenarioData):
         self.doneEffort = 0.0
         self.scheduled = False
         self._selectedResources = None  # Reset alternative resource selection
+        self._allocationPlan = None  # Re-read the allocations for this run
 
         # Track exact start time within a slot (for mid-slot dependency starts)
         # This is the number of seconds into the slot where we should start booking
@@ -296,28 +299,12 @@ class TaskScenario(ScenarioData):
             result_end: datetime = self.project["end"]
             return result_end
 
-        # Normalize allocations
-        alloc_data = allocations
-        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
-            alloc_data = allocations[0]
-
-        if isinstance(alloc_data, dict):
-            resource_ids = alloc_data.get("resources", [])
-        elif isinstance(alloc_data, list):
-            resource_ids = alloc_data
-        else:
-            resource_ids = [alloc_data]
-
-        # Get the primary resource
-        resource = None
-        for res_id in resource_ids:
-            resource = self._resolve_resource(res_id)
-            if resource:
-                break
-
-        if not resource:
+        plan = AllocationPlan.read(allocations, self._resolve_resource)
+        resources = plan.resources()
+        if not resources:
             result_start_1: datetime = self.project["start"]
             return result_start_1
+        resource = resources[0]
 
         # Get resource's scenario data
         res_scenario = resource.data[self.scenarioIdx] if resource.data else None
@@ -404,27 +391,9 @@ class TaskScenario(ScenarioData):
             Required start time (datetime)
         """
 
-        # Get allocations to determine resource working hours
-        allocations = self.property.get("allocate", self.scenarioIdx)
-
-        # Normalize allocations
-        alloc_data = allocations
-        if allocations and isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
-            alloc_data = allocations[0]
-
-        resource = None
-        if alloc_data:
-            if isinstance(alloc_data, dict):
-                resource_ids = alloc_data.get("resources", [])
-            elif isinstance(alloc_data, list):
-                resource_ids = alloc_data
-            else:
-                resource_ids = [alloc_data]
-
-            for res_id in resource_ids:
-                resource = self._resolve_resource(res_id)
-                if resource:
-                    break
+        # The first allocated resource decides which calendar to walk back over.
+        resources = self.allocationPlan().resources()
+        resource = resources[0] if resources else None
 
         end_idx = self.project.dateToIdx(end_time)
         start_idx = self.project.dateToIdx(self.project["start"])
@@ -971,152 +940,59 @@ class TaskScenario(ScenarioData):
         return result
 
     def _isResourceAvailable(self, slotIdx: int) -> bool:
+        """Whether any allocated resource could work in this slot.
+
+        Used to find where a task can begin, so it asks only about the shift,
+        not about whether the slot is already taken.
         """
-        Check if any allocated resource is available at the given slot.
-
-        For effort-based tasks with allocations, this checks the actual resource
-        availability (considering their timezone and working hours) rather than
-        the project's default working hours.
-
-        Args:
-            slotIdx: Scoreboard index to check
-
-        Returns:
-            True if at least one allocated resource is available
-        """
-        allocations = self.property.get("allocate", self.scenarioIdx)
-        if not allocations:
-            # No allocations - fall back to project working time
+        plan = self.allocationPlan()
+        if not plan:
             result: bool = self.project.isWorkingTime(slotIdx)
             return result
 
-        # Parse allocations - handle both simple list and dict with alternatives
-        resource_ids = []
-
-        # Normalize allocations
-        alloc_data = allocations
-        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
-            alloc_data = allocations[0]
-
-        if isinstance(alloc_data, dict):
-            resource_ids = alloc_data.get("resources", [])
-            # Also include alternatives
-            alternatives = alloc_data.get("options", {}).get("alternative", [])
-            resource_ids = resource_ids + alternatives
-        elif isinstance(alloc_data, list):
-            resource_ids = alloc_data
-        else:
-            resource_ids = [alloc_data]
-
-        # Check each allocated resource
-        for alloc in resource_ids:
-            resource = self._resolve_resource(alloc)
-            if resource is None:
-                continue
-
-            # Get resource's scenario data
-            res_scenario = resource.data[self.scenarioIdx] if resource.data else None
-            if res_scenario is None:
-                continue
-
-            # Initialize scoreboard if needed
-            if res_scenario.scoreboard is None:
-                res_scenario.prepareScheduling()
-
-            # Check if resource is on shift at this slot
-            if res_scenario.onShift(slotIdx):
-                return True
-
+        for allocation in plan:
+            for resource in allocation.candidates():
+                scenario = resource.data[self.scenarioIdx] if resource.data else None
+                if scenario is None:
+                    continue
+                if scenario.scoreboard is None:
+                    scenario.prepareScheduling()
+                if scenario.onShift(slotIdx):
+                    return True
         return False
 
     def _hasContiguousBlock(self, effort: float) -> bool:
+        """Whether an unbroken run long enough for the task starts here.
+
+        A task flagged `contiguous` cannot be split across a lunch break or a
+        night, so it may only begin where the whole of it fits.
         """
-        Check if there's a contiguous block of working time starting from current slot
-        that can fit the required effort.
-
-        For contiguous (atomic) tasks, we need to ensure the task won't be split
-        across breaks (like lunch breaks). The entire effort must fit in one
-        continuous working period.
-
-        Args:
-            effort: Required effort in hours
-
-        Returns:
-            True if a contiguous block large enough exists starting at current slot
-        """
-
-        # Get allocations to check resource availability
-        allocations = self.property.get("allocate", self.scenarioIdx)
-        if not allocations:
-            # No allocations - check project working time
+        resources = self.allocationPlan().resources()
+        if not resources:
             return self._checkProjectContiguousBlock(effort)
 
-        # Normalize allocations
-        alloc_data = allocations
-        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
-            alloc_data = allocations[0]
-
-        if isinstance(alloc_data, dict):
-            resource_ids = alloc_data.get("resources", [])
-        elif isinstance(alloc_data, list):
-            resource_ids = alloc_data
-        else:
-            resource_ids = [alloc_data]
-
-        # Get the first resource (for contiguous check, we use primary resource's availability)
-        resource = None
-        for res_id in resource_ids:
-            resource = self._resolve_resource(res_id)
-            if resource:
-                break
-
-        if not resource:
-            return self._checkProjectContiguousBlock(effort)
-
-        # Get resource's scenario data
+        resource = resources[0]
         res_scenario = resource.data[self.scenarioIdx] if resource.data else None
         if res_scenario is None:
             return self._checkProjectContiguousBlock(effort)
-
-        # Initialize scoreboard if needed
         if res_scenario.scoreboard is None:
             res_scenario.prepareScheduling()
 
-        # Get efficiency
         efficiency = resource.get("efficiency", self.scenarioIdx) or 1.0
+        slot_duration_hours = self._slotSeconds() / 3600.0
+        slots_needed = (effort / efficiency) / slot_duration_hours
 
-        # Calculate required duration (hours of actual clock time)
-        required_duration = effort / efficiency
+        consecutive = 0
+        current = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+        limit = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
 
-        # Get slot duration in hours
-        slot_duration_sec = self.project.attributes.get("scheduleGranularity", 3600)
-        slot_duration_hours = slot_duration_sec / 3600.0
+        while current < limit and consecutive < slots_needed:
+            if not res_scenario.available(current):
+                return False
+            consecutive += 1
+            current += 1
 
-        # Calculate how many consecutive slots we need
-        slots_needed = required_duration / slot_duration_hours
-
-        # Check if we have that many consecutive working slots starting from current
-        consecutive_count = 0
-        current_slot = self.currentSlotIdx if self.currentSlotIdx is not None else 0
-        max_slots = len(res_scenario.scoreboard) if res_scenario.scoreboard else 1000
-
-        while current_slot < max_slots and consecutive_count < slots_needed:
-            if res_scenario.available(current_slot):
-                if consecutive_count == 0 and current_slot != self.currentSlotIdx:
-                    # Gap before first available - not contiguous from current
-                    return False
-                consecutive_count += 1
-                current_slot += 1
-            else:
-                # Hit a break/unavailable slot
-                if consecutive_count > 0:
-                    # Already started counting but hit a break - not enough contiguous
-                    return False
-                else:
-                    # Haven't found starting slot yet - not available at current
-                    return False
-
-        result_bool: bool = consecutive_count >= slots_needed
+        result_bool: bool = consecutive >= slots_needed
         return result_bool
 
     def _checkProjectContiguousBlock(self, effort: float) -> bool:
@@ -1145,6 +1021,14 @@ class TaskScenario(ScenarioData):
 
         result_bool: bool = consecutive_count >= slots_needed
         return result_bool
+
+    def allocationPlan(self) -> "AllocationPlan":
+        """The task's allocations, resolved once per scheduling run."""
+        if getattr(self, "_allocationPlan", None) is None:
+            self._allocationPlan = AllocationPlan.read(
+                self.property.get("allocate", self.scenarioIdx), self._resolve_resource
+            )
+        return self._allocationPlan
 
     def _resolve_resource(self, alloc: Any) -> Optional[Any]:
         """
@@ -1275,131 +1159,90 @@ class TaskScenario(ScenarioData):
             return None
 
     def bookResources(self) -> None:
+        """Book what can be booked in the current slot.
+
+        `effort` is person-time: every allocated resource that works in this
+        slot contributes its own time to it, so a task of 16 hours of effort
+        with two resources available takes one eight-hour day. A mandatory
+        allocation must be bookable or the slot is skipped entirely, which is
+        how a task that needs two people together is expressed.
         """
-        Book resources for the current slot and accumulate effort.
-
-        This method attempts to book allocated resources for the current time slot.
-        For effort-based tasks with multiple allocations, ALL resources must be
-        available before any are booked (they work together as a team).
-
-        For continuous time scheduling, effort is tracked based on actual available
-        time in slots (accounting for partial slot usage by other tasks).
-
-        Supports alternative resources: if primary is unavailable, tries alternatives.
-        Smart routing picks the resource that finishes the task earliest.
-        """
-        # Get allocations
-        allocations = self.property.get("allocate", self.scenarioIdx)
-        if not allocations:
+        plan = self.allocationPlan()
+        if not plan:
             return
 
+        slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
         effort = self.property.get("effort", self.scenarioIdx) or 0
 
-        # Parse allocations - handle both simple list and dict with alternatives
-        primary_resources = []
-        alternative_resources = []
+        # Every mandatory allocation must be satisfiable before anything is
+        # booked, so a slot is never half-committed to a task that cannot use it.
+        chosen: list[tuple[Any, Any]] = []
+        for allocation in plan:
+            resource = self._firstBookable(allocation, slot_idx)
+            if resource is None:
+                if allocation.mandatory:
+                    return
+                continue
+            chosen.append((allocation, resource))
 
-        # Normalize allocations - can be list of strings, list containing dict, or dict
-        alloc_data = allocations
-        if isinstance(allocations, list) and len(allocations) == 1 and isinstance(allocations[0], dict):
-            # List containing a single dict with options
-            alloc_data = allocations[0]
-
-        if isinstance(alloc_data, dict):
-            # New format with options: {'resources': [...], 'options': {...}}
-            resource_ids = alloc_data.get("resources", [])
-            options = alloc_data.get("options", {})
-            alternative_ids = options.get("alternative", [])
-
-            for res_id in resource_ids:
-                resource = self._resolve_resource(res_id)
-                if resource:
-                    primary_resources.append(resource)
-
-            for res_id in alternative_ids:
-                resource = self._resolve_resource(res_id)
-                if resource:
-                    alternative_resources.append(resource)
-        elif isinstance(alloc_data, list):
-            # Simple list format
-            for alloc in alloc_data:
-                resource = self._resolve_resource(alloc)
-                if resource:
-                    primary_resources.append(resource)
-        else:
-            # Single resource
-            resource = self._resolve_resource(alloc_data)
-            if resource:
-                primary_resources.append(resource)
-
-        # Determine which resources to try booking
-        # Smart routing: pick the resource that can complete the task earliest
-        # Only select once at the beginning of scheduling (when no effort done yet)
-        if not hasattr(self, "_selectedResources") or self._selectedResources is None:
-            self._selectedResources = self._selectBestResources(primary_resources, alternative_resources, effort)
-        resources_to_book = self._selectedResources
-
-        if not resources_to_book:
+        if not chosen:
             return
 
-        # For effort-based tasks with multiple resources, ALL must be available
-        # (they work together as a team - can't progress if any member is unavailable)
-        if effort > 0 and len(resources_to_book) > 1:
-            all_available = True
-            for resource in resources_to_book:
-                res_scenario = resource.data[self.scenarioIdx] if resource.data else None
-                if res_scenario is None:
-                    all_available = False
-                    break
-                if res_scenario.scoreboard is None:
-                    res_scenario.prepareScheduling()
-                slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
-                if not res_scenario.available(slot_idx):
-                    all_available = False
-                    break
-                # Also check task limits
-                if not self.limitsOk(slot_idx, resource):
-                    all_available = False
-                    break
-
-            if not all_available:
-                # Can't book - one or more resources unavailable
-                return
-
-        # Now book all resources (or single resource for non-team tasks)
         booked_any = False
-        total_effort_this_slot = 0.0
-        for resource in resources_to_book:
-            effort_gained = self.bookResource(resource)
-            if effort_gained > 0:
-                booked_any = True
-                # Track maximum effort from any single resource (not sum)
-                # For multi-resource effort tasks, we count clock time not person-hours
-                total_effort_this_slot = max(total_effort_this_slot, effort_gained)
+        gained_total = 0.0
+        remaining = (effort - self.doneEffort) if effort > 0 else None
 
-                # Store the resource and slot for potential partial release later
-                if not hasattr(self, "_lastBookedResource"):
-                    self._lastBookedResource = None
-                    self._lastBookedSlot = None
-                self._lastBookedResource = resource
-                self._lastBookedSlot = self.currentSlotIdx
+        for allocation, resource in chosen:
+            if remaining is not None and remaining <= 0:
+                break
+            gained = self.bookResource(resource)
+            if gained <= 0:
+                if allocation.mandatory:
+                    # A mandatory resource turned out not to be bookable after
+                    # all; stop rather than record partial progress.
+                    return
+                continue
+            booked_any = True
+            gained_total += gained
+            if remaining is not None:
+                remaining -= gained
+            if allocation.persistent:
+                allocation.locked = resource
+            self._lastBookedResource = resource
+            self._lastBookedSlot = self.currentSlotIdx
 
         if booked_any:
-            # For effort-based tasks, set start date on first booking
             if effort > 0 and self.doneEffort == 0:
-                forward = self.property.get("forward", self.scenarioIdx)
-                if forward:
-                    # Use exact start time (including mid-slot offset from dependency)
-                    from datetime import timedelta
+                self._recordEffortStart()
+            self.doneEffort += gained_total
 
-                    slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
-                    start_date = self.project.idxToDate(slot_idx)
-                    if start_date is not None and hasattr(self, "slotStartOffset") and self.slotStartOffset > 0:
-                        start_date = start_date + timedelta(seconds=self.slotStartOffset)
-                    self.property[("start", self.scenarioIdx)] = start_date
+    def _firstBookable(self, allocation: Any, slot_idx: int) -> Optional[Any]:
+        """The first candidate for this allocation that is free in this slot."""
+        for resource in allocation.candidates():
+            scenario = resource.data[self.scenarioIdx] if resource.data else None
+            if scenario is None:
+                continue
+            if scenario.scoreboard is None:
+                scenario.prepareScheduling()
+            if not scenario.available(slot_idx):
+                continue
+            if not self.limitsOk(slot_idx, resource):
+                continue
+            return resource
+        return None
 
-            # Accumulate effort (counted once per slot, not per resource)
-            self.doneEffort += total_effort_this_slot
+    def _recordEffortStart(self) -> None:
+        """Set the task's start at its first booking, honouring a mid-slot start."""
+        from datetime import timedelta
+
+        forward = self.property.get("forward", self.scenarioIdx)
+        if not forward:
+            return
+        slot_idx = self.currentSlotIdx if self.currentSlotIdx is not None else 0
+        start_date = self.project.idxToDate(slot_idx)
+        if start_date is not None and getattr(self, "slotStartOffset", 0) > 0:
+            start_date = start_date + timedelta(seconds=self.slotStartOffset)
+        self.property[("start", self.scenarioIdx)] = start_date
 
     def getAllLimits(self) -> list[Any]:
         """
@@ -1550,36 +1393,11 @@ class TaskScenario(ScenarioData):
             self.property[("scheduled", self.scenarioIdx)] = True
 
     def _getResourcesForTask(self) -> list[Any]:
-        """
-        Get the actual Resource objects for this task.
-
-        Looks up resources from either 'assignedresources' (if populated)
-        or 'allocate' (resource IDs), resolving them to Resource objects.
-
-        Returns:
-            List of Resource objects
-        """
-        resources = []
-
-        # Try assignedresources first
+        """The Resource objects this task may book."""
         assigned = self.property.get("assignedresources", self.scenarioIdx) or []
         if assigned:
-            return assigned
-
-        # Fall back to allocate (which may contain IDs or resource objects)
-        allocate = self.property.get("allocate", self.scenarioIdx) or []
-        for res in allocate:
-            if isinstance(res, str):
-                # Look up resource by ID
-                for resource in self.project.resources:
-                    if resource.id == res:
-                        resources.append(resource)
-                        break
-            else:
-                # Already a resource object
-                resources.append(res)
-
-        return resources
+            return list(assigned)
+        return self.allocationPlan().resources()
 
     def getCost(self) -> float:
         """

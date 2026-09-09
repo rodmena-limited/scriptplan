@@ -224,12 +224,18 @@ depends_option: "gapduration" duration_value -> dep_gapduration
               | "onstart" -> dep_onstart
 DEPENDS_REF: /[!.a-zA-Z_][!.a-zA-Z0-9_]*/
 
-allocate_spec: ID ("," ID)* allocate_options?
+// An allocation names a resource, optionally with options attached to it.
+// TaskJuggler binds options to the resource they follow, so
+//   allocate a { mandatory }, b
+// makes a mandatory and leaves b optional.
+allocate_spec: allocate_item ("," allocate_item)*
+allocate_item: ID allocate_options?
 allocate_options: "{" allocate_option* "}"
-allocate_option: "persistent"
-               | "mandatory"
-               | "alternative" ID ("," ID)*
-               | "limits" "{" limits_body "}"
+allocate_option: "persistent" -> alloc_persistent
+               | "mandatory" -> alloc_mandatory
+               | "alternative" ID ("," ID)* -> alloc_alternative
+               | "select" ID -> alloc_select
+               | "limits" "{" limits_body "}" -> alloc_limits
 
 charge_mode: "onstart" | "onend" | "perday"
 
