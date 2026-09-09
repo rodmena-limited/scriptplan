@@ -1,4 +1,7 @@
-project "Math_Torture" 2024-02-28-00:00 +3m {
+# The declared period must cover the work: 500 tasks of 73min effort with
+# 29min gaps run to 2024-06-06. A shorter declaration used to be silently
+# extended by the scheduler; it now reports the tasks that do not fit.
+project "Math_Torture" 2024-02-28-00:00 +4m {
   timezone "Etc/UTC"
   timeformat "%Y-%m-%d %H:%M"
   numberformat "-" "" "," "." 2

@@ -4,10 +4,12 @@ Contains Message, MessageHandlerInstance singleton, and MessageHandler mixin
 for handling fatal errors, errors, warnings, info, and debug messages.
 """
 
+import contextlib
 import sys
 import threading
 from datetime import datetime
 from enum import Enum
+from collections.abc import Iterator
 from typing import Any, ClassVar, Optional, Union
 
 from scriptplan.utils.logger import ANSIColor
@@ -222,6 +224,7 @@ class MessageHandlerInstance:
     _hide_scenario: bool
     _app_name: str
     _abort_on_warning: bool
+    _collect_errors: bool
     _baseline_sfi: dict[int, SourceFileInfo]
     _trap_setup: dict[int, bool]
     _errors: int
@@ -249,6 +252,7 @@ class MessageHandlerInstance:
         self._hide_scenario = True
         self._app_name = "unknown"
         self._abort_on_warning = False
+        self._collect_errors = False
         self._baseline_sfi = {}
         self._trap_setup = {}
 
@@ -277,6 +281,30 @@ class MessageHandlerInstance:
     @appName.setter
     def appName(self, value: str) -> None:
         self._app_name = value
+
+    @property
+    def collectErrors(self) -> bool:
+        """When True, an error is recorded instead of raised.
+
+        Applications that want to report every problem in one run (the CLIs, and
+        the scheduler's own pre-flight checks) turn this on for the duration of
+        the run and inspect ``messages`` afterwards.
+        """
+        return self._collect_errors
+
+    @collectErrors.setter
+    def collectErrors(self, value: bool) -> None:
+        self._collect_errors = bool(value)
+
+    @contextlib.contextmanager
+    def collecting(self) -> "Iterator[MessageHandlerInstance]":
+        """Collect errors for the duration of the block, then restore."""
+        previous = self._collect_errors
+        self._collect_errors = True
+        try:
+            yield self
+        finally:
+            self._collect_errors = previous
 
     @property
     def abortOnWarning(self) -> bool:
@@ -418,10 +446,11 @@ class MessageHandlerInstance:
             self._errors += 1
         elif msg_type == MessageType.ERROR:
             self._errors += 1
-            if self.trapSetup:
-                raise TjRuntimeError()
-            else:
-                sys.exit(1)
+            # A library never terminates its host process. An error is raised so
+            # the caller can collect it, or handled by an application that has
+            # opted into collecting rather than raising.
+            if not self._collect_errors:
+                raise TjRuntimeError(str(msg))
         elif msg_type == MessageType.FATAL:
             raise RuntimeError(message)
 
@@ -446,7 +475,11 @@ class MessageHandlerInstance:
         data: Any = None,
         scenario: Any = None,
     ) -> None:
-        """Log an error. Will exit or raise TjRuntimeError based on trapSetup."""
+        """Log an error.
+
+        Raises TjRuntimeError unless the caller has opted into collecting
+        errors with ``collectErrors``. Never terminates the process.
+        """
         self._add_message(MessageType.ERROR, msg_id, message, source_file_info, line, data, scenario)
 
     def critical(

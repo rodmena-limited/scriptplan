@@ -91,6 +91,45 @@ def validate_tjp_file(tjp_path: str) -> Path:
     return path
 
 
+REPORT_KEYWORDS = ("taskreport", "resourcereport", "textreport", "accountreport")
+
+
+def declares_report(tjp_path: Path, output_format: str) -> bool:
+    """True if the file already defines a report producing ``output_format``.
+
+    The CLI only supplies a report of its own when the project does not define
+    one, so that `plan report` shows the user the report they wrote rather than
+    a substitute with different columns.
+    """
+    try:
+        with open(tjp_path) as handle:
+            text = handle.read()
+    except OSError:
+        return False
+
+    # Strip comments so a commented-out report is not mistaken for a real one.
+    lines = []
+    for raw in text.splitlines():
+        stripped = raw.split("#", 1)[0]
+        lines.append(stripped)
+    body = "\n".join(lines)
+
+    depth_of_report = None
+    depth = 0
+    for token_line in body.splitlines():
+        opens_report = any(keyword in token_line for keyword in REPORT_KEYWORDS)
+        if opens_report and depth_of_report is None:
+            depth_of_report = depth
+        if depth_of_report is not None and "formats" in token_line:
+            formats = token_line.split("formats", 1)[1]
+            if output_format in formats:
+                return True
+        depth += token_line.count("{") - token_line.count("}")
+        if depth_of_report is not None and depth <= depth_of_report:
+            depth_of_report = None
+    return False
+
+
 def create_auto_report_file(tjp_path: Path, output_format: str) -> tuple[Path, str]:
     """
     Create a temporary .tjp file with auto-generated report.
@@ -302,12 +341,9 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         if not quiet:
             click.echo(f"Processing: {tjp_path.name}", err=True)
 
-        # Calculate SHA256 hash of the input file for report_id
-        with open(tjp_path, "rb") as f:  # type: ignore[assignment]
-            file_hash = hashlib.sha256(f.read()).hexdigest()  # type: ignore[arg-type]
-
         if verbose:
-            logger.debug("Input file SHA256: %s", file_hash)
+            with open(tjp_path, "rb") as handle:
+                logger.debug("Input file SHA256: %s", hashlib.sha256(handle.read()).hexdigest())
 
         # Determine output format
         output_format = "csv" if output_csv else "json"
@@ -318,11 +354,18 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         if verbose:
             logger.debug("Created temp output directory: %s", temp_output_dir)
 
-        # Create auto-report file (always, to ensure output in requested format)
-        if verbose:
-            logger.debug("Creating auto-report for %s format", output_format)
-
-        temp_file, auto_report_id = create_auto_report_file(tjp_path, output_format)
+        # Only supply a report when the project does not define one, so the user
+        # sees the report they wrote, with the columns they asked for.
+        if declares_report(tjp_path, output_format):
+            if verbose:
+                logger.debug("Using the %s report(s) declared in the project", output_format)
+            temp_file, auto_report_id = None, ""
+            source_for_run = tjp_path
+        else:
+            if verbose:
+                logger.debug("Project declares no %s report; adding a default one", output_format)
+            temp_file, auto_report_id = create_auto_report_file(tjp_path, output_format)
+            source_for_run = temp_file
 
         if verbose:
             logger.debug("Temporary file: %s", temp_file)
@@ -332,7 +375,7 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         if verbose:
             logger.debug("Running ScriptPlan report generator")
 
-        success, error_msg = run_scriptplan(str(temp_file), str(temp_output_dir))
+        success, error_msg = run_scriptplan(str(source_for_run), str(temp_output_dir))
 
         if not success:
             raise ReportGenerationError(error_msg or "Report generation failed")
@@ -352,8 +395,16 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
                 "This may indicate a scheduling issue with your project."
             )
 
-        # Get the primary output file (first one)
+        # Pick deterministically: glob order is filesystem order, so sort by
+        # name to make repeated runs of the same input byte-identical.
+        output_files.sort(key=lambda path: path.name)
         primary_output = output_files[0]
+        if len(output_files) > 1 and not quiet:
+            click.echo(
+                f"Note: the project defines {len(output_files)} {output_format} reports; "
+                f"showing '{primary_output.stem}'. Use --output to write them individually.",
+                err=True,
+            )
 
         if verbose:
             logger.debug("Reading report from: %s", primary_output)
@@ -362,18 +413,20 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         with open(primary_output) as f:
             report_content = f.read()
 
-        # Replace report_id with SHA256 hash for JSON output
+        # Stamp report_id with a SHA256 over the rendered result, so that the
+        # id identifies the schedule the user is looking at. Hashing the input
+        # file instead would give a correct and a broken schedule the same id.
         if output_format == "json":
             try:
                 report_data = json.loads(report_content)
-                # Replace report_id with file hash
-                report_data["report_id"] = file_hash
+                report_data.pop("report_id", None)
+                canonical = json.dumps(report_data, sort_keys=True, separators=(",", ":"))
+                report_data["report_id"] = hashlib.sha256(canonical.encode()).hexdigest()
                 report_content = json.dumps(report_data, indent=2)
                 if verbose:
-                    logger.debug("Replaced report_id with SHA256 hash: %s", file_hash)
+                    logger.debug("report_id (SHA256 of result): %s", report_data["report_id"])
             except json.JSONDecodeError:
-                # If JSON parsing fails, keep original content
-                logger.warning("Failed to parse JSON for report_id replacement")
+                logger.warning("Failed to parse JSON for report_id computation")
 
         # Handle output
         if output:

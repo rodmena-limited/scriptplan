@@ -45,7 +45,8 @@ from scriptplan.core.scenario import Scenario
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.scoreboard import Scoreboard
 from scriptplan.utils.data_cache import FileList
-from scriptplan.utils.message_handler import MessageHandler
+from scriptplan.scheduler.preflight import check_no_cycles
+from scriptplan.utils.message_handler import MessageHandler, get_message_handler_instance
 from scriptplan.utils.time import TjTime
 
 
@@ -310,37 +311,59 @@ class Project(MessageHandler):
         return 60 * 60
 
     def schedule(self) -> bool:
-        # Extend project end if tasks require more time
-        self._extendProjectEndIfNeeded()
+        """Schedule every active scenario.
 
+        Returns True only if every task in every active scenario was placed.
+        When a task cannot be scheduled the reason is recorded as an error on
+        the message handler and False is returned; the caller decides whether
+        to render a partial result.
+
+        A structurally malformed project (a dependency cycle) raises rather
+        than returning False: there is nothing to schedule and no partial
+        result worth rendering.
+        """
         self.initScoreboards()
 
         for p in [self.accounts, self.shifts, self.resources, self.tasks]:
             p.index()
 
+        self.scheduleErrors = []
+
         if self.tasks.empty():
-            # No tasks to schedule - just return
+            # Nothing to schedule is a valid, complete result.
             return True
 
-        for sc in self.scenarios:
-            # Skip disabled scenarios if 'active' is false (default true if not set)
-            if not sc.get("active") and sc.get("active") is not None:
-                continue
+        handler = get_message_handler_instance()
+        previous_mode = AttributeBase.mode()
+        ok = True
+        try:
+            for sc in self.scenarios:
+                # Skip disabled scenarios if 'active' is false (default true if not set)
+                if not sc.get("active") and sc.get("active") is not None:
+                    continue
 
-            scIdx: int = sc.sequenceNo - 1
+                scIdx: int = sc.sequenceNo - 1
 
-            # Propagate inherited values
-            AttributeBase.setMode(1)
-            self.prepareScenario(scIdx)
+                # Propagate inherited values
+                AttributeBase.setMode(1)
+                self.prepareScenario(scIdx)
 
-            # Schedule
-            AttributeBase.setMode(2)
-            self.scheduleScenario(scIdx)
+                # Reject a malformed dependency graph before scheduling it.
+                check_no_cycles(self.tasks, scIdx)
 
-            # Finish
-            self.finishScenario(scIdx)
+                # Schedule. Errors are collected so that one unschedulable task
+                # does not hide the others.
+                AttributeBase.setMode(2)
+                with handler.collecting():
+                    if not self.scheduleScenario(scIdx):
+                        ok = False
 
-        return True
+                # Finish
+                self.finishScenario(scIdx)
+        finally:
+            AttributeBase.setMode(previous_mode)
+
+        return ok
 
     def prepareScenario(self, scIdx: int) -> None:
         # Simplified preparation
@@ -514,6 +537,7 @@ class Project(MessageHandler):
                     continue
 
                 if not task.schedule(scIdx):
+                    self._reportUnscheduled(task, scIdx, "ran outside the project window")
                     failedTasks.append(task)
 
                 taskToRemove = task
@@ -523,22 +547,35 @@ class Project(MessageHandler):
                 tasks.remove(taskToRemove)
                 # After scheduling a leaf, check if any container tasks should be marked scheduled
                 self._updateContainerTaskStatus(scIdx)
-            elif tasks and not failedTasks:
-                # If we have tasks but none are ready and no failures yet, it's a deadlock
-                # (Unless readyForScheduling logic waits for something else?)
-                self.warning("deadlock", "Deadlock detected in scheduling")
-                failedTasks.extend(tasks)
+            elif tasks:
+                # Nothing is ready and nothing was placed this pass: the
+                # remaining tasks are waiting on each other or on a constraint
+                # that will never be satisfied.
+                stalled = [t for t in tasks if t not in failedTasks]
+                for task in stalled:
+                    self._reportUnscheduled(task, scIdx, "no ready predecessor or successor")
+                failedTasks.extend(stalled)
                 break
             else:
-                # If tasks is not empty but we didn't remove any, we break to avoid infinite loop
-                # likely deadlock or all failed
                 break
 
         if failedTasks:
-            self.warning("unscheduled_tasks", f"{len(failedTasks)} tasks could not be scheduled")
             return False
 
         return True
+
+    def _reportUnscheduled(self, task: Any, scIdx: int, reason: str) -> None:
+        """Record why one task could not be placed, naming the task."""
+        task_id = getattr(task, "fullId", None) or getattr(task, "id", None) or repr(task)
+        detail = reason
+        if reason == "ran outside the project window":
+            detail = (
+                f"{reason} ({self.attributes['start']} to {self.attributes['end']}); "
+                "it needs more time or more resource availability than the project allows"
+            )
+        message = f"Task '{task_id}' could not be scheduled: {detail}"
+        self.scheduleErrors.append((task_id, detail))
+        self.error("unscheduled_task", message, data=task_id)
 
     def _updateContainerTaskStatus(self, scIdx: int) -> None:
         """Mark container tasks as scheduled when all their children are scheduled.
@@ -694,88 +731,6 @@ class Project(MessageHandler):
 
             if pred:
                 self._markTaskALAP(pred, scIdx, processed, reverse_deps)
-
-    def _extendProjectEndIfNeeded(self) -> None:
-        """
-        Extend project end date if tasks require more time than the specified duration.
-        This prevents tasks from being truncated at the project boundary.
-        """
-        if not self.attributes.get("start") or not self.attributes.get("end"):
-            return
-
-        # Calculate total effort and gaps needed
-        total_effort_seconds: float = 0
-        total_gap_seconds: float = 0
-        task_count: int = 0
-
-        for task in self.tasks:
-            if task.leaf():
-                task_count += 1
-                # Get effort - stored in hours, convert to seconds
-                try:
-                    effort = task.get("effort", 0)
-                    if effort:
-                        if isinstance(effort, (int, float)):
-                            # Effort is in hours, convert to seconds
-                            total_effort_seconds += effort * 3600
-                        elif hasattr(effort, "total_seconds"):
-                            total_effort_seconds += effort.total_seconds()
-                except Exception:
-                    pass
-
-                # Account for dependency gaps - use task.get() with scenario index 0
-                try:
-                    deps = task.get("depends", 0) or []
-                    for dep in deps:
-                        gap: Optional[Any] = None
-                        if isinstance(dep, dict):
-                            gap = dep.get("gapduration")
-                        elif hasattr(dep, "gapduration"):
-                            gap = dep.gapduration
-                        if gap:
-                            if isinstance(gap, (int, float)):
-                                total_gap_seconds += gap
-                            elif isinstance(gap, str):
-                                # Parse duration string like '29min', '1h', '2d'
-                                import re
-
-                                match = re.match(r"(\d+)(min|h|d|w|m|y|s)", gap)
-                                if match:
-                                    val = int(match.group(1))
-                                    unit = match.group(2)
-                                    if unit == "s":
-                                        total_gap_seconds += val
-                                    elif unit == "min":
-                                        total_gap_seconds += val * 60
-                                    elif unit == "h":
-                                        total_gap_seconds += val * 3600
-                                    elif unit == "d":
-                                        total_gap_seconds += val * 86400
-                                    elif unit == "w":
-                                        total_gap_seconds += val * 86400 * 7
-                            elif hasattr(gap, "total_seconds"):
-                                total_gap_seconds += gap.total_seconds()
-                except Exception:
-                    pass
-
-        if task_count == 0:
-            return
-
-        # Estimate daily working capacity (conservative: 6 hours/day to account for breaks)
-        daily_capacity_seconds: float = 6 * 3600
-        # Estimate days needed for effort
-        work_days_needed: float = total_effort_seconds / daily_capacity_seconds if daily_capacity_seconds > 0 else 0
-        # Add gap time (calendar days)
-        gap_days: float = total_gap_seconds / 86400
-        # Total calendar days (with 50% buffer for weekends/non-working days)
-        total_days_needed: int = int((work_days_needed + gap_days) * 1.5) + 7
-
-        # Calculate minimum required end date
-        min_end_date = self.attributes["start"] + timedelta(days=total_days_needed)
-
-        # Extend project end if needed
-        if min_end_date > self.attributes["end"]:
-            self.attributes["end"] = min_end_date
 
     def initScoreboards(self) -> None:
         if not self.attributes["start"] or not self.attributes["end"]:

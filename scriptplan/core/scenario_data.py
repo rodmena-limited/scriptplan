@@ -62,5 +62,4 @@ class ScenarioData:
         sourceFileInfo: Optional[SourceFileInfo] = None,
         property_node: Optional["PropertyTreeNode"] = None,
     ) -> None:
-        # Assuming info exists
-        print(f"INFO: {text}")
+        self.messageHandler.info(id, text, sourceFileInfo or self.property.sourceFileInfo)
