@@ -132,13 +132,10 @@ class TaskReport(TableReport):
         return resource_list
 
     def _sort_task_list(self, task_list: PropertyList) -> None:
-        """
-        Sort the task list according to report settings.
-
-        Args:
-            task_list: The list to sort
-        """
-        # Use PropertyList's built-in sorting which sorts by seqno by default
+        """Sort the task list by the report's own sortTasks criteria."""
+        criteria = self.a("sortTasks")
+        if criteria:
+            task_list.setSorting(criteria)
         task_list.sort()
 
     def _sort_resource_list(self, resource_list: PropertyList) -> None:

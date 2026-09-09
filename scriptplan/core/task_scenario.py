@@ -103,6 +103,24 @@ class TaskScenario(ScenarioData):
         if limits:
             limits.reset()
 
+        self._discardComputedDates()
+
+    # Attributes the scheduler works out for itself. A value the file provided
+    # or a container passed down is kept; anything the previous run computed is
+    # discarded, so a second schedule() starts from the same state as the first
+    # and produces the same answer instead of skipping the work and losing the
+    # bookings that went with it.
+    COMPUTED_ATTRIBUTES = ("start", "end", "scheduled", "assignedresources")
+
+    def _discardComputedDates(self) -> None:
+        for name in self.COMPUTED_ATTRIBUTES:
+            try:
+                attribute = self.property._get_scenario_attribute(name, self.scenarioIdx)
+            except (ValueError, KeyError):
+                continue
+            if not attribute.getProvided() and not attribute.getInherited():
+                attribute.reset()
+
     def getAllDependencies(self) -> list[Any]:
         """
         Get all dependencies including inherited ones from parent containers.

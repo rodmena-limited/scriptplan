@@ -9,6 +9,8 @@ generate_intermediate_format function as well as to_json, to_csv, etc.
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional
 
+from scriptplan.report.logical_expression import LogicalExpression
+
 if TYPE_CHECKING:
     from scriptplan.core.property import PropertyList
     from scriptplan.report.report import Report
@@ -287,12 +289,14 @@ class ReportBase(ABC):
             query = self.project.reportContexts[-1].query.copy()
             query.scope_property = scope_property
 
-        # Remove hidden properties
-        if hide_expr and query:
+        # Remove hidden properties. A filter is applied whether or not a query
+        # context exists: a LogicalExpression is answered by the property
+        # itself, and skipping the filter when there is no context is how a
+        # `hidetask` in the file could be silently ignored.
+        if hide_expr:
 
             def should_hide(prop: Any) -> bool:
-                query.property = prop
-                return bool(self._eval_expression(hide_expr, query))
+                return self._matches(hide_expr, prop, query)
 
             items.delete_if(should_hide)
 
@@ -308,7 +312,7 @@ class ReportBase(ABC):
                     if open_nodes and [parent, scope_property] not in open_nodes:
                         # If open_nodes specified, only listed nodes are unrolled
                         return True
-                    elif rollup_expr and bool(self._eval_expression(rollup_expr, query)):
+                    elif rollup_expr and self._matches(rollup_expr, parent, query):
                         # Roll up based on expression
                         return True
 
@@ -357,6 +361,16 @@ class ReportBase(ABC):
             current = current.parent if hasattr(current, "parent") else None
         return False
 
+    def _matches(self, expr: Any, prop: Any, query: Any) -> bool:
+        """Whether ``expr`` holds for ``prop``."""
+        if isinstance(expr, LogicalExpression):
+            scenario = getattr(query, "scenarioIdx", None) if query is not None else None
+            return expr.evaluate(prop, scenario)
+        if query is None:
+            return False
+        query.property = prop
+        return bool(self._eval_expression(expr, query))
+
     def _eval_expression(self, expr: Any, query: Any) -> bool:
         """
         Evaluate a logical expression.
@@ -374,4 +388,11 @@ class ReportBase(ABC):
         if callable(expr):
             result = expr(query)
             return bool(result)
-        return bool(expr)
+        if isinstance(expr, LogicalExpression):
+            prop = getattr(query, "property", None)
+            if prop is None:
+                return False
+            return expr.evaluate(prop, getattr(query, "scenarioIdx", None))
+        # Anything else would be judged by truthiness, which for a string is
+        # "not empty" -- and would hide every row of the report.
+        return False

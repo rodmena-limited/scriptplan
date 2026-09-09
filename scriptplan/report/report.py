@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from scriptplan.core.exceptions import UnsupportedFormatError
 from scriptplan.core.property import PropertyTreeNode
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.utils.message_handler import MessageHandler
@@ -331,29 +332,64 @@ class Report(PropertyTreeNode, MessageHandler):
             writer.writerows(csv_data)
 
     def _generate_ical(self) -> None:
-        """Generate iCal output."""
-        # To be implemented
-        pass
+        """iCal output is not implemented.
+
+        Raising here rather than writing nothing: a report that produces no
+        file leaves the CLI reporting "no output files found. This may
+        indicate a scheduling issue with your project", which sends the reader
+        after a scheduling bug that does not exist.
+        """
+        raise UnsupportedFormatError(
+            "iCal output is not implemented. Use json or csv."
+        )
 
     def _generate_ctags(self) -> None:
-        """Generate ctags output."""
-        # To be implemented
-        pass
+        """ctags output is not implemented.
+
+        Raising here rather than writing nothing: a report that produces no
+        file leaves the CLI reporting "no output files found. This may
+        indicate a scheduling issue with your project", which sends the reader
+        after a scheduling bug that does not exist.
+        """
+        raise UnsupportedFormatError(
+            "ctags output is not implemented. Use json or csv."
+        )
 
     def _generate_niku(self) -> None:
-        """Generate Niku output."""
-        # To be implemented
-        pass
+        """Niku output is not implemented.
+
+        Raising here rather than writing nothing: a report that produces no
+        file leaves the CLI reporting "no output files found. This may
+        indicate a scheduling issue with your project", which sends the reader
+        after a scheduling bug that does not exist.
+        """
+        raise UnsupportedFormatError(
+            "Niku output is not implemented. Use json or csv."
+        )
 
     def _generate_tjp(self) -> None:
-        """Generate TJP export output."""
-        # To be implemented
-        pass
+        """TJP export output is not implemented.
+
+        Raising here rather than writing nothing: a report that produces no
+        file leaves the CLI reporting "no output files found. This may
+        indicate a scheduling issue with your project", which sends the reader
+        after a scheduling bug that does not exist.
+        """
+        raise UnsupportedFormatError(
+            "TJP export output is not implemented. Use json or csv."
+        )
 
     def _generate_msp_xml(self) -> None:
-        """Generate MS Project XML output."""
-        # To be implemented
-        pass
+        """MS Project XML output is not implemented.
+
+        Raising here rather than writing nothing: a report that produces no
+        file leaves the CLI reporting "no output files found. This may
+        indicate a scheduling issue with your project", which sends the reader
+        after a scheduling bug that does not exist.
+        """
+        raise UnsupportedFormatError(
+            "MS Project XML output is not implemented. Use json or csv."
+        )
 
     def addReport(self, report: "Report") -> None:
         """

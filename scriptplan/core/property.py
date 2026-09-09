@@ -321,6 +321,47 @@ class PTNProxy:
         return bool(self._ptn == other)
 
 
+def _sort_by_id(item: Any, _scenario: int) -> Any:
+    return getattr(item, "fullId", None)
+
+
+def _sort_by_tree(item: Any, _scenario: int) -> Any:
+    return getattr(item, "fullId", None)
+
+
+def _sort_by_alert(item: Any, _scenario: int) -> int:
+    """The highest journal alert level recorded against this property.
+
+    `alert` is a report column rather than a property attribute, so it is
+    computed here instead of being looked up and rejected as unknown.
+    """
+    project = getattr(item, "project", None)
+    journal = getattr(project, "attributes", {}).get("journal") if project is not None else None
+    if journal is None:
+        return 0
+    try:
+        entries = list(journal.entries())
+    except Exception:  # noqa: BLE001
+        return 0
+    highest = 0
+    for entry in entries:
+        node = getattr(entry, "property", None) or getattr(entry, "task", None)
+        while node is not None:
+            if node is item:
+                highest = max(highest, int(getattr(entry, "alert_level", 0)))
+                break
+            node = getattr(node, "parent", None)
+    return highest
+
+
+#: Sort criteria a report computes rather than reading from the property.
+COMPUTED_SORT_CRITERIA: dict[str, Callable[[Any, int], Any]] = {
+    "id": _sort_by_id,
+    "tree": _sort_by_tree,
+    "alert": _sort_by_alert,
+}
+
+
 class PropertyList:
     """List of PropertyTreeNodes with multi-level sorting support.
 
@@ -516,8 +557,15 @@ class PropertyList:
         if self._propertySet is None:
             raise ValueError("PropertySet cannot be None")
 
-        if not self._propertySet.knownAttribute(criteria) and not self._propertySet.hasQuery(criteria, scIdx):
-            raise ValueError(f"Unknown attribute '{criteria}' used for sorting criterium")
+        if (
+            criteria not in COMPUTED_SORT_CRITERIA
+            and not self._propertySet.knownAttribute(criteria)
+            and not self._propertySet.hasQuery(criteria, scIdx)
+        ):
+            raise ValueError(
+                f"Unknown attribute '{criteria}' used for sorting criterium. Sort by a "
+                f"property attribute, or by one of: {', '.join(sorted(COMPUTED_SORT_CRITERIA))}."
+            )
 
         if self._propertySet.scenarioSpecific(criteria):
             if scIdx < 0 or (
@@ -553,49 +601,54 @@ class PropertyList:
         return idcs
 
     def _sortInternal(self) -> None:
-        def compare_key(item: Union["PropertyTreeNode", PTNProxy]) -> tuple[Any, ...]:
-            key_parts: list[Any] = []
-            for i in range(self._sortingLevels):
-                criteria = self._sortingCriteria[i]
-                scIdx = self._scenarioIdx[i]
-                up = self._sortingUp[i]
+        """Order the list by each criterion in turn.
 
-                if self._query and criteria != "tree":
-                    # Query-based sorting
-                    self._query.scenarioIdx = None if scIdx < 0 else scIdx
-                    self._query.attributeId = criteria
-                    self._query.property = item
-                    self._query.process()
-                    val = self._query.to_sort()
-                else:
-                    # Static attribute sorting
-                    if scIdx < 0:
-                        val = item.fullId if criteria == "id" else item.get(criteria)
-                    else:
-                        val = item[(criteria, scIdx)]
+        Sorting happens one criterion at a time, least significant first, so a
+        descending pass is a plain reverse of a stable sort. Building a single
+        composite key instead means negating values to invert them, which does
+        nothing to a string, and mixing numbers with the empty string stands in
+        for a missing value, which raises as soon as one row lacks it.
+        """
+        for i in reversed(range(self._sortingLevels)):
+            criteria = self._sortingCriteria[i]
+            scIdx = self._scenarioIdx[i]
+            ascending = self._sortingUp[i]
+            self._items.sort(
+                key=lambda item, c=criteria, s=scIdx: self._sortKey(item, c, s),
+                reverse=not ascending,
+            )
 
-                # Handle None values
-                if val is None:
-                    val = ""
+    def _sortKey(self, item: Union["PropertyTreeNode", PTNProxy], criteria: str, scIdx: int) -> tuple[int, Any]:
+        """A comparable key for one criterion.
 
-                # Invert for descending order
-                if not up:
-                    if isinstance(val, (int, float)):
-                        val = -val
-                    elif isinstance(val, str):
-                        # For strings, we need a different approach
-                        # Use a tuple with a flag
-                        val = (1, val)  # descending strings will be sorted differently
-                    else:
-                        val = (1, val)
-                else:
-                    if isinstance(val, str) or not isinstance(val, (int, float)):
-                        val = (0, val)
+        The leading number separates rows that have no value from rows that do,
+        so a missing value sorts to one end instead of being compared against a
+        value of another type.
+        """
+        value = self._sortValue(item, criteria, scIdx)
+        if value is None:
+            return (1, "")
+        if isinstance(value, bool):
+            return (0, int(value))
+        if isinstance(value, (int, float)):
+            return (0, value)
+        if isinstance(value, str):
+            return (0, value)
+        return (0, str(value))
 
-                key_parts.append(val)
-            return tuple(key_parts)
-
-        self._items.sort(key=compare_key)
+    def _sortValue(self, item: Union["PropertyTreeNode", PTNProxy], criteria: str, scIdx: int) -> Any:
+        if self._query and criteria != "tree":
+            self._query.scenarioIdx = None if scIdx < 0 else scIdx
+            self._query.attributeId = criteria
+            self._query.property = item
+            self._query.process()
+            return self._query.to_sort()
+        if criteria in COMPUTED_SORT_CRITERIA:
+            return COMPUTED_SORT_CRITERIA[criteria](item, scIdx)
+        try:
+            return item.get(criteria) if scIdx < 0 else item.get(criteria, scIdx)
+        except (ValueError, KeyError, AttributeError):
+            return None
 
     def delete_if(self, func: Callable[[Union["PropertyTreeNode", PTNProxy]], bool]) -> None:
         to_remove = [i for i in self._items if func(i)]

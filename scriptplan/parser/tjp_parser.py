@@ -7,12 +7,17 @@ from typing import Any, Optional, Union
 
 from lark import Lark, Token, Transformer, Tree  # type: ignore[import-untyped,unused-ignore]
 
-from scriptplan.core.exceptions import DuplicateDefinitionError, SemanticError
+from scriptplan.core.exceptions import (
+    DuplicateDefinitionError,
+    SemanticError,
+    UnsupportedFormatError,
+)
 from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
 from scriptplan.parser.attribute_apply import apply_property_attributes
+from scriptplan.report.logical_expression import parse_expression
 from scriptplan.parser.macro_processor import preprocess_tjp
 
 
@@ -797,17 +802,19 @@ class TJPTransformer(Transformer[Any, Any]):
     def taskreport_loadunit(self, items: list[Any]) -> tuple[str, str]:
         return ("loadUnit", self._get_value(items[0]))
 
-    def taskreport_hideresource(self, items: list[Any]) -> tuple[str, str]:
-        return ("hideResource", self._get_value(items[0]))
+    def taskreport_hideresource(self, items: list[Any]) -> tuple[str, Any]:
+        """A filter expression, parsed now so a bad one is rejected now."""
+        return ("hideResource", parse_expression(str(self._get_value(items[0])).lstrip("@")))
 
-    def taskreport_hidetask(self, items: list[Any]) -> tuple[str, str]:
-        return ("hideTask", self._get_value(items[0]))
+    def taskreport_hidetask(self, items: list[Any]) -> tuple[str, Any]:
+        """A filter expression, parsed now so a bad one is rejected now."""
+        return ("hideTask", parse_expression(str(self._get_value(items[0])).lstrip("@")))
 
     def taskreport_sorttasks(self, items: list[Any]) -> Any:
-        return items[0] if items else ("sort", [])
+        return ("sortTasks", items[0][1] if items else [])
 
     def taskreport_sortresources(self, items: list[Any]) -> Any:
-        return items[0] if items else ("sort", [])
+        return ("sortResources", items[0][1] if items else [])
 
     def taskreport_scenarios(self, items: list[Any]) -> tuple[str, list[str]]:
         return ("scenarios", [self._get_value(i) for i in items])
@@ -861,17 +868,19 @@ class TJPTransformer(Transformer[Any, Any]):
     def resourcereport_loadunit(self, items: list[Any]) -> tuple[str, str]:
         return ("loadUnit", self._get_value(items[0]))
 
-    def resourcereport_hideresource(self, items: list[Any]) -> tuple[str, str]:
-        return ("hideResource", self._get_value(items[0]))
+    def resourcereport_hideresource(self, items: list[Any]) -> tuple[str, Any]:
+        """A filter expression, parsed now so a bad one is rejected now."""
+        return ("hideResource", parse_expression(str(self._get_value(items[0])).lstrip("@")))
 
-    def resourcereport_hidetask(self, items: list[Any]) -> tuple[str, str]:
-        return ("hideTask", self._get_value(items[0]))
+    def resourcereport_hidetask(self, items: list[Any]) -> tuple[str, Any]:
+        """A filter expression, parsed now so a bad one is rejected now."""
+        return ("hideTask", parse_expression(str(self._get_value(items[0])).lstrip("@")))
 
     def resourcereport_sorttasks(self, items: list[Any]) -> Any:
-        return items[0] if items else ("sort", [])
+        return ("sortTasks", items[0][1] if items else [])
 
     def resourcereport_sortresources(self, items: list[Any]) -> Any:
-        return items[0] if items else ("sort", [])
+        return ("sortResources", items[0][1] if items else [])
 
     def resourcereport_scenarios(self, items: list[Any]) -> tuple[str, list[str]]:
         return ("scenarios", [self._get_value(i) for i in items])
@@ -916,12 +925,28 @@ class TJPTransformer(Transformer[Any, Any]):
 
     # Sort specifications
     def sort_list(self, items: list[Any]) -> tuple[str, list[Any]]:
-        """Parse sort list."""
+        """Parse a sort list into (attribute, ascending, scenario) triples."""
         return ("sort", [item for item in items if item])
 
-    def sort_item(self, items: list[Any]) -> Optional[str]:
-        """Parse a single sort item."""
-        return self._get_value(items[0]) if items else None
+    def sort_item(self, items: list[Any]) -> Optional[tuple[str, bool, int]]:
+        """Parse one sort criterion.
+
+        Written as `attribute.up` / `attribute.down`, optionally scenario
+        qualified as `plan.start.up`.
+        """
+        if not items:
+            return None
+        text = str(self._get_value(items[0]))
+        parts = text.split(".")
+        ascending = True
+        if parts and parts[-1].lower() in ("up", "down"):
+            ascending = parts.pop().lower() == "up"
+        if not parts:
+            return None
+        # A leading scenario id is resolved later, when the project exists.
+        attribute = parts[-1]
+        scenario = ".".join(parts[:-1]) if len(parts) > 1 else ""
+        return (attribute, ascending, scenario)  # type: ignore[return-value]
 
     # Format list
     def format_list(self, items: list[Any]) -> tuple[str, list[str]]:
@@ -1480,6 +1505,24 @@ class ModelBuilder:
 
         return report
 
+    def _resolve_sort_criteria(self, project: Project, criteria: Any) -> list[Any]:
+        """Turn parsed sort criteria into (attribute, ascending, scenarioIdx)."""
+        resolved: list[tuple[str, bool, int]] = []
+        for item in criteria or []:
+            if not isinstance(item, tuple) or len(item) != 3:
+                continue
+            attribute, ascending, scenario = item
+            scenario_idx = -1
+            if scenario:
+                index = self._get_scenario_index(project, str(scenario))
+                if index is None:
+                    raise SemanticError(
+                        f"sort criterion '{scenario}.{attribute}' names a scenario that is not defined"
+                    )
+                scenario_idx = index
+            resolved.append((str(attribute), bool(ascending), scenario_idx))
+        return resolved
+
     def _apply_report_attribute(self, report: Any, attr: Any, default_formats: list[Any]) -> None:
         """Apply a single attribute to a report.
 
@@ -1508,23 +1551,23 @@ class ModelBuilder:
                 # value is list of column specs
                 report["columns"] = value
             elif key == "formats":
-                # value is list of format strings
+                # Only the formats ScriptPlan can actually write are accepted.
+                # The others used to parse, write no file, and leave the CLI
+                # reporting a scheduling problem that did not exist.
+                supported = {"json": ReportFormat.JSON, "csv": ReportFormat.CSV}
                 formats = []
-                for fmt_str in value:
-                    fmt_str = fmt_str.lower()
-                    if fmt_str == "json":
-                        formats.append(ReportFormat.JSON)
-                    elif fmt_str == "csv":
-                        formats.append(ReportFormat.CSV)
-                    elif fmt_str == "ical":
-                        formats.append(ReportFormat.ICAL)
-                    elif fmt_str == "tjp":
-                        formats.append(ReportFormat.TJP)
-                    elif fmt_str == "niku":
-                        formats.append(ReportFormat.NIKU)
+                for raw in value:
+                    name = str(raw).lower()
+                    if name not in supported:
+                        raise UnsupportedFormatError(
+                            f"report '{report.id}' asks for '{name}' output, which ScriptPlan "
+                            f"does not produce. Supported formats: "
+                            f"{', '.join(sorted(supported))}."
+                        )
+                    formats.append(supported[name])
                 report["formats"] = formats
-            elif key == "sort":
-                report["sort"] = value
+            elif key in ("sortTasks", "sortResources", "sort"):
+                report[key] = self._resolve_sort_criteria(report.project, value)
             elif key == "period":
                 report["period"] = value
             else:
@@ -1561,14 +1604,14 @@ class ModelBuilder:
                     # loadUnit
                     report["loadUnit"] = token_val
             elif token_type == "FILTER_EXPR":
-                # Filter expression for hideResource, hideTask, etc.
-                # Store as filter
-                if token_val.startswith("@") or token_val.startswith("~"):
-                    # Could be hideResource or hideTask - store both
-                    if not report.get("hideResource"):
-                        report["hideResource"] = token_val
-                    elif not report.get("hideTask"):
-                        report["hideTask"] = token_val
+                # A bare filter expression with no keyword in front of it. It
+                # is parsed here so a malformed one is rejected at parse time
+                # rather than silently hiding every row.
+                expression = parse_expression(token_val.lstrip("@"))
+                if not report.get("hideTask"):
+                    report["hideTask"] = expression
+                elif not report.get("hideResource"):
+                    report["hideResource"] = expression
             elif token_type == "TASK_PATH":
                 # taskRoot
                 report["taskRoot"] = token_val

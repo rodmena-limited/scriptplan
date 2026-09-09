@@ -498,6 +498,8 @@ class TableReport(ReportBase):
                 return self._get_revenue_value(property_node, scenario_idx)
             elif column_id == "cost":
                 return self._get_cost_value(property_node, scenario_idx)
+            elif column_id == "duration":
+                return self._get_duration_value(property_node, scenario_idx)
 
             if self.is_scenario_specific(column_id):
                 return property_node.get(column_id, scenario_idx) if hasattr(property_node, "get") else None
@@ -506,6 +508,23 @@ class TableReport(ReportBase):
         except (ValueError, KeyError, AttributeError):
             # Unknown attribute - return placeholder
             return "-"
+
+    def _get_duration_value(self, property_node: Any, scenario_idx: int) -> Any:
+        """Elapsed scheduled time, as a number of days.
+
+        The `duration` attribute is what the file asked for, and is zero for
+        every task that did not ask for one. What a report means by "duration"
+        is how long the task actually took, so it is measured from the dates
+        the scheduler worked out.
+        """
+        try:
+            start = property_node.get("start", scenario_idx)
+            end = property_node.get("end", scenario_idx)
+        except (ValueError, KeyError, AttributeError):
+            return None
+        if not start or not end:
+            return None
+        return (end - start).total_seconds() / 86400.0
 
     def _get_revenue_value(self, property_node: Any, scenario_idx: int) -> Any:
         """
