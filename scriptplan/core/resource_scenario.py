@@ -118,10 +118,11 @@ class ResourceScenario(ScenarioData):
         # calendar, so a resource eight hours west reaches the end of its day
         # eight hours later than one in UTC.
         limits = self.property.get("limits", self.scenarioIdx)
-        if limits is not None and hasattr(limits, "setTimeZone"):
-            limits.setTimeZone(self.property.get("timezone", self.scenarioIdx))
-        if limits is not None and hasattr(limits, "reset"):
-            limits.reset()
+        if limits is not None and hasattr(limits, "prepare"):
+            limits.prepare(
+                int(self.project.attributes.get("scheduleGranularity", 3600)),
+                self.property.get("timezone", self.scenarioIdx),
+            )
 
         if self.property.leaf():
             self.initScoreboard()

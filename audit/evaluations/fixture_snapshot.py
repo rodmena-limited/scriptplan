@@ -45,7 +45,13 @@ def render(path: str) -> str:
         first = traceback.format_exception_only(type(exc), exc)[-1].strip()
         return f"! {type(exc).__name__}: {first[:200]}\n"
 
-    lines.append(f"project start={project.start} end={project.end}")
+    # Times are recorded as a reader sees them, in the project's own timezone,
+    # not in the UTC the scheduler works in. The snapshot is a record of
+    # customer-visible behaviour, so it should not move when the internal
+    # representation does.
+    lines.append(
+        f"project timezone={project.timezone} start={project.start} end={project.end}"
+    )
     for task_id, start, end, scheduled in project.rows():
         lines.append(f"{task_id}\t{start}\t{end}\t{scheduled}")
     for message in sorted({_plain(str(m)) for m in handler.messages}):
@@ -67,23 +73,35 @@ def _plain(text: str) -> str:
 
 
 class ParsedProject:
+    """A project, read in the timezone its file was written in."""
+
     def __init__(self, project) -> None:
         self._project = project
+        try:
+            from scriptplan.core.timezones import from_utc
+
+            self._local = lambda moment: from_utc(moment, project["timezone"])
+        except ImportError:
+            self._local = lambda moment: moment
+
+    @property
+    def timezone(self):
+        return self._project["timezone"]
 
     @property
     def start(self):
-        return self._project["start"]
+        return self._local(self._project["start"])
 
     @property
     def end(self):
-        return self._project["end"]
+        return self._local(self._project["end"])
 
     def rows(self):
         for task in self._project.tasks:
             yield (
                 task.fullId,
-                task.get("start", 0),
-                task.get("end", 0),
+                self._local(task.get("start", 0)),
+                self._local(task.get("end", 0)),
                 bool(task.get("scheduled", 0)),
             )
 

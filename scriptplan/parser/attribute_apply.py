@@ -75,13 +75,29 @@ def resolve_duration(obj: Any, key: str, value: Any) -> Any:
     return int(seconds)
 
 
+# Attributes whose value is a moment in time, written in the project's
+# timezone and stored in UTC.
+_DATE_ATTRIBUTES = frozenset({"start", "end", "maxend", "maxstart", "minend", "minstart"})
+
+
+def localize(obj: Any, key: str, value: Any) -> Any:
+    """Read a date attribute as project-local and store it as UTC."""
+    from datetime import datetime
+
+    from scriptplan.core.timezones import to_utc
+
+    if key in _DATE_ATTRIBUTES and isinstance(value, datetime):
+        return to_utc(value, obj.project["timezone"])
+    return value
+
+
 def _apply_generic(obj: Any, key: str, value: Any, prop_type: str) -> None:
     """Set an attribute that needs no special handling.
 
     Scenario-specific attributes are written to every scenario, which is what a
     bare (non ``scenario:``-prefixed) declaration in the file means.
     """
-    value = resolve_duration(obj, key, value)
+    value = localize(obj, key, resolve_duration(obj, key, value))
     definition = _definition_of(obj, key)
     if definition is None:
         name = getattr(obj, "fullId", None) or getattr(obj, "id", "?")
@@ -127,7 +143,9 @@ def _handle_scenario_attr(builder: Any, obj: Any, value: Any, _pt: str) -> None:
         )
     if attr_data and isinstance(attr_data, tuple):
         attr_key, attr_value = attr_data
-        obj[(attr_key, scenario_idx)] = resolve_duration(obj, attr_key, attr_value)
+        obj[(attr_key, scenario_idx)] = localize(
+            obj, attr_key, resolve_duration(obj, attr_key, attr_value)
+        )
 
 
 def _handle_journalentry(builder: Any, obj: Any, value: Any, _pt: str) -> None:
@@ -147,7 +165,11 @@ def _handle_purge_chargeset(_b: Any, obj: Any, _value: Any, _pt: str) -> None:
 
 def _append_leave(obj: Any, interval: Any, type_idx: int) -> None:
     from scriptplan.core.leave import Leave
+    from scriptplan.core.timezones import to_utc
 
+    zone = obj.project["timezone"]
+    interval.start = to_utc(interval.start, zone)
+    interval.end = to_utc(interval.end, zone)
     leave = Leave(interval, type_idx)
     for scenario_idx in range(obj.project.scenarioCount()):
         existing = obj.get("leaves", scenario_idx) or []

@@ -76,15 +76,39 @@ task a "A" { start 2025-01-06 effort 16h allocate r }
 
 @probe("A project timezone is applied to the times the user reads back")
 def probe_project_timezone_applied() -> tuple[bool, str]:
+    """The file is written in the project's timezone, so a report is too.
+
+    Scheduling happens in UTC so that resources in different zones share one
+    axis; that is an internal representation, and what the reader sees must be
+    the zone they wrote their file in.
+    """
     project = parse("""project p "P" 2025-01-06 +1m { timezone "America/New_York" now 2025-01-06 }
 resource r "R" { timezone "America/New_York" workinghours mon-fri 9:00-17:00 }
 task a "A" { effort 2h allocate r }
+taskreport t "t" { formats csv columns id, start, end timeformat "%Y-%m-%d-%H:%M" }
+""")
+    stored_start, stored_end = window(project, "a")
+    report = list(project.reports)[0]
+    report.generate_intermediate_format()
+    rows = report.content.table.to_json().get("data", []) if report.content else []
+    shown = rows[0] if rows else {}
+    ok = shown.get("start", "").endswith("09:00") and shown.get("end", "").endswith("11:00")
+    return ok, (
+        f"report shows start={shown.get('start')!r} end={shown.get('end')!r} "
+        f"(expected 09:00 and 11:00 New York time); "
+        f"stored internally as {stored_start} / {stored_end} UTC"
+    )
+
+
+@probe("A project timezone does not disturb a project written in UTC")
+def probe_utc_project_unchanged() -> tuple[bool, str]:
+    project = parse("""project p "P" 2025-01-06 +1m { timezone "Etc/UTC" now 2025-01-06 }
+resource r "R" { workinghours mon-fri 9:00-17:00 }
+task a "A" { start 2025-01-06-09:00 effort 2h allocate r }
 """)
     start, end = window(project, "a")
-    return start == datetime(2025, 1, 6, 9, 0), (
-        f"start={start} end={end} project timezone={project['timezone']} "
-        f"(a New York resource working 09:00 local must read back as 09:00)"
-    )
+    ok = start == datetime(2025, 1, 6, 9, 0) and end == datetime(2025, 1, 6, 11, 0)
+    return ok, f"start={start} end={end} (a UTC project is stored exactly as written)"
 
 
 if __name__ == "__main__":

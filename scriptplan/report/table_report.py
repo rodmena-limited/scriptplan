@@ -597,6 +597,14 @@ class TableReport(ReportBase):
         if isinstance(value, bool):
             return "Yes" if value else "No"
         if isinstance(value, datetime):
+            # Scheduling happens in UTC. A reader wrote their file in the
+            # project's timezone, so that is what they are shown, unless the
+            # report asks for another.
+            from scriptplan.core.timezones import from_utc
+
+            zone = self.a("timeZone") or self.project.attributes.get("timezone")
+            local = from_utc(value, zone) or value
+
             # Use report's timeFormat, falling back to project's timeformat
             timeformat = self.a("timeFormat")
             # Check if it's the default - if so, try project's timeformat
@@ -605,8 +613,8 @@ class TableReport(ReportBase):
                 if project_timeformat:
                     timeformat = project_timeformat
             if timeformat:
-                return value.strftime(timeformat)
-            return str(value)
+                return local.strftime(timeformat)
+            return str(local)
         if isinstance(value, float):
             return f"{value:.2f}"
         if isinstance(value, list):

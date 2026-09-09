@@ -12,6 +12,8 @@ from scriptplan.core.exceptions import (
     SemanticError,
     UnsupportedFormatError,
 )
+from scriptplan.core.timezones import to_utc
+from scriptplan.core.resolution import derive_resolution
 from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
@@ -1044,6 +1046,22 @@ class ModelBuilder:
         # Apply project attributes
         self._apply_project_attributes(project, proj_data.get("attributes", []))
 
+        # The file is written in the project's timezone; scheduling happens in
+        # UTC so that resources in different zones share one axis.
+        self._timezone = project["timezone"]
+        for key in ("start", "end", "markdate"):
+            if isinstance(project[key], datetime):
+                project[key] = to_utc(project[key], self._timezone)
+
+        # With no explicit timingresolution, the slot size is derived from the
+        # times the file actually uses, so a project written to the half hour
+        # is scheduled to the half hour without the user having to say so, and
+        # one written to the hour keeps hour-sized slots.
+        self._explicit_resolution = any(
+            isinstance(attr, tuple) and attr[0] == "timingresolution"
+            for attr in proj_data.get("attributes", [])
+        )
+
         # Apply global attributes
         self._apply_global_attributes(project, data.get("global_attributes", []))
 
@@ -1062,6 +1080,11 @@ class ModelBuilder:
 
         # Inherit attributes from parents for all tasks
         self._inherit_all_attributes(project)
+
+        # Now that every task, shift and resource is known, the slot size can
+        # be chosen to fit the times they use.
+        if not getattr(self, "_explicit_resolution", False):
+            project["timingresolution"] = derive_resolution(project)
 
         # Create reports
         for report_data in data.get("reports", []):
@@ -1313,7 +1336,10 @@ class ModelBuilder:
                         end_date = start_date + timedelta(days=1)
 
                     if start_date:
-                        interval = TimeInterval(start_date, end_date)
+                        interval = TimeInterval(
+                            to_utc(start_date, project["timezone"]),
+                            to_utc(end_date, project["timezone"]),
+                        )
                         type_idx = Leave.Types.get(leave_type, 1)  # Default to 'holiday' (1)
                         leave = Leave(interval, type_idx)
 
@@ -1334,7 +1360,10 @@ class ModelBuilder:
                         end_date = start_date + timedelta(days=1)
 
                     if start_date:
-                        interval = TimeInterval(start_date, end_date)
+                        interval = TimeInterval(
+                            to_utc(start_date, project["timezone"]),
+                            to_utc(end_date, project["timezone"]),
+                        )
                         type_idx = Leave.Types.get("holiday", 1)
                         leave = Leave(interval, type_idx)
 

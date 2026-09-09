@@ -32,12 +32,19 @@ from scriptplan.core.property import (
     TaskDepListAttribute,
 )
 from scriptplan.core.scenario import Scenario
+from scriptplan.core.timezones import from_utc
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.scoreboard import Scoreboard
 from scriptplan.utils.data_cache import FileList
 from scriptplan.scheduler.preflight import check_no_cycles
 from scriptplan.utils.message_handler import MessageHandler, get_message_handler_instance
 from scriptplan.utils.time import TjTime
+
+
+# The default working calendar when the project declares none: weekdays,
+# nine to five, in the project's own timezone.
+DEFAULT_WORK_START_HOUR = 9
+DEFAULT_WORK_END_HOUR = 17
 
 
 class Project(MessageHandler):
@@ -747,10 +754,16 @@ class Project(MessageHandler):
                 self.scoreboardNoLeaves[i] = None
 
     def _isDefaultWorkingTime(self, date: Optional[Any]) -> bool:
-        """Check if a date/time falls within default working hours."""
+        """Whether a slot falls in the project's default working hours.
+
+        Slots are UTC; the default calendar (weekdays, 9am to 5pm) is meant in
+        the project's own timezone, so the slot is read there. Comparing the
+        hour of a UTC slot against 9-17 puts a New York project's working day
+        five hours out.
+        """
         if date is None:
             return False
-        # Check global vacations
+        # Check global vacations, which are stored in UTC like the slot.
         vacations = self.attributes.get("vacations", [])
         for vac in vacations:
             if hasattr(vac, "interval") and vac.interval:
@@ -758,11 +771,11 @@ class Project(MessageHandler):
                     return False
             elif hasattr(vac, "contains") and vac.contains(date):
                 return False
-        weekday: int = date.weekday()
-        if weekday >= 5:  # Saturday or Sunday
+
+        local = from_utc(date, self.attributes.get("timezone")) or date
+        if local.weekday() >= 5:  # Saturday or Sunday
             return False
-        hour: int = date.hour
-        result: bool = 9 <= hour < 17  # Within 9am-5pm
+        result: bool = DEFAULT_WORK_START_HOUR <= local.hour < DEFAULT_WORK_END_HOUR
         return result
 
     def isWorkingTime(self, sbIdx: int) -> bool:

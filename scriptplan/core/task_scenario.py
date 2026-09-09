@@ -101,7 +101,7 @@ class TaskScenario(ScenarioData):
         # previous scenario scheduling.
         limits = self.property.get("limits", self.scenarioIdx)
         if limits:
-            limits.reset()
+            limits.prepare(int(self.project.attributes.get("scheduleGranularity", 3600)))
 
         self._discardComputedDates()
 

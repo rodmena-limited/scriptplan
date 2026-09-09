@@ -241,6 +241,19 @@ class Limits:
         for limit in self._limits:
             limit.timezone = timezone
 
+    def prepare(self, slot_duration: int, timezone: Optional[str] = None) -> None:
+        """Ready the counters for a scheduling run.
+
+        The slot size is settled after the limits are read -- it can be derived
+        from the times the project uses -- so it is applied here rather than at
+        the moment the limit was declared.
+        """
+        if timezone is not None:
+            self.setTimeZone(timezone)
+        for limit in self._limits:
+            limit.slot_duration = slot_duration
+        self.reset()
+
     def reset(self) -> None:
         for limit in self._limits:
             limit.reset()
