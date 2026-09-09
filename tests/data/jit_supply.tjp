@@ -46,8 +46,8 @@ task delivery "Product Launch" {
 
 task connection_setup "Logic" {
   task set_deps "Apply" {
-    depends !delivery.assemble_a, !delivery.assemble_b
-    precedes !delivery.pack
+    depends !!delivery.assemble_a, !!delivery.assemble_b
+    precedes !!delivery.pack
   }
 }
 

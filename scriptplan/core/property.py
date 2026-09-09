@@ -60,6 +60,16 @@ class PropertySet:
         return len(self._properties) == 0
 
     def addProperty(self, property: "PropertyTreeNode") -> None:
+        # An anonymous property (a nested report with no id) cannot be referred
+        # to, so two of them colliding is harmless; only named ones must be unique.
+        existing = self._propertyMap.get(property.fullId) if property.id else None
+        if existing is not None and existing is not property:
+            from scriptplan.core.exceptions import DuplicateDefinitionError
+
+            raise DuplicateDefinitionError(
+                f"'{property.fullId}' is defined twice. References to it would resolve to "
+                f"one definition while the other still occupies the schedule."
+            )
         self._propertyMap[property.fullId] = property
         self._properties.append(property)
 
@@ -1278,7 +1288,18 @@ class PropertyTreeNode(MessageHandler):
         return self.propertySet.attributeDefinitions.get(attribute_id)
 
     def get(self, attribute_id: str, scenarioIdx: Optional[int] = None) -> Any:
+        """Read an attribute, by scenario when it has one.
+
+        Asking for a scenario of an attribute that has no per-scenario value
+        (``id``, ``name``, ``note``) returns the single value it does have,
+        rather than raising. Callers that iterate over report columns cannot
+        know in advance which attributes are scenario-specific, and a raise
+        there is how a column ends up rendering "-".
+        """
         if scenarioIdx is not None:
+            definition = self.propertySet.attributeDefinitions.get(attribute_id)
+            if definition is not None and not definition.scenarioSpecific:
+                return self._get_attribute(attribute_id).get()
             attr = self._get_scenario_attribute(attribute_id, scenarioIdx)
         else:
             attr = self._get_attribute(attribute_id)

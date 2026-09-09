@@ -30,12 +30,27 @@ def dependency_of(dep: Any) -> Optional[Any]:
     return dep
 
 
-def iter_dependencies(task: Any, scenario_idx: int) -> list[Any]:
-    """Predecessors of ``task``, including those inherited from its containers."""
+def _is_onstart(dep: Any) -> bool:
+    """True for a dependency that constrains starts rather than the finish chain."""
+    if isinstance(dep, dict):
+        return bool(dep.get("onstart"))
+    return bool(getattr(dep, "onstart", False))
+
+
+def iter_dependencies(task: Any, scenario_idx: int, finish_to_start_only: bool = False) -> list[Any]:
+    """Predecessors of ``task``, including those inherited from its containers.
+
+    With ``finish_to_start_only`` the ``onstart`` dependencies are left out.
+    Those relate the two tasks' *starts*, so they do not form part of the
+    finish-to-start chain that a forward pass can deadlock on, and counting
+    them would report a loop where the schedule is satisfiable.
+    """
     found: list[Any] = []
     node: Optional[Any] = task
     while node is not None:
         for dep in node.get("depends", scenario_idx) or []:
+            if finish_to_start_only and _is_onstart(dep):
+                continue
             predecessor = dependency_of(dep)
             if predecessor is not None:
                 found.append(predecessor)
@@ -44,7 +59,12 @@ def iter_dependencies(task: Any, scenario_idx: int) -> list[Any]:
 
 
 def find_dependency_cycle(tasks: Any, scenario_idx: int) -> Optional[list[str]]:
-    """Return one dependency cycle as a list of task ids, or None if acyclic.
+    """Return one finish-to-start dependency cycle, or None if there is none.
+
+    Only finish-to-start edges are followed. A complete loop check would work
+    over (task, start|end) pairs, so that a mixture of onstart and ordinary
+    dependencies is judged on the constraint each one actually imposes; that
+    belongs with the scheduling engine and is not done here.
 
     Iterative depth-first search with three-colour marking, so a project with a
     long chain cannot exhaust the interpreter's stack.
@@ -60,7 +80,7 @@ def find_dependency_cycle(tasks: Any, scenario_idx: int) -> Optional[list[str]]:
         if colour.get(id(root), WHITE) != WHITE:
             continue
         # Each frame is (node, iterator over its remaining predecessors).
-        stack: list[tuple[Any, Any]] = [(root, iter(iter_dependencies(root, scenario_idx)))]
+        stack: list[tuple[Any, Any]] = [(root, iter(iter_dependencies(root, scenario_idx, finish_to_start_only=True)))]
         colour[id(root)] = GREY
         on_stack.append(root)
 
@@ -79,7 +99,7 @@ def find_dependency_cycle(tasks: Any, scenario_idx: int) -> Optional[list[str]]:
                 if state == WHITE:
                     colour[id(predecessor)] = GREY
                     on_stack.append(predecessor)
-                    stack.append((predecessor, iter(iter_dependencies(predecessor, scenario_idx))))
+                    stack.append((predecessor, iter(iter_dependencies(predecessor, scenario_idx, finish_to_start_only=True))))
                     advanced = True
                     break
             if not advanced:

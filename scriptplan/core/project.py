@@ -191,6 +191,7 @@ class Project(MessageHandler):
             ["leaveallowances", "Leave Allowances", AttributeBase, True, False, True, None],  # Placeholder
             ["limits", "Limits", AttributeBase, True, False, True, None],  # Placeholder
             ["managers", "Managers", ResourceListAttribute, True, False, True, []],
+            ["note", "Note", StringAttribute, False, False, False, None],
             ["rate", "Rate", FloatAttribute, True, False, True, 0.0],
             ["reports", "Reports", ResourceListAttribute, True, False, True, []],
             ["shifts", "Shifts", ShiftAssignmentsAttribute, True, False, True, None],
@@ -228,6 +229,7 @@ class Project(MessageHandler):
             ["minend", "Min End", DateAttribute, True, False, True, None],
             ["minstart", "Min Start", DateAttribute, True, False, True, None],
             ["milestone", "Milestone", BooleanAttribute, True, False, True, False],
+            ["note", "Note", StringAttribute, False, False, False, None],
             ["pathcriticalness", "Path Criticalness", FloatAttribute, False, False, True, 0.0],
             ["precedes", "Precedes", TaskDepListAttribute, True, False, True, []],
             ["priority", "Priority", IntegerAttribute, True, False, True, 500],

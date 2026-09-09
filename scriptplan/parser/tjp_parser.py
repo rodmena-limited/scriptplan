@@ -7,9 +7,11 @@ from typing import Any, Optional, Union
 
 from lark import Lark, Token, Transformer, Tree  # type: ignore[import-untyped,unused-ignore]
 
+from scriptplan.core.exceptions import DuplicateDefinitionError, SemanticError
 from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
+from scriptplan.parser.attribute_apply import apply_property_attributes
 from scriptplan.parser.macro_processor import preprocess_tjp
 
 
@@ -1052,6 +1054,9 @@ class ModelBuilder:
         # Resolve precedes relationships (convert to dependencies on target tasks)
         self._resolve_precedes(project)
 
+        # Every allocation must name a resource that exists.
+        self._validate_allocations(project)
+
         # Inherit attributes from parents for all tasks
         self._inherit_all_attributes(project)
 
@@ -1101,6 +1106,12 @@ class ModelBuilder:
                     onend = False
 
                 dep_task = self._resolve_task_reference(project, task, dep_ref)
+                if dep_task is None:
+                    raise SemanticError(
+                        f"task '{task.fullId}' depends on '{dep_ref}', which is not a task in "
+                        f"this project. A dependency that does not resolve would silently "
+                        f"disappear from the schedule."
+                    )
                 if dep_task:
                     # Store as dict if we have gap info or onstart/onend, else just the task
                     if gapduration or gaplength or maxgapduration or onstart or onend:
@@ -1121,6 +1132,42 @@ class ModelBuilder:
                 for scIdx in range(project.scenarioCount()):
                     task[("depends", scIdx)] = resolved
 
+    def _validate_allocations(self, project: Project) -> None:
+        """Reject an allocation naming a resource that does not exist.
+
+        Resource lookup is otherwise lazy and forgiving: an unknown id resolves
+        to None at scheduling time and the task quietly books nothing.
+        """
+        known = {resource.id for resource in project.resources}
+        known.update(resource.fullId for resource in project.resources)
+
+        for task in project.tasks:
+            for scIdx in range(project.scenarioCount()):
+                for name in self._allocation_ids(task.get("allocate", scIdx)):
+                    if name not in known:
+                        raise SemanticError(
+                            f"task '{task.fullId}' allocates '{name}', which is not a resource "
+                            f"in this project. The task would silently book nothing."
+                        )
+                break  # allocate is set identically for every scenario here
+
+    @staticmethod
+    def _allocation_ids(allocations: Any) -> list[str]:
+        """Resource ids named by an allocate attribute, in any of its shapes."""
+        if not allocations:
+            return []
+        data = allocations
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+            data = data[0]
+        if isinstance(data, dict):
+            names = list(data.get("resources", []))
+            names.extend(data.get("options", {}).get("alternative", []))
+        elif isinstance(data, list):
+            names = list(data)
+        else:
+            names = [data]
+        return [n for n in names if isinstance(n, str)]
+
     def _resolve_precedes(self, project: Project) -> None:
         """Resolve precedes relationships by adding dependencies to target tasks.
 
@@ -1133,6 +1180,11 @@ class ModelBuilder:
                 prec_ref = prec_item.get("ref", "") if isinstance(prec_item, dict) else prec_item
 
                 target_task = self._resolve_task_reference(project, source_task, prec_ref)
+                if target_task is None:
+                    raise SemanticError(
+                        f"task '{source_task.fullId}' precedes '{prec_ref}', which is not a task "
+                        f"in this project."
+                    )
                 if target_task:
                     # Add source_task as a dependency of target_task
                     for scIdx in range(project.scenarioCount()):
@@ -1357,232 +1409,12 @@ class ModelBuilder:
     def _apply_property_attributes(
         self, obj: Union[Task, Resource, Any], attributes: list[Any], prop_type: str
     ) -> None:
-        """Apply attributes to a property object."""
-        for attr in attributes:
-            if attr is None:
-                continue
-            if isinstance(attr, dict):
-                # Nested property (e.g., nested resource or task)
-                self._create_property(obj, attr)
-            elif isinstance(attr, tuple):
-                key, value = attr
-                if key == "email":
-                    obj["email"] = value
-                elif key == "rate":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("rate", scIdx)] = value
-                elif key == "efficiency":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("efficiency", scIdx)] = value
-                elif key == "timezone":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("timezone", scIdx)] = value
-                elif key == "effort":
-                    # Set for all scenarios (no prefix means apply to all)
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("effort", scIdx)] = value
-                elif key == "depends":
-                    # Store for later resolution (after all tasks created)
-                    self._pending_depends.append((obj, value))  # type: ignore[arg-type]
-                elif key == "precedes":
-                    # Store for later resolution - precedes creates reverse dependencies
-                    # If A precedes B, then B depends on A
-                    self._pending_precedes.append((obj, value))  # type: ignore[arg-type]
-                elif key == "allocate":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("allocate", scIdx)] = value
-                elif key == "start":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("start", scIdx)] = value
-                elif key == "end":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("end", scIdx)] = value
-                elif key == "milestone":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("milestone", scIdx)] = value
-                elif key == "flags":
-                    # Set flags for all scenarios (list of flag strings)
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("flags", scIdx)] = value
-                elif key == "priority":
-                    # Set for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("priority", scIdx)] = value
-                elif key == "forward":
-                    # Set scheduling direction for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("forward", scIdx)] = value
-                    # Mark that this task has explicit scheduling (not inherited from project)
-                    obj._explicit_scheduling = True  # type: ignore[union-attr]
-                elif key == "scenario_attr":
-                    # Handle scenario-specific attributes like ('delayed', ('effort', 320))
-                    scenario_id, attr_data = value
-                    scenario_idx = self._get_scenario_index(obj.project, scenario_id)
-                    if scenario_idx is not None and attr_data and isinstance(attr_data, tuple):
-                        attr_key, attr_value = attr_data
-                        obj[(attr_key, scenario_idx)] = attr_value
-                elif key == "journalentry":
-                    # Create a journal entry for this task
-                    self._create_journal_entry(obj, value)  # type: ignore[arg-type]
-                elif key == "charge":
-                    # charge is a tuple (amount, mode) where mode is 'onstart', 'onend', or 'perday'
-                    amount, _mode = value
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("charge", scIdx)] = amount
-                        # Note: mode (onstart/onend/perday) affects when charge is applied
-                        # For now we store just the amount; mode handling can be added later
-                elif key == "chargeset":
-                    # chargeset specifies which account to charge to
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("chargeset", scIdx)] = value
-                elif key == "purge_chargeset":
-                    # Clear inherited chargeset
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("chargeset", scIdx)] = []
-                elif key == "leaves":
-                    # Resource leaves - create Leave objects and store on resource
-                    from scriptplan.core.leave import Leave
-                    from scriptplan.utils.time import TimeInterval
+        """Apply attributes to a property object.
 
-                    leave_type = value.get("type", "annual")
-                    start_date = value.get("start")
-                    end_date = value.get("end", start_date)
-
-                    if start_date and end_date:
-                        interval = TimeInterval(start_date, end_date)
-                        type_idx = Leave.Types.get(leave_type, 5)  # Default to 'annual' (5)
-                        leave = Leave(interval, type_idx)
-
-                        # Store leaves as a list for all scenarios
-                        for scIdx in range(obj.project.scenarioCount()):
-                            existing = obj.get("leaves", scIdx) or []
-                            if not isinstance(existing, list):
-                                existing = [existing]
-                            existing.append(leave)
-                            obj[("leaves", scIdx)] = existing
-                elif key == "limits":
-                    # Task or resource limits - create Limits object
-                    from scriptplan.core.limits import Limits
-
-                    limits_obj = Limits()
-                    limits_obj.setProject(obj.project)
-
-                    # value is a list of limit dicts from parsing
-                    for limit_def in value:
-                        limit_type = limit_def.get("type", "dailymax")
-                        limit_value = limit_def.get("value", 0)
-                        limit_resources = limit_def.get("resources")
-
-                        if limit_resources:
-                            # Resource-specific limits
-                            for res_id in limit_resources:
-                                limits_obj.setLimit(limit_type, limit_value, resource=res_id)
-                        else:
-                            # General limit
-                            limits_obj.setLimit(limit_type, limit_value)
-
-                    # Store limits on task/resource for all scenarios
-                    # IMPORTANT: Each scenario needs its own copy of the limits
-                    # because they track usage counters independently
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("limits", scIdx)] = limits_obj.copy()
-                elif key == "workinghours":
-                    # Working hours for resource or shift
-                    from scriptplan.core.working_hours import WorkingHours
-
-                    # Check if working hours already exist
-                    existing_wh = obj.get("workinghours", 0)
-                    wh = existing_wh if existing_wh and hasattr(existing_wh, "set_hours") else WorkingHours(obj.project)
-
-                    if isinstance(value, dict):
-                        days = value.get("days", [])
-                        ranges = value.get("ranges", [])
-                        wh.set_hours(days, ranges)
-
-                    # Store working hours for all scenarios
-                    for scIdx in range(obj.project.scenarioCount()):
-                        obj[("workinghours", scIdx)] = wh
-                elif key == "workinghours_shift":
-                    # Resource references a shift for its working hours
-                    # Lookup the shift and copy its working hours
-                    shift_id = value
-                    shift = obj.project.shifts[shift_id] if hasattr(obj.project, "shifts") else None
-                    if shift:
-                        for scIdx in range(obj.project.scenarioCount()):
-                            # Store the shift reference - ResourceScenario.onShift will use it
-                            obj[("shifts", scIdx)] = shift
-                elif key == "vacation":
-                    # Resource vacation - similar to leaves but type is always vacation
-                    from scriptplan.core.leave import Leave
-                    from scriptplan.utils.time import TimeInterval
-
-                    start_date = value.get("start")
-                    end_date = value.get("end", start_date)
-
-                    if start_date and end_date:
-                        interval = TimeInterval(start_date, end_date)
-                        type_idx = Leave.Types.get("annual", 5)  # Vacation treated as annual leave
-                        leave = Leave(interval, type_idx)
-
-                        # Store leaves as a list for all scenarios
-                        for scIdx in range(obj.project.scenarioCount()):
-                            existing = obj.get("leaves", scIdx) or []
-                            if not isinstance(existing, list):
-                                existing = [existing]
-                            existing.append(leave)
-                            obj[("leaves", scIdx)] = existing
-                elif key == "booking":
-                    # Resource booking - blocks resource during a time period
-                    # booking "name" date +duration (e.g., "Maintenance" 2025-05-12-09:00 +6h)
-                    import re
-                    from datetime import timedelta
-
-                    from scriptplan.core.leave import Leave
-                    from scriptplan.utils.time import TimeInterval
-
-                    start_date = value.get("start")
-                    duration_str = value.get("duration", "0h")
-
-                    if start_date:
-                        # Parse duration to compute end date
-                        match = re.match(r"(\d+(?:\.\d+)?)\s*([hdwmymin]+)", str(duration_str))
-                        if match:
-                            num = float(match.group(1))
-                            unit = match.group(2)
-                            if unit == "h":
-                                delta = timedelta(hours=num)
-                            elif unit == "min":
-                                delta = timedelta(minutes=num)
-                            elif unit == "d":
-                                delta = timedelta(days=num)
-                            else:
-                                delta = timedelta(hours=num)
-                        else:
-                            delta = timedelta(hours=0)
-
-                        end_date = start_date + delta
-                        interval = TimeInterval(start_date, end_date)
-                        # Use special type to mark as booking (treated as unavailable)
-                        type_idx = Leave.Types.get("special", 3)
-                        leave = Leave(interval, type_idx)
-
-                        # Store as leaves (blocks resource availability)
-                        for scIdx in range(obj.project.scenarioCount()):
-                            existing = obj.get("leaves", scIdx) or []
-                            if not isinstance(existing, list):
-                                existing = [existing]
-                            existing.append(leave)
-                            obj[("leaves", scIdx)] = existing
-                else:
-                    with contextlib.suppress(ValueError, KeyError, AttributeError):
-                        obj[key] = value
+        Delegates to parser.attribute_apply, which has no silent fallback: an
+        attribute it cannot place raises rather than being dropped.
+        """
+        apply_property_attributes(self, obj, attributes, prop_type)
 
     def _get_scenario_index(self, project: Project, scenario_id: str) -> Optional[int]:
         """Get the index of a scenario by its ID."""
