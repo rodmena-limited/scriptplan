@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.scheduler.scoreboard import Scoreboard
-from scriptplan.utils.data_cache import DataCache
 
 if TYPE_CHECKING:
     from scriptplan.core.resource import Resource
@@ -74,9 +73,6 @@ class ResourceScenario(ScenarioData):
         # slot_idx -> list of (task, seconds_used)
         # This allows multiple tasks to share a slot
         self.slotTaskUsage: dict[int, list[tuple[Any, float]]] = {}
-
-        # Data cache
-        self.dCache = DataCache.instance()
 
         # Ensure required attributes exist
         required_attrs = [

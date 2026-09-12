@@ -60,8 +60,10 @@ class Project(MessageHandler):
         self.name: str = name
         self.version: str = version
 
-        if hasattr(AttributeBase, "setMode"):
-            AttributeBase.setMode(0)
+        # How attribute values set from here on are recorded. Scoped to this
+        # project so that building or scheduling another one in the same
+        # process cannot mislabel this one's attributes.
+        self.attributeMode: int = AttributeBase.PROVIDED
 
         self.attributes: dict[str, Any] = {
             "alertLevels": AlertLevelDefinitions(),
@@ -334,7 +336,7 @@ class Project(MessageHandler):
             return True
 
         handler = get_message_handler_instance()
-        previous_mode = AttributeBase.mode()
+        previous_mode = self.attributeMode
         ok = True
         try:
             for sc in self.scenarios:
@@ -345,7 +347,7 @@ class Project(MessageHandler):
                 scIdx: int = sc.sequenceNo - 1
 
                 # Propagate inherited values
-                AttributeBase.setMode(1)
+                self.attributeMode = AttributeBase.INHERITED
                 self.prepareScenario(scIdx)
 
                 # Reject a malformed dependency graph before scheduling it.
@@ -353,7 +355,7 @@ class Project(MessageHandler):
 
                 # Schedule. Errors are collected so that one unschedulable task
                 # does not hide the others.
-                AttributeBase.setMode(2)
+                self.attributeMode = AttributeBase.COMPUTED
                 with handler.collecting():
                     if not self.scheduleScenario(scIdx):
                         ok = False
@@ -368,7 +370,7 @@ class Project(MessageHandler):
                     if handler.errors > before:
                         ok = False
         finally:
-            AttributeBase.setMode(previous_mode)
+            self.attributeMode = previous_mode
 
         return ok
 

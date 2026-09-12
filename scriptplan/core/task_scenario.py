@@ -70,15 +70,22 @@ class TaskScenario(ScenarioData):
                 _ = self.property[(attr, self.scenarioIdx)]
 
         if not self.property.parent:
-            mode = AttributeBase.mode()
-            AttributeBase.setMode(1)
-
-            proj_scenario = self.project.scenario(self.scenarioIdx) if hasattr(self.project, "scenario") else None
-            proj_projection = proj_scenario.get("projection") if proj_scenario else None
-            if proj_projection:
-                self.property[("projectionmode", self.scenarioIdx)] = proj_projection
-
-            AttributeBase.setMode(mode)
+            # A top-level task takes the scenario's projection setting from the
+            # project, which is an inherited value rather than one the file
+            # stated on this task.
+            previous_mode = getattr(self.project, "attributeMode", AttributeBase.mode())
+            self.project.attributeMode = AttributeBase.INHERITED
+            try:
+                proj_scenario = (
+                    self.project.scenario(self.scenarioIdx)
+                    if hasattr(self.project, "scenario")
+                    else None
+                )
+                proj_projection = proj_scenario.get("projection") if proj_scenario else None
+                if proj_projection:
+                    self.property[("projectionmode", self.scenarioIdx)] = proj_projection
+            finally:
+                self.project.attributeMode = previous_mode
 
     def prepareScheduling(self) -> None:
         """

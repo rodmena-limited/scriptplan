@@ -757,7 +757,19 @@ class AttributeBase:
     or computed during scheduling.
     """
 
-    _mode: int = 0  # 0=provided, 1=inherited, other=calculated
+    # How a value being set should be recorded: 0 provided by the file,
+    # 1 inherited from a container or the project, anything else computed by
+    # the scheduler.
+    #
+    # This lives on the project, because two projects being built or scheduled
+    # in the same process must not tag each other's attributes. The class
+    # variable below is the fallback for attributes with no project yet, and
+    # the setting the module-level setMode()/mode() still reach.
+    PROVIDED = 0
+    INHERITED = 1
+    COMPUTED = 2
+
+    _mode: int = PROVIDED
 
     def __init__(
         self, property_node: "PropertyTreeNode", type_def: Union[AttributeDefinition, Any], container: Any
@@ -812,13 +824,24 @@ class AttributeBase:
 
     @classmethod
     def mode(cls) -> int:
-        """Return the current attribute setting mode."""
+        """The process-wide fallback mode."""
         return cls._mode
 
     @classmethod
     def setMode(cls, mode: int) -> None:
-        """Change the mode. 0=provided, 1=inherited, other=calculated."""
+        """Set the process-wide fallback mode. 0 provided, 1 inherited, 2 computed."""
         cls._mode = mode
+
+    def currentMode(self) -> int:
+        """The mode that applies to this attribute.
+
+        The owning project's mode when there is one, so that two projects in
+        one process cannot mislabel each other's attributes, and the
+        process-wide fallback otherwise.
+        """
+        project = getattr(self._property, "project", None)
+        mode = getattr(project, "attributeMode", None)
+        return AttributeBase._mode if mode is None else int(mode)
 
     def getId(self) -> str:
         """Return the ID of the attribute."""
@@ -836,9 +859,10 @@ class AttributeBase:
 
     def set(self, value: Any) -> None:
         """Set the value of the attribute. Flags updated based on mode."""
-        if AttributeBase._mode == 0:
+        mode = self.currentMode()
+        if mode == AttributeBase.PROVIDED:
             self._provided = True
-        elif AttributeBase._mode == 1:
+        elif mode == AttributeBase.INHERITED:
             self._inherited = True
         self._value = value
 
@@ -930,9 +954,10 @@ class ListAttributeBase(AttributeBase):
 
     def set(self, value: Any) -> None:
         """Set value - for lists, extends the existing list."""
-        if AttributeBase._mode == 0:
+        mode = self.currentMode()
+        if mode == AttributeBase.PROVIDED:
             self._provided = True
-        elif AttributeBase._mode == 1:
+        elif mode == AttributeBase.INHERITED:
             self._inherited = True
 
         if not isinstance(self._value, list):
