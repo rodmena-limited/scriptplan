@@ -71,8 +71,15 @@ to, and 16 sub-process tests of the `plan` CLI. `scripts/ci.sh` runs lint,
 types, the file-size cap, the tests, the showcase check and the probes: all six
 steps pass. Every fixture renders through `plan report` with exit code 0.
 
-Scale exercised: 500 chained tasks at one-minute resolution (3.3s), and 100
-tasks over 10 resources for a year at one-minute resolution (4.5s, 93MB peak).
+Scale exercised: 500 chained tasks at one-minute resolution (3.3s), 500 chained
+tasks at one-hour resolution (1.5s against a 3s budget), and 100 tasks over 10
+resources for a year at one-minute resolution (about 13s, 92MB peak).
+
+One quantified criterion is not met: that last case was specified at 10s and
+takes about 13. It was 58.7s before the audit and 80.5s part-way through it.
+The remainder is the per-slot list scoreboard, and the denser representation
+that would fix it was not built. This is recorded in SPECS/005 and gated by
+probe_scale.py rather than left as a rounded-up "meets budget".
 
 ### What was not tested
 

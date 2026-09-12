@@ -54,3 +54,19 @@ The engine was not extracted into a separate package: the defects were addressab
 Fixture changes: eclipse.tjp and bottleneck.tjp express 'these two together' as `mandatory` with the effort in person-hours, keeping every expected datetime; simple.tjp and tutorial.tjp finish sooner because effort is now shared, which tutorial.tjp's own comment says it should.
 
 Probes: probe_effort_semantics 5/5, probe_alap 5/5, probe_idempotency 4/4, probe_priority 2/2.
+
+**One quantified criterion is not met.** The spec asks that 100 tasks over 10
+resources for a year at one-minute resolution schedule in 10 seconds. Measured:
+about 13 seconds on the reference box, down from 58.7 seconds before the audit
+and from 80.5 seconds mid-way through it. 500 chained tasks at one-hour
+resolution is met with room to spare: 1.5 seconds against a 3-second ask.
+
+The remaining cost is laying out the scoreboard: a year at minute resolution is
+525,600 slots, held as a Python list per resource. The shift pattern is now
+computed for one week and tiled where it repeats, which removed most of it, but
+the list itself is still allocated and walked. The fix is the denser
+representation the original plan described -- a bit per slot per day, with
+bookings held separately -- and it was not done, because the correctness work
+was the point and this is a known, measured, bounded limitation rather than a
+wrong answer. probe_scale.py records the measurement and gates against a
+regression at roughly twice it.
