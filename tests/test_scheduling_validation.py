@@ -67,7 +67,7 @@ class TestIssue39UltraMath:
         import io
 
         parser = ProjectFileParser()
-        with open('tests/data/airport_ultra_math_report.tjp') as f:
+        with open(Path(__file__).parent / 'data' / 'airport_ultra_math_report.tjp') as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -216,7 +216,7 @@ class TestIssue41MathTorture:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/math_torture.tjp') as f:
+        with open(Path(__file__).parent / 'data' / 'math_torture.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -359,7 +359,7 @@ class TestIssue42AirportRetrofit:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/airport_retrofit.tjp') as f:
+        with open(Path(__file__).parent / 'data' / 'airport_retrofit.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -435,7 +435,7 @@ class TestIssue40AirportStressTest:
     def csv_output(self):
         """Generate our tool's output."""
         parser = ProjectFileParser()
-        with open('tests/data/airport_stress_test.tjp') as f:
+        with open(Path(__file__).parent / 'data' / 'airport_stress_test.tjp') as f:
             content = f.read()
         project = parser.parse(content)
         project.schedule()
@@ -505,7 +505,7 @@ class TestIssue43WorkflowEngine:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open('tests/data/workflow_engine.tjp') as f:
+        with open(Path(__file__).parent / 'data' / 'workflow_engine.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -1392,33 +1392,66 @@ class TestIssue56UnionContract:
             f"FAIL: Step4 should end at {self.EXP_STEP4_END}, got {end}"
         )
 
-    def test_weekly_hours_respected(self, csv_output):
-        """Verify total hours in week 40 (Oct 1-5) is exactly 20h."""
-        from datetime import datetime
+    def test_weekly_hours_respected(self):
+        """The worker does exactly 20h in ISO week 40, the cap they are held to.
 
-        week40_hours = 0
-        fmt = "%Y-%m-%d-%H:%M"
+        Measured from what the resource was actually booked for, not from the
+        tasks' start and end. A task split by the cap spans the gap it was
+        split across, so its window covers hours nobody worked.
 
-        for task_id in ['chain.step1', 'chain.step2', 'chain.step3']:
-            row = csv_output.get(task_id)
-            if row:
-                start = datetime.strptime(row['Start'].strip(), fmt)
-                end = datetime.strptime(row['End'].strip(), fmt)
+        The previous version of this test added the constants 8, 8 and 4
+        whenever a task began before the week boundary. It asserted that
+        8 + 8 + 4 == 20, and would have passed had the worker done a full eight
+        hours on the Friday, which is the violation it exists to catch.
+        """
+        from collections import defaultdict
 
-                # Only count hours in week 40 (before Mon Oct 6)
-                week_boundary = datetime(2025, 10, 6, 0, 0)
+        project = ProjectFileParser().parse(self.TJP_FILE.read_text())
+        granularity = project.attributes["scheduleGranularity"]
 
-                if start < week_boundary:
-                    task_end_in_week = min(end, week_boundary)
-                    # This is simplified - real calculation would need shift hours
-                    if task_id == 'chain.step3':
-                        # step3 works 4h on Friday (09:00-13:00)
-                        week40_hours += 4
-                    else:
-                        week40_hours += 8
+        booked_per_week = defaultdict(float)
+        for resource in project.resources:
+            scenario = resource.data[0]
+            if scenario is None or scenario.scoreboard is None:
+                continue
+            for index, slot in enumerate(scenario.scoreboard):
+                if slot is None or isinstance(slot, int):
+                    continue
+                moment = project.idxToDate(index)
+                seconds = scenario.slotSecondsUsed.get(index, granularity)
+                year, week, _ = moment.isocalendar()
+                booked_per_week[(year, week)] += seconds / 3600.0
 
-        assert week40_hours == 20, (
-            f"FAIL: Week 40 should have exactly 20h of work, got {week40_hours}h"
+        assert booked_per_week, "FAIL: the worker was booked for nothing at all."
+        week40 = booked_per_week.get((2025, 40), 0.0)
+        assert abs(week40 - 20.0) < 1e-6, (
+            f"FAIL: ISO week 40 should hold exactly 20h of work (weeklymax 20h), "
+            f"got {week40}h. All weeks: {dict(booked_per_week)}"
+        )
+        for week, hours in booked_per_week.items():
+            assert hours <= 20.0 + 1e-6, f"FAIL: {week} exceeds the 20h cap with {hours}h"
+
+    def test_the_weekly_cap_is_what_splits_the_task(self):
+        """Raising the cap removes the split, which is what makes it the cause.
+
+        Without this, every assertion in the class is equally satisfied by a
+        scheduler that splits the task for some other reason entirely.
+        """
+        capped = ProjectFileParser().parse(self.TJP_FILE.read_text())
+        relaxed = ProjectFileParser().parse(
+            self.TJP_FILE.read_text().replace("weeklymax 20h", "weeklymax 40h")
+        )
+
+        def finish(project):
+            for task in project.tasks:
+                if task.fullId == "chain.step3":
+                    return task.get("end", 0)
+            raise AssertionError("chain.step3 is missing")
+
+        assert finish(relaxed) < finish(capped), (
+            f"FAIL: with weeklymax raised to 40h the chain should finish earlier than "
+            f"{finish(capped)}, but it ends at {finish(relaxed)}. The 20h cap is then not "
+            f"what splits the task."
         )
 
 
@@ -1548,11 +1581,17 @@ class TestIssue58BlindParadox:
 
     TJP_FILE = Path(__file__).parent / 'data' / 'paradox.tjp'
 
-    # Base64 encoded ground truth (from blind judge)
-    TRUTH_A_START = "MjAyNS0xMi0yNy0yMzowMA=="  # 2025-12-27-23:00
-    TRUTH_A_END = "MjAyNS0xMi0yOC0yMzowMA=="    # 2025-12-28-23:00
-    TRUTH_B_START = "MjAyNS0xMi0zMC0yMzowMA=="  # 2025-12-30-23:00
-    TRUTH_B_END = "MjAyNS0xMi0zMS0yMzowMA=="    # 2025-12-31-23:00
+    # Expected results, derived by hand from the fixture: assemble_a runs one
+    # working day on Kiritimati (UTC+14), and assemble_b must end 48 calendar
+    # hours before it starts, on Niue (UTC-11). Times are UTC.
+    #
+    # These were previously base64-encoded, described as a "blind judge", with
+    # the plaintext in a comment on the same line. That hid nothing and made
+    # the diff harder to read, so they are written out.
+    TRUTH_A_START = "2025-12-27-23:00"
+    TRUTH_A_END = "2025-12-28-23:00"
+    TRUTH_B_START = "2025-12-30-23:00"
+    TRUTH_B_END = "2025-12-31-23:00"
 
     @pytest.fixture
     def csv_dataframe(self):
@@ -1579,23 +1618,19 @@ class TestIssue58BlindParadox:
         df.columns = [c.strip().lower() for c in df.columns]
         return df
 
-    def _check_task(self, df, tid, code_start, code_end):
-        """Verify task against base64 encoded truth (exact blind judge logic)."""
-        import base64
-
+    def _check_task(self, df, tid, expected_start, expected_end):
+        """Verify one task's window against the expected times."""
         row = df[df['id'] == tid]
         assert not row.empty, f"FAIL: Task {tid} missing."
 
-        got_s = row.iloc[0]['start'].strip()
-        got_e = row.iloc[0]['end'].strip()
+        got_start = row.iloc[0]['start'].strip()
+        got_end = row.iloc[0]['end'].strip()
 
-        user_s_enc = base64.b64encode(got_s.encode('utf-8')).decode('utf-8')
-        user_e_enc = base64.b64encode(got_e.encode('utf-8')).decode('utf-8')
-
-        assert user_s_enc == code_start and user_e_enc == code_end, (
-            f"FAIL: {tid} Logic Mismatch.\n"
-            f"  -> Your output is mathematically incorrect.\n"
-            f"  -> Debug your Timezone-ALAP-Gap iterator."
+        assert (got_start, got_end) == (expected_start, expected_end), (
+            f"FAIL: {tid} is scheduled {got_start} to {got_end}, "
+            f"expected {expected_start} to {expected_end}. "
+            f"Check the interaction of timezone, backward scheduling and the "
+            f"48h gapduration measured from the successor's start."
         )
 
     def test_task_alpha_integrity(self, csv_dataframe):
@@ -1613,10 +1648,8 @@ class TestIssue58BlindParadox:
         Run complete blind judge protocol.
         ACCESS GRANTED only if both tasks pass integrity check.
         """
-        import base64
-
         errors = 0
-        for tid, code_s, code_e in [
+        for tid, expected_start, expected_end in [
             ('sequence.a', self.TRUTH_A_START, self.TRUTH_A_END),
             ('sequence.b', self.TRUTH_B_START, self.TRUTH_B_END)
         ]:
@@ -1625,13 +1658,10 @@ class TestIssue58BlindParadox:
                 errors += 1
                 continue
 
-            got_s = row.iloc[0]['start'].strip()
-            got_e = row.iloc[0]['end'].strip()
+            got_start = row.iloc[0]['start'].strip()
+            got_end = row.iloc[0]['end'].strip()
 
-            user_s_enc = base64.b64encode(got_s.encode('utf-8')).decode('utf-8')
-            user_e_enc = base64.b64encode(got_e.encode('utf-8')).decode('utf-8')
-
-            if user_s_enc != code_s or user_e_enc != code_e:
+            if (got_start, got_end) != (expected_start, expected_end):
                 errors += 1
 
         assert errors == 0, "ACCESS DENIED - System logic mismatch"
@@ -1653,9 +1683,9 @@ class TestIssue60EclipseProtocol:
 
     TJP_FILE = Path(__file__).parent / 'data' / 'eclipse.tjp'
 
-    # Cryptic checksums from judge (reversed -> base64 encoded)
-    K_START = "MDA6MjEtMjAtNjAtNTIwMg=="  # 2025-06-02-12:00 reversed
-    K_END = "MDA6MzEtOTAtNjAtNTIwMg=="    # 2025-06-09-13:00 reversed
+    # Expected times, written out rather than encoded.
+    K_START = "2025-06-02-12:00"
+    K_END = "2025-06-09-13:00"
 
     @pytest.fixture
     def csv_dataframe(self):
@@ -1682,12 +1712,14 @@ class TestIssue60EclipseProtocol:
         df.columns = [c.strip().lower() for c in df.columns]
         return df
 
-    def _verify(self, val, key):
-        """Exact judge verification: reverse string -> base64 encode -> compare."""
-        import base64
-        rev = val[::-1]
-        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
-        return enc == key
+    def _verify(self, value, expected):
+        """Whether the schedule produced the expected time.
+
+        This used to reverse the string and base64 it before comparing, with
+        the plaintext in a comment beside the key. That obscured the expected
+        value without protecting it, so the comparison is written plainly.
+        """
+        return value == expected
 
     def test_sync_task_start(self, csv_dataframe):
         """Task start must align with first intersection window."""
@@ -1844,122 +1876,6 @@ class TestIssue61SineWaveCapacity:
         )
 
 
-class TestIssue59DateLineParadox:
-    """
-    Issue #59: The "Date Line" Paradox
-
-    Tests ALAP + Efficiency + Elapsed Lags + Dateline Crossing.
-    Resources are in extreme timezones:
-    - Resource K: Pacific/Kiritimati (UTC+14) - first to see tomorrow
-    - Resource N: Pacific/Niue (UTC-11) - almost last to see today
-
-    Ground Truth (from judge_paradox.py):
-    - Task B (Omega): Dec 30 23:00 -> Dec 31 23:00 UTC
-    - Task A (Alpha): Dec 27 23:00 -> Dec 28 23:00 UTC
-      (48h gap before B starts, efficiency 2.0)
-    """
-
-    TJP_FILE = Path(__file__).parent / 'data' / 'paradox.tjp'
-
-    # Ground truth from judge script
-    TARGET_A_START = "2025-12-27-23:00"
-    TARGET_A_END = "2025-12-28-23:00"
-    TARGET_B_START = "2025-12-30-23:00"
-    TARGET_B_END = "2025-12-31-23:00"
-
-    @pytest.fixture
-    def csv_dataframe(self):
-        """Generate CSV output and return as pandas DataFrame."""
-        import io
-
-        import pandas as pd
-
-        parser = ProjectFileParser()
-        with open(self.TJP_FILE) as f:
-            content = f.read()
-        project = parser.parse(content)
-
-        csv_content = ''
-        for report in project.reports:
-            if not report.get('scenarios'):
-                report['scenarios'] = ['plan']
-            report.generate_intermediate_format()
-            csv_rows = report.to_csv()
-            for row in csv_rows:
-                csv_content += ','.join(str(x) for x in row) + '\n'
-
-        df = pd.read_csv(io.StringIO(csv_content), sep=None, engine='python')
-        df.columns = [c.strip().lower() for c in df.columns]
-        return df
-
-    def test_task_alpha_schedule(self, csv_dataframe):
-        """
-        Task Alpha: 12h effort with efficiency 2.0 = 6h duration.
-        Must end 48h before Omega starts (Dec 30 23:00 - 48h = Dec 28 23:00).
-        """
-        row = csv_dataframe[csv_dataframe['id'] == 'sequence.a']
-        assert not row.empty, "FAIL: Task A missing."
-
-        s = row.iloc[0]['start'].strip()
-        e = row.iloc[0]['end'].strip()
-
-        assert s == self.TARGET_A_START and e == self.TARGET_A_END, (
-            f"FAIL: Alpha Alignment.\n"
-            f"  Expected: {self.TARGET_A_START} -> {self.TARGET_A_END}\n"
-            f"  Got:      {s} -> {e}"
-        )
-
-    def test_task_omega_schedule(self, csv_dataframe):
-        """
-        Task Omega: 3h effort with efficiency 0.5 = 6h duration.
-        Must end at deadline (Dec 31 23:00).
-        """
-        row = csv_dataframe[csv_dataframe['id'] == 'sequence.b']
-        assert not row.empty, "FAIL: Task B missing."
-
-        s = row.iloc[0]['start'].strip()
-        e = row.iloc[0]['end'].strip()
-
-        assert s == self.TARGET_B_START and e == self.TARGET_B_END, (
-            f"FAIL: Omega Alignment.\n"
-            f"  Expected: {self.TARGET_B_START} -> {self.TARGET_B_END}\n"
-            f"  Got:      {s} -> {e}"
-        )
-
-    def test_dateline_traversed(self, csv_dataframe):
-        """
-        Full judge verification: All timestamps should show 23:00 UTC
-        if timezone math is correct (UTC+14 and UTC-11 interacting).
-        """
-        errors = 0
-
-        # Check A
-        row_a = csv_dataframe[csv_dataframe['id'] == 'sequence.a']
-        if row_a.empty:
-            errors += 1
-        else:
-            s = row_a.iloc[0]['start'].strip()
-            e = row_a.iloc[0]['end'].strip()
-            if s != self.TARGET_A_START or e != self.TARGET_A_END:
-                errors += 1
-
-        # Check B
-        row_b = csv_dataframe[csv_dataframe['id'] == 'sequence.b']
-        if row_b.empty:
-            errors += 1
-        else:
-            s = row_b.iloc[0]['start'].strip()
-            e = row_b.iloc[0]['end'].strip()
-            if s != self.TARGET_B_START or e != self.TARGET_B_END:
-                errors += 1
-
-        assert errors == 0, (
-            "FAIL: PARADOX UNRESOLVED.\n"
-            "Your system did not correctly handle UTC+14 and UTC-11\n"
-            "interacting in an ALAP backward pass."
-        )
-
-
 class TestIssue62SharedQuotaProtocol:
     """
     Issue #62: The "Shared Quota" Protocol
@@ -1980,9 +1896,9 @@ class TestIssue62SharedQuotaProtocol:
 
     TJP_FILE = Path(__file__).parent / 'data' / 'quota.tjp'
 
-    # Base64 encoded checksums from judge (reversed string -> base64)
-    K_END_AB = "MDA6MjEtMTAtNzAtNTIwMg=="  # 2025-07-01-12:00 reversed
-    K_END_C = "MDA6MjEtMjAtNzAtNTIwMg=="   # 2025-07-02-12:00 reversed
+    # Expected times, written out rather than encoded.
+    K_END_AB = "2025-07-01-12:00"
+    K_END_C = "2025-07-02-12:00"
 
     @pytest.fixture
     def csv_dataframe(self):
@@ -2009,12 +1925,14 @@ class TestIssue62SharedQuotaProtocol:
         df.columns = [c.strip().lower() for c in df.columns]
         return df
 
-    def _verify(self, val, key):
-        """Exact judge verification: reverse string -> base64 encode -> compare."""
-        import base64
-        rev = val[::-1]
-        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
-        return enc == key
+    def _verify(self, value, expected):
+        """Whether the schedule produced the expected time.
+
+        This used to reverse the string and base64 it before comparing, with
+        the plaintext in a comment beside the key. That obscured the expected
+        value without protecting it, so the comparison is written plainly.
+        """
+        return value == expected
 
     def test_job_a_fits_in_day1(self, csv_dataframe):
         """Job A (3h) should complete on Jul 1 by 12:00."""
@@ -2105,8 +2023,8 @@ class TestIssue63FailoverProtocol:
 
     TJP_FILE = Path(__file__).parent / 'data' / 'failover.tjp'
 
-    # Base64 encoded checksum from judge (reversed string -> base64)
-    K_END = "MDA6NzEtNDAtODAtNTIwMg=="  # 2025-08-04-17:00 reversed
+    # Expected times, written out rather than encoded.
+    K_END = "2025-08-04-17:00"
 
     @pytest.fixture
     def csv_dataframe(self):
@@ -2133,12 +2051,14 @@ class TestIssue63FailoverProtocol:
         df.columns = [c.strip().lower() for c in df.columns]
         return df
 
-    def _verify(self, val, key):
-        """Exact judge verification: reverse string -> base64 encode -> compare."""
-        import base64
-        rev = val[::-1]
-        enc = base64.b64encode(rev.encode('utf-8')).decode('utf-8')
-        return enc == key
+    def _verify(self, value, expected):
+        """Whether the schedule produced the expected time.
+
+        This used to reverse the string and base64 it before comparing, with
+        the plaintext in a comment beside the key. That obscured the expected
+        value without protecting it, so the comparison is written plainly.
+        """
+        return value == expected
 
     def test_task_ends_aug_4(self, csv_dataframe):
         """

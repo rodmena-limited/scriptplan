@@ -77,7 +77,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short -n auto"
+# No -n here: pytest-xdist is an optional extra, and requiring it means
+# the suite cannot start without it. Pass -n yourself to parallelise.
+addopts = "--tb=short"
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
