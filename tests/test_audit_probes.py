@@ -72,6 +72,7 @@ def test_every_spec_has_a_probe_file() -> None:
         "probe_idempotency.py",
         "probe_priority.py",
         "probe_reports.py",
+        "probe_showcase_regression.py",
     }
     missing = expected - set(probe_files())
     assert not missing, f"probe files disappeared: {sorted(missing)}"

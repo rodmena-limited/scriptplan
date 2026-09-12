@@ -28,6 +28,7 @@ path and which accelerated modules are active.
 | `probe_idempotency.py` | scheduling twice gives the same answer | `SPECS/005` |
 | `probe_priority.py` | regression guard: priority contention already works | `SPECS/005` |
 | `probe_reports.py` | reports honour their own definitions | `SPECS/008` |
+| `probe_showcase_regression.py` | the 24 example projects still schedule as they did before the audit | `SPECS/001` |
 | `probe_scale.py` | performance budgets (opt-in, slow) | `SPECS/005` |
 
 ## Rules this harness follows
@@ -41,6 +42,12 @@ path and which accelerated modules are active.
 - **A probe that goes red must first have been able to go green.** When a probe
   is added for a defect, it is also run against the fixed behaviour before the
   finding is closed.
+- **A deliberate change is recorded, not absorbed.**
+  `probe_showcase_regression.py` compares every example project against the
+  schedule it produced before the audit, and names the three that differ and
+  why. It fails if any other project moves *and* if one of those three stops
+  differing: a change that quietly reverts is as much a surprise as one that
+  quietly appears.
 
 When a claim changes, update its probe in the same change. A probe asserting a
 stale contract is itself a self-confirming check.

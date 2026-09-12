@@ -30,6 +30,7 @@ probes=(
   probe_idempotency.py
   probe_priority.py
   probe_reports.py
+  probe_showcase_regression.py
 )
 if [ "${SCRIPTPLAN_PROBE_SLOW:-0}" = "1" ]; then
   probes+=(probe_scale.py)
