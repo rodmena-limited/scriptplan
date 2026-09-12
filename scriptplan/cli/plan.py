@@ -20,6 +20,14 @@ import click
 
 from scriptplan import __version__
 from scriptplan.cli.main import run_scriptplan
+from scriptplan.cli.plan_files import (
+    InputFileError,
+    create_auto_report_file,
+    declares_report,
+    setup_logging,
+    validate_tjp_file,
+)
+from scriptplan.cli.plan_help import register as register_help_commands
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -41,170 +49,6 @@ class ReportGenerationError(PlanError):
     """Raised when report generation fails."""
 
     pass
-
-
-def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
-    """
-    Configure logging for the CLI.
-
-    Args:
-        verbose: Enable verbose/debug logging
-        quiet: Suppress all non-error output
-    """
-    if quiet:
-        level = logging.ERROR
-    elif verbose:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-
-    logging.basicConfig(level=level, format="%(levelname)s: %(message)s", stream=sys.stderr)
-
-
-def validate_tjp_file(tjp_path: str) -> Path:
-    """
-    Validate that the .tjp file exists and is readable.
-
-    Args:
-        tjp_path: Path to the .tjp file
-
-    Returns:
-        Path object for the validated file
-
-    Raises:
-        FileNotFoundError: If file doesn't exist or isn't readable
-    """
-    path = Path(tjp_path)
-
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {tjp_path}")
-
-    if not path.is_file():
-        raise FileNotFoundError(f"Not a file: {tjp_path}")
-
-    if path.suffix != ".tjp":
-        logger.warning("File does not have .tjp extension: %s", tjp_path)
-
-    if not path.stat().st_size:
-        raise FileNotFoundError(f"File is empty: {tjp_path}")
-
-    return path
-
-
-REPORT_KEYWORDS = ("taskreport", "resourcereport", "textreport", "accountreport")
-
-
-def declares_report(tjp_path: Path, output_format: str) -> bool:
-    """True if the file already defines a report producing ``output_format``.
-
-    The CLI only supplies a report of its own when the project does not define
-    one, so that `plan report` shows the user the report they wrote rather than
-    a substitute with different columns.
-    """
-    try:
-        with open(tjp_path) as handle:
-            text = handle.read()
-    except OSError:
-        return False
-
-    # Strip comments so a commented-out report is not mistaken for a real one.
-    lines = []
-    for raw in text.splitlines():
-        stripped = raw.split("#", 1)[0]
-        lines.append(stripped)
-    body = "\n".join(lines)
-
-    depth_of_report = None
-    depth = 0
-    for token_line in body.splitlines():
-        opens_report = any(keyword in token_line for keyword in REPORT_KEYWORDS)
-        if opens_report and depth_of_report is None:
-            depth_of_report = depth
-        if depth_of_report is not None and "formats" in token_line:
-            formats = token_line.split("formats", 1)[1]
-            if output_format in formats:
-                return True
-        depth += token_line.count("{") - token_line.count("}")
-        if depth_of_report is not None and depth <= depth_of_report:
-            depth_of_report = None
-    return False
-
-
-def create_auto_report_file(tjp_path: Path, output_format: str) -> tuple[Path, str]:
-    """
-    Create a temporary .tjp file with auto-generated report.
-
-    If the original file doesn't have a report matching the requested format,
-    this creates a temporary file that includes the original and adds a default report.
-
-    Args:
-        tjp_path: Path to the original .tjp file
-        output_format: Desired output format ('json' or 'csv')
-
-    Returns:
-        Tuple of (Path to temp .tjp file, report_id)
-    """
-    # Create a unique report ID using secure random string (safe for concurrent execution)
-    random_suffix = secrets.token_hex(8)
-    report_id = f"plan_auto_{random_suffix}"
-
-    # Default report definition
-    auto_report = f"""
-# Auto-generated report by plan CLI
-taskreport {report_id} "{report_id}" {{
-    formats {output_format}
-    columns id, start, end
-    timeformat "%Y-%m-%d-%H:%M"
-}}
-"""
-
-    # Create temporary file with random suffix (safe for concurrent execution)
-    temp_fd, temp_path = tempfile.mkstemp(suffix=".tjp", prefix="plan_auto_")
-    temp_file = Path(temp_path)
-
-    # Read original file
-    with open(tjp_path) as f:
-        original_content = f.read()
-
-    # Write combined content and close file descriptor
-    with os.fdopen(temp_fd, "w") as f:
-        # Include original file
-        f.write(f"# Original file: {tjp_path}\n")
-        f.write("# Auto-report added by plan CLI\n\n")
-        f.write(original_content)
-        f.write("\n\n")
-        f.write(auto_report)
-
-    return temp_file, report_id
-
-
-def find_output_files(tjp_path: Path, output_format: str, report_id: str = "") -> list[Path]:
-    """
-    Find generated output files for a .tjp file.
-
-    Args:
-        tjp_path: Path to the .tjp file
-        output_format: Expected output format ('json' or 'csv')
-        report_id: Specific report ID to look for
-
-    Returns:
-        List of generated output files
-    """
-    cwd = Path.cwd()
-
-    if report_id:
-        # Look for specific report ID
-        if output_format == "json":
-            return list(cwd.glob(f"{report_id}.json"))
-        else:
-            return list(cwd.glob(f"*{report_id}*.csv"))
-    else:
-        # Look for any files matching the base name
-        base_name = tjp_path.stem
-        if output_format == "json":
-            return list(cwd.glob(f"*{base_name}*.json"))
-        else:
-            return list(cwd.glob(f"*{base_name}*.csv"))
 
 
 @click.group(invoke_without_command=True)
@@ -472,7 +316,7 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
 
         sys.exit(0)
 
-    except FileNotFoundError as e:
+    except (FileNotFoundError, InputFileError) as e:
         click.secho(f"Error: {e}", fg="red", err=True)
         if verbose:
             logger.exception("File validation failed")
@@ -518,182 +362,7 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         sys.exit(2)
 
 
-@cli.command()
-def help() -> None:
-    """
-    Show detailed help and usage information.
-
-    Displays comprehensive help including all available commands,
-    common usage patterns, and examples.
-    """
-    help_text = (
-        """
-ScriptPlan - Enterprise Project Planning Tool
-
-DESCRIPTION:
-    ScriptPlan is a modern, Python-based implementation of TaskJuggler's
-    project planning capabilities. It provides powerful scheduling, resource
-    management, and reporting features for managing complex projects.
-
-USAGE:
-    plan [OPTIONS] COMMAND [ARGS]...
-
-COMMANDS:
-    report      Generate reports from .tjp project files
-    help        Show this detailed help message
-
-GLOBAL OPTIONS:
-    -v, --version       Show version information
-    --verbose           Enable verbose/debug output
-    --quiet             Suppress non-error messages
-    -h, --help          Show command help
-
-REPORT COMMAND:
-    plan report [OPTIONS] <tjp-file>
-
-    Generate scheduling reports in JSON or CSV format from TaskJuggler
-    project files (.tjp).
-
-    Options:
-        --csv               Generate CSV output (default: JSON)
-        -o, --output PATH   Specify output file path
-        --force             Overwrite existing output files
-        -h, --help          Show report command help
-
-EXAMPLES:
-    # Generate JSON report from project file
-    $ plan report project.tjp
-
-    # Generate CSV report
-    $ plan report --csv project.tjp
-
-    # Save report to specific file
-    $ plan report --output report.json project.tjp
-
-    # Enable verbose output for debugging
-    $ plan --verbose report project.tjp
-
-    # Quiet mode (only show errors)
-    $ plan --quiet report project.tjp
-
-OUTPUT FORMATS:
-    JSON:
-        Clean, structured data with no HTML metadata.
-        Format: {"data": [...], "columns": [...], "report_id": "..."}
-
-    CSV:
-        Comma-separated values suitable for spreadsheet applications.
-        First row contains column headers.
-
-EXIT CODES:
-    0   Success
-    1   File not found or invalid input
-    2   Report generation failed
-    3   Output file exists (use --force)
-
-ENVIRONMENT:
-    PLAN_VERBOSE        Set to '1' to enable verbose output
-    PLAN_OUTPUT_DIR     Default directory for output files
-
-TJP FILE REQUIREMENTS:
-    Your .tjp file must contain at least one report definition:
-
-    taskreport my_report "My Report" {
-        formats json      # or csv
-        columns id, start, end
-    }
-
-MORE INFORMATION:
-    Documentation: https://github.com/rodmena-limited/scriptplan
-    Issues: https://github.com/rodmena-limited/scriptplan/issues
-
-VERSION:
-    ScriptPlan """
-        + __version__
-        + """
-"""
-    )
-    click.echo(help_text)
-
-
-@cli.command(name="shell-completion")
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
-def shell_completion(shell: str) -> None:
-    """
-    Generate shell completion script.
-
-    Outputs shell completion configuration for the specified shell.
-    Add the output to your shell's configuration file to enable
-    tab completion for the 'plan' command.
-
-    \b
-    Supported shells: bash, zsh, fish
-
-    \b
-    Examples:
-        # Bash
-        plan shell-completion bash >> ~/.bashrc
-
-        # Zsh
-        plan shell-completion zsh >> ~/.zshrc
-
-        # Fish
-        plan shell-completion fish > ~/.config/fish/completions/plan.fish
-    """
-    if shell == "bash":
-        completion = """
-# plan bash completion
-_plan_completion() {
-    local IFS=$'\\n'
-    COMPREPLY=( $(env COMP_WORDS="${COMP_WORDS[*]}" \\
-                     COMP_CWORD=$COMP_CWORD \\
-                     _PLAN_COMPLETE=complete $1) )
-    return 0
-}
-
-complete -F _plan_completion -o default plan
-"""
-    elif shell == "zsh":
-        completion = """
-# plan zsh completion
-#compdef plan
-
-_plan() {
-    local -a completions
-    local -a completions_with_descriptions
-    local -a response
-    response=("${(@f)$( env COMP_WORDS="${words[*]}" \\
-                        COMP_CWORD=$((CURRENT-1)) \\
-                        _PLAN_COMPLETE="complete_zsh" \\
-                        plan )}")
-
-    for key descr in ${(kv)response}; do
-      if [[ "$descr" == "_" ]]; then
-          completions+=("$key")
-      else
-          completions_with_descriptions+=("$key":"$descr")
-      fi
-    done
-
-    if [ -n "$completions_with_descriptions" ]; then
-        _describe -V unsorted completions_with_descriptions -U
-    fi
-
-    if [ -n "$completions" ]; then
-        compadd -U -V unsorted -a completions
-    fi
-    compstate[insert]="automenu"
-}
-
-compdef _plan plan
-"""
-    else:  # fish
-        completion = """
-# plan fish completion
-complete -c plan -f -a "(env _PLAN_COMPLETE=complete_fish COMP_WORDS=(commandline -cp) COMP_CWORD=(commandline -t) plan)"
-"""
-
-    click.echo(completion)
+register_help_commands(cli)
 
 
 def main() -> None:

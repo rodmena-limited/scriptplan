@@ -1,0 +1,224 @@
+"""Turning parsed blocks into the model's smaller pieces.
+
+Scenarios, journal entries, attribute inheritance, and resolving the references
+one task makes to another. Each is a step in building the project that is
+separable from the task and resource construction around it.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from scriptplan.core.exceptions import SemanticError
+from scriptplan.core.project import Project
+
+__all__ = [
+    "create_journal_entry",
+    "create_scenario",
+    "scenario_index",
+    "inherit_all_attributes",
+    "validate_allocations",
+    "allocation_ids",
+    "resolve_task_reference",
+]
+
+
+def create_journal_entry(builder: Any, task: Task, entry_data: dict[str, Any]) -> None:
+    """Create a journal entry for a task.
+
+    Args:
+        task: The Task object this entry belongs to
+        entry_data: Dict with 'date', 'headline', and 'body' keys
+    """
+    from scriptplan.core.journal import AlertLevel
+
+    journal = task.project.attributes.get("journal")
+    if journal is None:
+        return
+
+    date = entry_data.get("date")
+    headline = entry_data.get("headline", "")
+    body = entry_data.get("body", {})
+
+    # Create the journal entry
+    entry = journal.create_entry(date, headline, task)
+
+    # Set body attributes
+    if body.get("author"):
+        # Look up the author resource
+        author_id = body["author"]
+        author = task.project.resources[author_id] if author_id else None
+        entry.author = author
+
+    alert_str = body.get("alert", "green")
+    if alert_str == "red":
+        entry.alert_level = AlertLevel.RED
+    elif alert_str == "yellow":
+        entry.alert_level = AlertLevel.YELLOW
+    else:
+        entry.alert_level = AlertLevel.GREEN
+
+    entry.summary = body.get("summary")
+    entry.details = body.get("details")
+
+
+def create_scenario(builder: Any, project: Project, scenario_data: dict[str, Any], parent: Optional[Any] = None) -> None:
+    """Create a scenario in the project.
+
+    Args:
+        project: The project
+        scenario_data: Dict with 'id', 'name', 'children'
+        parent: Parent scenario for nested scenarios
+    """
+    from scriptplan.core.scenario import Scenario
+
+    s_id = str(scenario_data.get("id", ""))
+    s_name = str(scenario_data.get("name", "")).strip('"')
+    children = scenario_data.get("children", [])
+
+    # Clear default scenario on first scenario definition
+    if parent is None and not hasattr(builder, "_scenarios_cleared"):
+        # Remove the default 'plan' scenario
+        default_plan = project.scenarios["plan"]
+        if default_plan:
+            project.scenarios.removeProperty(default_plan)
+        builder._scenarios_cleared = True
+
+    # Create the scenario
+    scenario = Scenario(project, s_id, s_name, parent)
+
+    # Create nested child scenarios
+    for child in children:
+        if isinstance(child, tuple) and child[0] == "scenario":
+            create_scenario(builder, project, child[1], scenario)
+
+
+def scenario_index(builder: Any, project: Project, scenario_id: str) -> Optional[int]:
+    """Get the index of a scenario by its ID."""
+    for i, scenario in enumerate(project.scenarios):
+        if scenario.id == scenario_id:
+            return i
+    return None
+
+
+def inherit_all_attributes(builder: Any, project: Project) -> None:
+    """Inherit attributes from parent nodes for all tasks and resources."""
+
+    # Process tasks in tree order (parents before children)
+    def inherit_recursive(node: Any) -> None:
+        node.inheritAttributes()
+        for child in node.children:
+            inherit_recursive(child)
+
+    # Get top-level items (no parent)
+    for task in project.tasks:
+        if not task.parent:
+            inherit_recursive(task)
+
+    for resource in project.resources:
+        if not resource.parent:
+            inherit_recursive(resource)
+
+
+def validate_allocations(builder: Any, project: Project) -> None:
+    """Reject an allocation naming a resource that does not exist.
+
+    Resource lookup is otherwise lazy and forgiving: an unknown id resolves
+    to None at scheduling time and the task quietly books nothing.
+    """
+    known = {resource.id for resource in project.resources}
+    known.update(resource.fullId for resource in project.resources)
+
+    for task in project.tasks:
+        for scIdx in range(project.scenarioCount()):
+            for name in allocation_ids(task.get("allocate", scIdx)):
+                if name not in known:
+                    raise SemanticError(
+                        f"task '{task.fullId}' allocates '{name}', which is not a resource "
+                        f"in this project. The task would silently book nothing."
+                    )
+            break  # allocate is set identically for every scenario here
+
+
+def allocation_ids(allocations: Any) -> list[str]:
+    """Resource ids named by an allocate attribute, primary and alternative."""
+    from scriptplan.core.allocation_plan import AllocationPlan
+
+    names: list[str] = []
+    for entry in AllocationPlan._entries(allocations):
+        resource = entry.get("resource")
+        if isinstance(resource, str):
+            names.append(resource)
+        names.extend(name for name in entry.get("alternative", []) if isinstance(name, str))
+    return names
+
+
+def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref: str) -> Optional[Task]:
+    """Resolve a task reference string to a Task object.
+
+    Reference formats:
+    - "!taskid" - sibling (same parent)
+    - "!!taskid" - uncle (parent's sibling)
+    - "taskid" - from project root
+    - "parent.child" - path from root
+    """
+    if not ref:
+        return None
+
+    # Count leading exclamation marks to determine scope
+    level = 0
+    while ref.startswith("!"):
+        level += 1
+        ref = ref[1:]
+
+    # Find base task to search from
+    if level > 0:
+        # Go up level times from current task's parent
+        base = from_task.parent
+        for _ in range(level - 1):
+            if base and base.parent:
+                base = base.parent
+            else:
+                base = None
+                break
+    else:
+        base = None  # Search from root
+
+    # Now find the task by ID
+    # Handle path references like "parent.child"
+    parts = ref.split(".")
+
+    if base:
+        # Search in base's children
+        current = base
+        for part in parts:
+            found = None
+            for child in current.children:
+                if child.id == part:
+                    found = child
+                    break
+            if found:
+                current = found
+            else:
+                return None
+        return current  # type: ignore[return-value]
+    else:
+        # Search from project root
+        for task in project.tasks:
+            if task.id == parts[0]:
+                if len(parts) == 1:
+                    return task  # type: ignore[return-value]
+                # Navigate path
+                current = task
+                for part in parts[1:]:
+                    found = None
+                    for child in current.children:
+                        if child.id == part:
+                            found = child
+                            break
+                    if found:
+                        current = found
+                    else:
+                        return None
+                return current  # type: ignore[return-value]
+    return None

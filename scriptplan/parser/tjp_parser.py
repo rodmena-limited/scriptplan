@@ -19,6 +19,15 @@ from scriptplan.core.project import Project
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
 from scriptplan.parser.attribute_apply import apply_property_attributes
+from scriptplan.parser.model_pieces import (
+    allocation_ids,
+    create_journal_entry,
+    create_scenario,
+    inherit_all_attributes,
+    resolve_task_reference,
+    scenario_index,
+    validate_allocations,
+)
 from scriptplan.parser.report_builder import (
     apply_report_attribute,
     create_report,
@@ -141,24 +150,6 @@ class ModelBuilder:
 
         return project
 
-    def _inherit_all_attributes(self, project: Project) -> None:
-        """Inherit attributes from parent nodes for all tasks and resources."""
-
-        # Process tasks in tree order (parents before children)
-        def inherit_recursive(node: Any) -> None:
-            node.inheritAttributes()
-            for child in node.children:
-                inherit_recursive(child)
-
-        # Get top-level items (no parent)
-        for task in project.tasks:
-            if not task.parent:
-                inherit_recursive(task)
-
-        for resource in project.resources:
-            if not resource.parent:
-                inherit_recursive(resource)
-
     def _resolve_dependencies(self, project: Project) -> None:
         """Resolve task dependency references to actual Task objects."""
         for task, depends_list in self._pending_depends:
@@ -207,38 +198,6 @@ class ModelBuilder:
                 for scIdx in range(project.scenarioCount()):
                     task[("depends", scIdx)] = resolved
 
-    def _validate_allocations(self, project: Project) -> None:
-        """Reject an allocation naming a resource that does not exist.
-
-        Resource lookup is otherwise lazy and forgiving: an unknown id resolves
-        to None at scheduling time and the task quietly books nothing.
-        """
-        known = {resource.id for resource in project.resources}
-        known.update(resource.fullId for resource in project.resources)
-
-        for task in project.tasks:
-            for scIdx in range(project.scenarioCount()):
-                for name in self._allocation_ids(task.get("allocate", scIdx)):
-                    if name not in known:
-                        raise SemanticError(
-                            f"task '{task.fullId}' allocates '{name}', which is not a resource "
-                            f"in this project. The task would silently book nothing."
-                        )
-                break  # allocate is set identically for every scenario here
-
-    @staticmethod
-    def _allocation_ids(allocations: Any) -> list[str]:
-        """Resource ids named by an allocate attribute, primary and alternative."""
-        from scriptplan.core.allocation_plan import AllocationPlan
-
-        names: list[str] = []
-        for entry in AllocationPlan._entries(allocations):
-            resource = entry.get("resource")
-            if isinstance(resource, str):
-                names.append(resource)
-            names.extend(name for name in entry.get("alternative", []) if isinstance(name, str))
-        return names
-
     def _resolve_precedes(self, project: Project) -> None:
         """Resolve precedes relationships by adding dependencies to target tasks.
 
@@ -272,76 +231,6 @@ class ModelBuilder:
                         if not already_exists:
                             existing_deps.append(source_task)
                             target_task[("depends", scIdx)] = existing_deps
-
-    def _resolve_task_reference(self, project: Project, from_task: Task, ref: str) -> Optional[Task]:
-        """Resolve a task reference string to a Task object.
-
-        Reference formats:
-        - "!taskid" - sibling (same parent)
-        - "!!taskid" - uncle (parent's sibling)
-        - "taskid" - from project root
-        - "parent.child" - path from root
-        """
-        if not ref:
-            return None
-
-        # Count leading exclamation marks to determine scope
-        level = 0
-        while ref.startswith("!"):
-            level += 1
-            ref = ref[1:]
-
-        # Find base task to search from
-        if level > 0:
-            # Go up level times from current task's parent
-            base = from_task.parent
-            for _ in range(level - 1):
-                if base and base.parent:
-                    base = base.parent
-                else:
-                    base = None
-                    break
-        else:
-            base = None  # Search from root
-
-        # Now find the task by ID
-        # Handle path references like "parent.child"
-        parts = ref.split(".")
-
-        if base:
-            # Search in base's children
-            current = base
-            for part in parts:
-                found = None
-                for child in current.children:
-                    if child.id == part:
-                        found = child
-                        break
-                if found:
-                    current = found
-                else:
-                    return None
-            return current  # type: ignore[return-value]
-        else:
-            # Search from project root
-            for task in project.tasks:
-                if task.id == parts[0]:
-                    if len(parts) == 1:
-                        return task  # type: ignore[return-value]
-                    # Navigate path
-                    current = task
-                    for part in parts[1:]:
-                        found = None
-                        for child in current.children:
-                            if child.id == part:
-                                found = child
-                                break
-                        if found:
-                            current = found
-                        else:
-                            return None
-                    return current  # type: ignore[return-value]
-        return None
 
     def _apply_project_attributes(self, project: Project, attributes: list[Any]) -> None:
         """Apply attributes to the project."""
@@ -422,36 +311,6 @@ class ModelBuilder:
                     with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
 
-    def _create_scenario(self, project: Project, scenario_data: dict[str, Any], parent: Optional[Any] = None) -> None:
-        """Create a scenario in the project.
-
-        Args:
-            project: The project
-            scenario_data: Dict with 'id', 'name', 'children'
-            parent: Parent scenario for nested scenarios
-        """
-        from scriptplan.core.scenario import Scenario
-
-        s_id = str(scenario_data.get("id", ""))
-        s_name = str(scenario_data.get("name", "")).strip('"')
-        children = scenario_data.get("children", [])
-
-        # Clear default scenario on first scenario definition
-        if parent is None and not hasattr(self, "_scenarios_cleared"):
-            # Remove the default 'plan' scenario
-            default_plan = project.scenarios["plan"]
-            if default_plan:
-                project.scenarios.removeProperty(default_plan)
-            self._scenarios_cleared = True
-
-        # Create the scenario
-        scenario = Scenario(project, s_id, s_name, parent)
-
-        # Create nested child scenarios
-        for child in children:
-            if isinstance(child, tuple) and child[0] == "scenario":
-                self._create_scenario(project, child[1], scenario)
-
     def _create_property(self, parent: Union[Project, Task, Resource], prop_data: Any) -> None:
         """Create a property (resource, task, account) in the parent."""
         if not isinstance(prop_data, dict):
@@ -493,51 +352,6 @@ class ModelBuilder:
         """
         apply_property_attributes(self, obj, attributes, prop_type)
 
-    def _get_scenario_index(self, project: Project, scenario_id: str) -> Optional[int]:
-        """Get the index of a scenario by its ID."""
-        for i, scenario in enumerate(project.scenarios):
-            if scenario.id == scenario_id:
-                return i
-        return None
-
-    def _create_journal_entry(self, task: Task, entry_data: dict[str, Any]) -> None:
-        """Create a journal entry for a task.
-
-        Args:
-            task: The Task object this entry belongs to
-            entry_data: Dict with 'date', 'headline', and 'body' keys
-        """
-        from scriptplan.core.journal import AlertLevel
-
-        journal = task.project.attributes.get("journal")
-        if journal is None:
-            return
-
-        date = entry_data.get("date")
-        headline = entry_data.get("headline", "")
-        body = entry_data.get("body", {})
-
-        # Create the journal entry
-        entry = journal.create_entry(date, headline, task)
-
-        # Set body attributes
-        if body.get("author"):
-            # Look up the author resource
-            author_id = body["author"]
-            author = task.project.resources[author_id] if author_id else None
-            entry.author = author
-
-        alert_str = body.get("alert", "green")
-        if alert_str == "red":
-            entry.alert_level = AlertLevel.RED
-        elif alert_str == "yellow":
-            entry.alert_level = AlertLevel.YELLOW
-        else:
-            entry.alert_level = AlertLevel.GREEN
-
-        entry.summary = body.get("summary")
-        entry.details = body.get("details")
-
     def _create_report(self, project: Project, report_data: dict[str, Any], parent: Optional[Any] = None) -> Any:
         return create_report(self, project, report_data, parent)
 
@@ -546,6 +360,29 @@ class ModelBuilder:
 
     def _resolve_sort_criteria(self, project: Project, criteria: Any) -> list[Any]:
         return resolve_sort_criteria(self, project, criteria)
+
+
+    def _create_journal_entry(self, task: Any, entry_data: dict[str, Any]) -> None:
+        create_journal_entry(self, task, entry_data)
+
+    def _create_scenario(self, project: Project, scenario_data: dict[str, Any], parent: Optional[Any] = None) -> None:
+        create_scenario(self, project, scenario_data, parent)
+
+    def _get_scenario_index(self, project: Project, scenario_id: str) -> Optional[int]:
+        return scenario_index(self, project, scenario_id)
+
+    def _inherit_all_attributes(self, project: Project) -> None:
+        inherit_all_attributes(self, project)
+
+    def _validate_allocations(self, project: Project) -> None:
+        validate_allocations(self, project)
+
+    @staticmethod
+    def _allocation_ids(allocations: Any) -> list[str]:
+        return allocation_ids(allocations)
+
+    def _resolve_task_reference(self, project: Project, from_task: Any, ref: str) -> Optional[Any]:
+        return resolve_task_reference(self, project, from_task, ref)
 
 
 class ProjectFileParser:
