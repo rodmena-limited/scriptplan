@@ -21,13 +21,13 @@ class InputFileError(Exception):
 
 
 __all__ = [
+    "REPORT_KEYWORDS",
     "InputFileError",
+    "create_auto_report_file",
+    "declares_report",
+    "find_output_files",
     "setup_logging",
     "validate_tjp_file",
-    "declares_report",
-    "create_auto_report_file",
-    "find_output_files",
-    "REPORT_KEYWORDS",
 ]
 
 

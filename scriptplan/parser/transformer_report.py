@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union
-
-from lark import Token, Tree  # type: ignore[import-untyped,unused-ignore]
-
-from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
-
 from datetime import datetime
+from typing import Any
+
+from lark import Token  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.report.logical_expression import parse_expression
 
@@ -205,7 +202,7 @@ class ReportRules:
                 result["macro"] = self._get_value(item)
         return result
 
-    def column_option(self, items: list[Any]) -> Optional[tuple[str, Any]]:
+    def column_option(self, items: list[Any]) -> tuple[str, Any] | None:
         """Parse a single column option."""
         if not items:
             return None
@@ -224,7 +221,7 @@ class ReportRules:
         """Parse a sort list into (attribute, ascending, scenario) triples."""
         return ("sort", [item for item in items if item])
 
-    def sort_item(self, items: list[Any]) -> Optional[tuple[str, bool, int]]:
+    def sort_item(self, items: list[Any]) -> tuple[str, bool, int] | None:
         """Parse one sort criterion.
 
         Written as `attribute.up` / `attribute.down`, optionally scenario
@@ -250,7 +247,7 @@ class ReportRules:
         return ("formats", [self._get_value(i) for i in items])
 
     # Period specification
-    def period_spec(self, items: list[Any]) -> tuple[str, Optional[str]]:
+    def period_spec(self, items: list[Any]) -> tuple[str, str | None]:
         """Parse period specification."""
         return ("period", self._get_value(items[0]) if items else None)
 

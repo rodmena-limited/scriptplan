@@ -1,36 +1,6 @@
-from datetime import timedelta
 from typing import Any, Optional, Union
 
 from scriptplan.core.journal import Journal
-
-from scriptplan.core.property import (
-    AlertLevelDefinitions,
-    AttributeBase,
-    AttributeDefinition,
-    BooleanAttribute,
-    ColumnListAttribute,
-    DateAttribute,
-    FlagListAttribute,
-    FloatAttribute,
-    FormatListAttribute,
-    IntegerAttribute,
-    LeaveList,
-    LeaveListAttribute,
-    ListAttribute,
-    LogicalExpressionAttribute,
-    PropertyAttribute,
-    PropertySet,
-    RealFormat,
-    ResourceListAttribute,
-    RichTextAttribute,
-    ScenarioListAttribute,
-    ShiftAssignmentsAttribute,
-    SortListAttribute,
-    StringAttribute,
-    SymbolAttribute,
-    SymbolListAttribute,
-    TaskDepListAttribute,
-)
 from scriptplan.core.project_attributes import (
     define_account_attributes,
     define_report_attributes,
@@ -52,16 +22,21 @@ from scriptplan.core.project_tree import (
     propagate_container_end_dates,
     update_container_task_status,
 )
+from scriptplan.core.property import (
+    AlertLevelDefinitions,
+    AttributeBase,
+    LeaveList,
+    PropertySet,
+    RealFormat,
+)
 from scriptplan.core.scenario import Scenario
-from scriptplan.core.timezones import from_utc
 from scriptplan.core.timesheet import TimeSheets
-from scriptplan.scheduler.scoreboard import Scoreboard
-from scriptplan.utils.data_cache import FileList
 from scriptplan.scheduler.postcheck import run_post_checks
 from scriptplan.scheduler.preflight import check_no_cycles
+from scriptplan.scheduler.scoreboard import Scoreboard
+from scriptplan.utils.data_cache import FileList
 from scriptplan.utils.message_handler import MessageHandler, get_message_handler_instance
 from scriptplan.utils.time import TjTime
-
 
 # The default working calendar when the project declares none: weekdays,
 # nine to five, in the project's own timezone.
@@ -217,7 +192,7 @@ class Project(MessageHandler):
         for p in [self.accounts, self.shifts, self.resources, self.tasks]:
             p.index()
 
-        self.scheduleErrors = []
+        self.scheduleErrors: list[tuple[str, str]] = []
 
         if self.tasks.empty():
             # Nothing to schedule is a valid, complete result.
@@ -386,10 +361,7 @@ class Project(MessageHandler):
             else:
                 break
 
-        if failedTasks:
-            return False
-
-        return True
+        return not failedTasks
 
     def _breakDeadlock(self, tasks: list[Any], scIdx: int) -> bool:
         """Turn one stuck backward task around, if that unblocks the schedule.

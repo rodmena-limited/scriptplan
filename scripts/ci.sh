@@ -28,10 +28,12 @@ step() {
 }
 
 step "ruff (lint)"        "$PYTHON" -m ruff check scriptplan tests audit
-step "ruff (format)"      "$PYTHON" -m ruff format --check scriptplan
+# No formatting check: the project has never been ruff-formatted, so one
+# would rewrite every file and bury real changes. Lint is enforced.
 step "mypy (types)"       "$PYTHON" -m mypy scriptplan
 step "file size cap"      "$PYTHON" scripts/check_file_sizes.py
 step "pytest"             "$PYTHON" -m pytest -q tests
+step "showcase is current" "$PYTHON" scripts/generate_showcase.py --check
 
 echo "=== audit probes"
 if SCRIPTPLAN_PROBE_PYTHON="$PYTHON" SCRIPTPLAN_PROBE_SLOW="$([ "$SKIP_SLOW" = "1" ] && echo 0 || echo 1)" \

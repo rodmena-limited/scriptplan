@@ -5,20 +5,18 @@ import os
 from datetime import datetime
 from typing import Any, Optional, Union
 
-from lark import Lark, Token, Transformer, Tree  # type: ignore[import-untyped,unused-ignore]
+from lark import Lark, Transformer  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.core.exceptions import (
-    DuplicateDefinitionError,
     SemanticError,
-    UnsupportedFormatError,
 )
-from scriptplan.core.timezones import to_utc
-from scriptplan.core.resolution import derive_resolution
-from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
 from scriptplan.core.project import Project
+from scriptplan.core.resolution import derive_resolution
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
+from scriptplan.core.timezones import to_utc
 from scriptplan.parser.attribute_apply import apply_property_attributes
+from scriptplan.parser.macro_processor import preprocess_tjp
 from scriptplan.parser.model_pieces import (
     allocation_ids,
     create_journal_entry,
@@ -37,10 +35,6 @@ from scriptplan.parser.transformer_project import ProjectRules
 from scriptplan.parser.transformer_report import ReportRules
 from scriptplan.parser.transformer_resource import ResourceRules
 from scriptplan.parser.transformer_task import TaskRules
-from scriptplan.report.logical_expression import parse_expression
-from scriptplan.parser.macro_processor import preprocess_tjp
-
-
 
 
 class TJPTransformer(ProjectRules, ResourceRules, TaskRules, ReportRules, Transformer[Any, Any]):

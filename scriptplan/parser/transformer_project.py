@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any
 
-from lark import Token, Tree  # type: ignore[import-untyped,unused-ignore]
-
-from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
-
+from lark import Token  # type: ignore[import-untyped,unused-ignore]
 
 
 class ProjectRules:
@@ -76,7 +73,7 @@ class ProjectRules:
             result["duration"] = items[1]
         return result
 
-    def duration_spec(self, items: list[Any]) -> Optional[str]:
+    def duration_spec(self, items: list[Any]) -> str | None:
         return self._get_value(items[0]) if items else None
 
     def project_attributes(self, items: list[Any]) -> list[Any]:
@@ -120,9 +117,9 @@ class ProjectRules:
     def vacation_global(self, items: list[Any]) -> tuple[str, dict[str, Any]]:
         # vacation_global: "vacation" STRING? date ("-" date)?
         # After transformation, items contains: optional string name, datetime(s) from date rule
-        name: Optional[str] = None
-        start_date: Optional[datetime] = None
-        end_date: Optional[datetime] = None
+        name: str | None = None
+        start_date: datetime | None = None
+        end_date: datetime | None = None
         for item in items:
             if isinstance(item, datetime):
                 if start_date is None:

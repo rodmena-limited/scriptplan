@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Union
 
-__all__ = ["LogicalExpression", "ExpressionError", "parse_expression", "PREDICATES"]
+__all__ = ["PREDICATES", "ExpressionError", "LogicalExpression", "parse_expression"]
 
 
 class ExpressionError(ValueError):
@@ -35,41 +35,41 @@ class ExpressionError(ValueError):
 # --------------------------------------------------------------------------
 
 
-def _is_leaf(prop: Any, _scenario: Optional[int]) -> bool:
+def _is_leaf(prop: Any, _scenario: int | None) -> bool:
     return bool(prop.leaf()) if hasattr(prop, "leaf") else False
 
 
-def _attribute(prop: Any, name: str, scenario: Optional[int]) -> Any:
+def _attribute(prop: Any, name: str, scenario: int | None) -> Any:
     try:
         return prop.get(name, scenario if scenario is not None else 0)
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             return prop.get(name)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
 
 
-def _is_milestone(prop: Any, scenario: Optional[int]) -> bool:
+def _is_milestone(prop: Any, scenario: int | None) -> bool:
     return bool(_attribute(prop, "milestone", scenario))
 
 
-def _is_scheduled(prop: Any, scenario: Optional[int]) -> bool:
+def _is_scheduled(prop: Any, scenario: int | None) -> bool:
     return bool(_attribute(prop, "scheduled", scenario))
 
 
-def _is_resource(prop: Any, _scenario: Optional[int]) -> bool:
+def _is_resource(prop: Any, _scenario: int | None) -> bool:
     from scriptplan.core.resource import Resource
 
     return isinstance(prop, Resource)
 
 
-def _is_task(prop: Any, _scenario: Optional[int]) -> bool:
+def _is_task(prop: Any, _scenario: int | None) -> bool:
     from scriptplan.core.task import Task
 
     return isinstance(prop, Task)
 
 
-def _has_alert(prop: Any, _scenario: Optional[int], level: Any = 0) -> bool:
+def _has_alert(prop: Any, _scenario: int | None, level: Any = 0) -> bool:
     """True if this property, or one below it, carries a journal entry of at
     least ``level`` (0 green, 1 yellow, 2 red)."""
     project = getattr(prop, "project", None)
@@ -78,7 +78,7 @@ def _has_alert(prop: Any, _scenario: Optional[int], level: Any = 0) -> bool:
         return False
     try:
         entries = list(journal.entries())
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
     def covers(entry: Any) -> bool:
@@ -113,7 +113,7 @@ PREDICATES: dict[str, Callable[..., bool]] = {
 
 
 class Node:
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         raise NotImplementedError
 
 
@@ -121,7 +121,7 @@ class Constant(Node):
     def __init__(self, value: bool) -> None:
         self.value = value
 
-    def evaluate(self, _prop: Any, _scenario: Optional[int]) -> bool:
+    def evaluate(self, _prop: Any, _scenario: int | None) -> bool:
         return self.value
 
 
@@ -129,7 +129,7 @@ class Not(Node):
     def __init__(self, operand: Node) -> None:
         self.operand = operand
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         return not self.operand.evaluate(prop, scenario)
 
 
@@ -137,7 +137,7 @@ class And(Node):
     def __init__(self, left: Node, right: Node) -> None:
         self.left, self.right = left, right
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         return self.left.evaluate(prop, scenario) and self.right.evaluate(prop, scenario)
 
 
@@ -145,7 +145,7 @@ class Or(Node):
     def __init__(self, left: Node, right: Node) -> None:
         self.left, self.right = left, right
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         return self.left.evaluate(prop, scenario) or self.right.evaluate(prop, scenario)
 
 
@@ -155,7 +155,7 @@ class Call(Node):
     def __init__(self, name: str, arguments: list[Any]) -> None:
         self.name, self.arguments = name, arguments
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         return PREDICATES[self.name](prop, scenario, *self.arguments)
 
 
@@ -165,7 +165,7 @@ class Flag(Node):
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         flags = _attribute(prop, "flags", scenario) or []
         return self.name in flags
 
@@ -175,17 +175,17 @@ class Reference:
 
     def __init__(self, text: str) -> None:
         parts = text.split(".")
-        self.scenario: Optional[str] = ".".join(parts[:-1]) or None
+        self.scenario: str | None = ".".join(parts[:-1]) or None
         self.attribute = parts[-1]
 
-    def value(self, prop: Any, scenario: Optional[int]) -> Any:
+    def value(self, prop: Any, scenario: int | None) -> Any:
         index = scenario
         if self.scenario is not None:
             index = _scenario_index(prop, self.scenario)
         return _attribute(prop, self.attribute, index)
 
 
-def _scenario_index(prop: Any, name: str) -> Optional[int]:
+def _scenario_index(prop: Any, name: str) -> int | None:
     project = getattr(prop, "project", None)
     if project is None:
         return None
@@ -210,7 +210,7 @@ class Comparison(Node):
     def __init__(self, left: Reference, operator: str, right: Any) -> None:
         self.left, self.operator, self.right = left, operator, right
 
-    def evaluate(self, prop: Any, scenario: Optional[int]) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None) -> bool:
         left = self.left.value(prop, scenario)
         if left is None:
             # A property with no value for the attribute cannot satisfy a
@@ -294,14 +294,14 @@ def _tokenize(text: str) -> list[Token]:
     return tokens
 
 
-def parse_expression(text: str) -> "LogicalExpression":
+def parse_expression(text: str) -> LogicalExpression:
     """Parse a filter expression, or say why it cannot be read."""
     tokens = _tokenize(str(text))
     if not tokens:
         raise ExpressionError("filter expression is empty")
     position = 0
 
-    def peek() -> Optional[Token]:
+    def peek() -> Token | None:
         return tokens[position] if position < len(tokens) else None
 
     def take() -> Token:
@@ -385,7 +385,7 @@ class LogicalExpression:
         self.source = source
         self._root = root
 
-    def evaluate(self, prop: Any, scenario: Optional[int] = None) -> bool:
+    def evaluate(self, prop: Any, scenario: int | None = None) -> bool:
         return self._root.evaluate(prop, scenario)
 
     def __repr__(self) -> str:

@@ -15,7 +15,8 @@ does not re-derive it from a list-or-dict-or-string at every call site.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 __all__ = ["Allocation", "AllocationPlan"]
 
@@ -23,16 +24,16 @@ __all__ = ["Allocation", "AllocationPlan"]
 class Allocation:
     """One resource a task may book, with the options attached to it."""
 
-    __slots__ = ("resource_id", "resource", "mandatory", "persistent", "alternatives", "select", "locked")
+    __slots__ = ("alternatives", "locked", "mandatory", "persistent", "resource", "resource_id", "select")
 
     def __init__(
         self,
         resource_id: str,
-        resource: Optional[Any] = None,
+        resource: Any | None = None,
         mandatory: bool = False,
         persistent: bool = False,
-        alternatives: Optional[list[Any]] = None,
-        select: Optional[str] = None,
+        alternatives: list[Any] | None = None,
+        select: str | None = None,
     ) -> None:
         self.resource_id = resource_id
         self.resource = resource
@@ -40,7 +41,7 @@ class Allocation:
         self.persistent = persistent
         self.alternatives = alternatives or []
         self.select = select
-        self.locked: Optional[Any] = None
+        self.locked: Any | None = None
 
     def candidates(self) -> list[Any]:
         """The resources that could satisfy this allocation, best first."""
@@ -62,7 +63,7 @@ class AllocationPlan:
 
     __slots__ = ("allocations",)
 
-    def __init__(self, allocations: Optional[list[Allocation]] = None) -> None:
+    def __init__(self, allocations: list[Allocation] | None = None) -> None:
         self.allocations: list[Allocation] = allocations or []
 
     def __bool__(self) -> bool:
@@ -94,7 +95,7 @@ class AllocationPlan:
     # -- construction ------------------------------------------------------
 
     @classmethod
-    def read(cls, value: Any, resolve: Any) -> "AllocationPlan":
+    def read(cls, value: Any, resolve: Any) -> AllocationPlan:
         """Build a plan from the parsed `allocate` attribute.
 
         ``resolve`` maps a resource id to a Resource. Older shapes -- a bare

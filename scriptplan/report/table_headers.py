@@ -6,12 +6,15 @@ attribute goes by.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from scriptplan.report.table_report import ReportTableCell
 
 
 __all__ = [
-    "header_cell",
     "default_column_title",
+    "header_cell",
 ]
 
 
@@ -45,7 +48,7 @@ def header_cell(report: Any, column_def: Any) -> ReportTableCell:
     return ReportTableCell(text=title, alignment=report.alignment(column_id), is_header=True)
 
 
-def default_column_title(column_id: str) -> Optional[str]:
+def default_column_title(column_id: str) -> str | None:
     """
     Get the default column title for a column ID.
 

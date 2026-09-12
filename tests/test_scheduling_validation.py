@@ -15,6 +15,7 @@ Issue #43: Workflow Engine (efficiency scaling, offset work weeks)
 from datetime import datetime, timedelta
 from math import isclose
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 import pytest
@@ -45,7 +46,7 @@ class TestIssue39UltraMath:
 
     # Exact gold standard from issue #39 judge script
     DATE_FMT = "%Y-%m-%d %H:%M:%S"
-    GOLD_STANDARD = {
+    GOLD_STANDARD: ClassVar[dict] = {
         "t_float": {
             "end": "2025-08-08 14:57:05",
             "description": "Floating Point Efficiency End Time"
@@ -160,7 +161,7 @@ class TestIssue41MathTorture:
     """
 
     # Shift Definition
-    SHIFTS = [
+    SHIFTS: ClassVar[list] = [
         (datetime.strptime("08:13", "%H:%M").time(), datetime.strptime("11:59", "%H:%M").time()),
         (datetime.strptime("13:07", "%H:%M").time(), datetime.strptime("17:47", "%H:%M").time())
     ]
@@ -171,10 +172,7 @@ class TestIssue41MathTorture:
 
     def is_working_time(self, dt):
         t = dt.time()
-        for s_start, s_end in self.SHIFTS:
-            if s_start <= t < s_end:
-                return True
-        return False
+        return any(s_start <= t < s_end for s_start, s_end in self.SHIFTS)
 
     def get_next_working_minute(self, dt):
         curr = dt
@@ -282,7 +280,7 @@ class TestIssue42AirportRetrofit:
     - bhs.wiring: ends 2025-09-16 17:00
     """
 
-    HOLIDAYS = [datetime(2025, 9, 5).date()]
+    HOLIDAYS: ClassVar[list] = [datetime(2025, 9, 5).date()]
 
     def is_holiday(self, dt):
         return dt.date() in self.HOLIDAYS
@@ -420,7 +418,7 @@ class TestIssue40AirportStressTest:
     """
 
     # Expected values from TaskJuggler output
-    EXPECTED = {
+    EXPECTED: ClassVar[dict] = {
         "airport": {"start": "2025-06-02", "end": "2025-06-24"},
         "airport.t_software": {"start": "2025-06-02", "end": "2025-06-04"},
         "airport.t_crit": {"start": "2025-06-04", "end": "2025-06-05"},
@@ -2212,7 +2210,7 @@ class TestIssue64AtomicBooking:
 
         # If start is 08:00, the task was fragmented
         if '08:00' in user_start:
-            assert False, (
+            raise AssertionError(
                 "FAIL: FRAGMENTATION DETECTED.\n"
                 f"  Your Start: {user_start}\n"
                 "You likely split a contiguous task across the lunch break.\n"

@@ -13,7 +13,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar
 
 from scriptplan.utils.messages import (
     Message,
@@ -24,15 +24,15 @@ from scriptplan.utils.messages import (
 )
 
 __all__ = [
-    "MessageHandler",
-    "MessageHandlerInstance",
-    "get_message_handler_instance",
     # Re-exported so existing imports from this module keep working.
     "Message",
+    "MessageHandler",
+    "MessageHandlerInstance",
     "MessageType",
     "SourceFileInfo",
     "TjException",
     "TjRuntimeError",
+    "get_message_handler_instance",
 ]
 
 
@@ -43,10 +43,10 @@ class MessageHandlerInstance:
     output levels for both console and log files.
     """
 
-    _instance: ClassVar[Optional["MessageHandlerInstance"]] = None
+    _instance: ClassVar[MessageHandlerInstance | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
-    LOG_LEVELS: ClassVar[dict[Union[str, MessageType], int]] = {
+    LOG_LEVELS: ClassVar[dict[str | MessageType, int]] = {
         "none": 0,
         MessageType.FATAL: 1,
         MessageType.ERROR: 2,
@@ -59,7 +59,7 @@ class MessageHandlerInstance:
     _initialized: bool
     _output_level: int
     _log_level: int
-    _log_file: Optional[str]
+    _log_file: str | None
     _hide_scenario: bool
     _app_name: str
     _abort_on_warning: bool
@@ -69,7 +69,7 @@ class MessageHandlerInstance:
     _errors: int
     _messages: list[Message]
 
-    def __new__(cls) -> "MessageHandlerInstance":
+    def __new__(cls) -> MessageHandlerInstance:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -106,11 +106,11 @@ class MessageHandlerInstance:
         return self._errors
 
     @property
-    def logFile(self) -> Optional[str]:
+    def logFile(self) -> str | None:
         return self._log_file
 
     @logFile.setter
-    def logFile(self, value: Optional[str]) -> None:
+    def logFile(self, value: str | None) -> None:
         self._log_file = value
 
     @property
@@ -136,7 +136,7 @@ class MessageHandlerInstance:
         self._collect_errors = bool(value)
 
     @contextlib.contextmanager
-    def collecting(self) -> "Iterator[MessageHandlerInstance]":
+    def collecting(self) -> Iterator[MessageHandlerInstance]:
         """Collect errors for the duration of the block, then restore."""
         previous = self._collect_errors
         self._collect_errors = True
@@ -154,14 +154,14 @@ class MessageHandlerInstance:
         self._abort_on_warning = value
 
     @property
-    def baselineSFI(self) -> Optional[SourceFileInfo]:
+    def baselineSFI(self) -> SourceFileInfo | None:
         thread_id = threading.current_thread().ident
         if thread_id is None:
             return None
         return self._baseline_sfi.get(thread_id)
 
     @baselineSFI.setter
-    def baselineSFI(self, value: Optional[SourceFileInfo]) -> None:
+    def baselineSFI(self, value: SourceFileInfo | None) -> None:
         thread_id = threading.current_thread().ident
         if thread_id is not None and value is not None:
             self._baseline_sfi[thread_id] = value
@@ -189,7 +189,7 @@ class MessageHandlerInstance:
         return self._output_level
 
     @outputLevel.setter
-    def outputLevel(self, level: Union[int, str, MessageType]) -> None:
+    def outputLevel(self, level: int | str | MessageType) -> None:
         self._output_level = self._check_level(level)
 
     @property
@@ -197,7 +197,7 @@ class MessageHandlerInstance:
         return self._log_level
 
     @logLevel.setter
-    def logLevel(self, level: Union[int, str, MessageType]) -> None:
+    def logLevel(self, level: int | str | MessageType) -> None:
         self._log_level = self._check_level(level)
 
     @property
@@ -208,7 +208,7 @@ class MessageHandlerInstance:
     def hideScenario(self, value: bool) -> None:
         self._hide_scenario = value
 
-    def _check_level(self, level: Union[int, str, MessageType]) -> int:
+    def _check_level(self, level: int | str | MessageType) -> int:
         """Validate and convert log level to integer."""
         if isinstance(level, int):
             if level < 0 or level > 5:
@@ -249,8 +249,8 @@ class MessageHandlerInstance:
         msg_type: MessageType,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -297,8 +297,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -309,8 +309,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -325,8 +325,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -337,8 +337,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -349,8 +349,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -361,8 +361,8 @@ class MessageHandlerInstance:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -392,8 +392,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -404,8 +404,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -416,8 +416,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -428,8 +428,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -440,8 +440,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:
@@ -452,8 +452,8 @@ class MessageHandler:
         self,
         msg_id: str,
         message: str,
-        source_file_info: Optional[SourceFileInfo] = None,
-        line: Optional[str] = None,
+        source_file_info: SourceFileInfo | None = None,
+        line: str | None = None,
         data: Any = None,
         scenario: Any = None,
     ) -> None:

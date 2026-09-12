@@ -13,19 +13,18 @@ reaches the model. These two functions are the only places that changes.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
-__all__ = ["to_utc", "from_utc", "resolve_zone", "is_utc"]
+__all__ = ["from_utc", "is_utc", "resolve_zone", "to_utc"]
 
 _UTC_NAMES = {"utc", "etc/utc", "etc/gmt", "gmt", "z", "zulu", "universal"}
 
 
-def is_utc(name: Optional[str]) -> bool:
+def is_utc(name: str | None) -> bool:
     """Whether this zone name is UTC, so conversion is a no-op."""
     return not name or str(name).strip().lower() in _UTC_NAMES
 
 
-def resolve_zone(name: Optional[str]) -> Optional[object]:
+def resolve_zone(name: str | None) -> object | None:
     """The tzinfo for a zone name, or None if it is UTC or unknown."""
     if is_utc(name):
         return None
@@ -33,11 +32,11 @@ def resolve_zone(name: Optional[str]) -> Optional[object]:
         from zoneinfo import ZoneInfo
 
         return ZoneInfo(str(name))
-    except Exception:  # noqa: BLE001 - an unknown zone behaves as UTC
+    except Exception:
         return None
 
 
-def to_utc(moment: Optional[datetime], zone_name: Optional[str]) -> Optional[datetime]:
+def to_utc(moment: datetime | None, zone_name: str | None) -> datetime | None:
     """Read a naive datetime as local to ``zone_name`` and return naive UTC."""
     if moment is None:
         return None
@@ -49,7 +48,7 @@ def to_utc(moment: Optional[datetime], zone_name: Optional[str]) -> Optional[dat
     return moment.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)  # type: ignore[arg-type]
 
 
-def from_utc(moment: Optional[datetime], zone_name: Optional[str]) -> Optional[datetime]:
+def from_utc(moment: datetime | None, zone_name: str | None) -> datetime | None:
     """Read a naive datetime as UTC and return it naive in ``zone_name``."""
     if moment is None:
         return None

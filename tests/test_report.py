@@ -490,7 +490,7 @@ class TestReportIntegration:
     def test_create_task_report(self, project):
         """Test creating a task report."""
         # Add a task
-        task = Task(project, 'task1', 'Test Task', None)
+        Task(project, 'task1', 'Test Task', None)
 
         # Create report
         report = Report(project, 'task_list', 'Task List', None)
@@ -502,7 +502,7 @@ class TestReportIntegration:
     def test_create_resource_report(self, project):
         """Test creating a resource report."""
         # Add a resource
-        resource = Resource(project, 'res1', 'Test Resource', None)
+        Resource(project, 'res1', 'Test Resource', None)
 
         # Create report
         report = Report(project, 'resource_list', 'Resource List', None)

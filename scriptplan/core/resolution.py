@@ -15,10 +15,11 @@ overrides this whenever the author wants to decide for themselves.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Any, Iterator
+from typing import Any
 
-__all__ = ["derive_resolution", "MINIMUM_SECONDS", "MAXIMUM_SECONDS"]
+__all__ = ["MAXIMUM_SECONDS", "MINIMUM_SECONDS", "derive_resolution"]
 
 MINIMUM_SECONDS = 60
 MAXIMUM_SECONDS = 3600

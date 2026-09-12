@@ -7,26 +7,24 @@ when the model is built, rather than walking up the tree on every read.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any, Optional, Union
+from typing import Any
 
 from scriptplan.core.attributes import (
     AttributeBase,
     AttributeDefinition,
-    AttributeOverwrite,
-    deep_clone,
 )
 from scriptplan.core.property_set import PropertySet
 from scriptplan.utils.message_handler import MessageHandler
 
+
 class PropertyTreeNode(MessageHandler):
     def __init__(
-        self, property_set: PropertySet, id: Optional[str], name: str, parent: Optional["PropertyTreeNode"]
+        self, property_set: PropertySet, id: str | None, name: str, parent: PropertyTreeNode | None
     ) -> None:
         self.propertySet = property_set
         self.project = property_set.project
         self.parent = parent
-        self.data: Optional[Any] = None
+        self.data: Any | None = None
 
         self._attributes: dict[str, AttributeBase] = {}
         self._scenarioAttributes: list[dict[str, AttributeBase]] = []
@@ -50,7 +48,7 @@ class PropertyTreeNode(MessageHandler):
 
         self.id: str = id
         self.name: str = name
-        self.sourceFileInfo: Optional[Any] = None
+        self.sourceFileInfo: Any | None = None
         self.sequenceNo: int = self.propertySet.items() + 1
         self.children: list[PropertyTreeNode] = []
         self.adoptees: list[PropertyTreeNode] = []
@@ -75,13 +73,13 @@ class PropertyTreeNode(MessageHandler):
                 res = f"{t.subId}.{res}"
         return res
 
-    def addChild(self, child: "PropertyTreeNode") -> None:
+    def addChild(self, child: PropertyTreeNode) -> None:
         self.children.append(child)
 
-    def ptn(self) -> "PropertyTreeNode":
+    def ptn(self) -> PropertyTreeNode:
         return self
 
-    def adopt(self, property_node: "PropertyTreeNode") -> None:
+    def adopt(self, property_node: PropertyTreeNode) -> None:
         if self == property_node:
             self.error("adopt_self", "A property cannot adopt itself")
 
@@ -90,11 +88,11 @@ class PropertyTreeNode(MessageHandler):
         self.adoptees.append(property_node)
         property_node.getAdopted(self)
 
-    def getAdopted(self, property_node: "PropertyTreeNode") -> None:
+    def getAdopted(self, property_node: PropertyTreeNode) -> None:
         if property_node not in self.stepParents:
             self.stepParents.append(property_node)
 
-    def parents(self) -> list["PropertyTreeNode"]:
+    def parents(self) -> list[PropertyTreeNode]:
         p = [self.parent] if self.parent else []
         return p + self.stepParents
 
@@ -105,7 +103,7 @@ class PropertyTreeNode(MessageHandler):
     def restoreAttributes(self, backup: list[Any]) -> None:
         self._attributes, self._scenarioAttributes = backup
 
-    def removeReferences(self, property_node: "PropertyTreeNode") -> None:
+    def removeReferences(self, property_node: PropertyTreeNode) -> None:
         if property_node in self.children:
             self.children.remove(property_node)
         if property_node in self.adoptees:
@@ -123,7 +121,7 @@ class PropertyTreeNode(MessageHandler):
 
     def getBSIndicies(self) -> list[int]:
         idcs: list[int] = []
-        p: Optional[PropertyTreeNode] = self
+        p: PropertyTreeNode | None = self
         while p:
             parent = p.parent
             idx = parent.levelSeqNo(p) if parent else self.propertySet.levelSeqNo(p)
@@ -131,7 +129,7 @@ class PropertyTreeNode(MessageHandler):
             p = parent
         return idcs
 
-    def levelSeqNo(self, node: "PropertyTreeNode") -> int:
+    def levelSeqNo(self, node: PropertyTreeNode) -> int:
         try:
             return self.children.index(node) + 1
         except ValueError as err:
@@ -188,7 +186,7 @@ class PropertyTreeNode(MessageHandler):
                             if not my_attr.provided:
                                 my_attr.inherit(val)
 
-    def ancestors(self, includeStepParents: bool = False) -> list["PropertyTreeNode"]:
+    def ancestors(self, includeStepParents: bool = False) -> list[PropertyTreeNode]:
         nodes: list[PropertyTreeNode] = []
         if includeStepParents:
             for p in self.parents():
@@ -201,13 +199,13 @@ class PropertyTreeNode(MessageHandler):
                 nodes.append(n)
         return nodes
 
-    def root(self) -> "PropertyTreeNode":
+    def root(self) -> PropertyTreeNode:
         n: PropertyTreeNode = self
         while n.parent:
             n = n.parent
         return n
 
-    def provided(self, attributeId: str, scenarioIdx: Optional[int] = None) -> bool:
+    def provided(self, attributeId: str, scenarioIdx: int | None = None) -> bool:
         if scenarioIdx is not None:
             if attributeId not in self._scenarioAttributes[scenarioIdx]:
                 return False
@@ -217,7 +215,7 @@ class PropertyTreeNode(MessageHandler):
                 return False
             return bool(self._attributes[attributeId].provided)
 
-    def inherited(self, attributeId: str, scenarioIdx: Optional[int] = None) -> bool:
+    def inherited(self, attributeId: str, scenarioIdx: int | None = None) -> bool:
         if scenarioIdx is not None:
             if attributeId not in self._scenarioAttributes[scenarioIdx]:
                 return False
@@ -272,10 +270,10 @@ class PropertyTreeNode(MessageHandler):
         self._scenarioAttributes[scenario_idx][attribute_id] = attr
         return attr
 
-    def attributeDefinition(self, attribute_id: str) -> Optional[AttributeDefinition]:
+    def attributeDefinition(self, attribute_id: str) -> AttributeDefinition | None:
         return self.propertySet.attributeDefinitions.get(attribute_id)
 
-    def get(self, attribute_id: str, scenarioIdx: Optional[int] = None) -> Any:
+    def get(self, attribute_id: str, scenarioIdx: int | None = None) -> Any:
         """Read an attribute, by scenario when it has one.
 
         Asking for a scenario of an attribute that has no per-scenario value
@@ -293,7 +291,7 @@ class PropertyTreeNode(MessageHandler):
             attr = self._get_attribute(attribute_id)
         return attr.get()
 
-    def __getitem__(self, key: Union[str, tuple[str, int]]) -> Any:
+    def __getitem__(self, key: str | tuple[str, int]) -> Any:
         if isinstance(key, tuple):
             attribute_id, scenario = key
             attr = self._get_scenario_attribute(attribute_id, scenario)
@@ -301,7 +299,7 @@ class PropertyTreeNode(MessageHandler):
         else:
             return self.get(key)
 
-    def __setitem__(self, key: Union[str, tuple[str, int]], value: Any) -> None:
+    def __setitem__(self, key: str | tuple[str, int], value: Any) -> None:
         if isinstance(key, tuple):
             attribute_id, scenario = key
             attr = self._get_scenario_attribute(attribute_id, scenario)
@@ -309,16 +307,16 @@ class PropertyTreeNode(MessageHandler):
         else:
             self.set(key, value)
 
-    def all(self) -> list["PropertyTreeNode"]:
+    def all(self) -> list[PropertyTreeNode]:
         res = [self]
         for child in self.kids():
             res.extend(child.all())
         return res
 
-    def kids(self) -> list["PropertyTreeNode"]:
+    def kids(self) -> list[PropertyTreeNode]:
         return self.children + self.adoptees
 
-    def allLeaves(self, without_self: bool = False) -> list["PropertyTreeNode"]:
+    def allLeaves(self, without_self: bool = False) -> list[PropertyTreeNode]:
         res: list[PropertyTreeNode] = []
         if self.leaf():
             if not without_self:

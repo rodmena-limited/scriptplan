@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from typing import Any
 
-from lark import Token, Tree  # type: ignore[import-untyped,unused-ignore]
+from lark import Token  # type: ignore[import-untyped,unused-ignore]
 
-from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
-
+from scriptplan.core.units import Duration
 
 
 class TaskRules:
@@ -91,7 +90,7 @@ class TaskRules:
     def task_purge_chargeset(self, items: list[Any]) -> tuple[str, bool]:
         return ("purge_chargeset", True)
 
-    def task_charge(self, items: list[Any]) -> tuple[str, tuple[float, Optional[str]]]:
+    def task_charge(self, items: list[Any]) -> tuple[str, tuple[float, str | None]]:
         return ("charge", (float(self._get_value(items[0])), self._get_value(items[1]) if len(items) > 1 else None))
 
     def task_limits(self, items: list[Any]) -> tuple[str, Any]:
@@ -100,7 +99,7 @@ class TaskRules:
     def task_journalentry(self, items: list[Any]) -> tuple[str, dict[str, Any]]:
         # items: date, optional headline (STRING), journal_body
         date: Any = items[0] if items else None
-        headline: Optional[str] = None
+        headline: str | None = None
         body: dict[str, Any] = {}
 
         for item in items[1:]:
@@ -132,11 +131,11 @@ class TaskRules:
     def journal_alert(self, items: list[Any]) -> tuple[str, Any]:
         return ("alert", items[0] if items else "green")
 
-    def journal_summary(self, items: list[Any]) -> tuple[str, Optional[str]]:
+    def journal_summary(self, items: list[Any]) -> tuple[str, str | None]:
         value: Any = items[0] if items else None
         return ("summary", self._extract_text(value))
 
-    def journal_details(self, items: list[Any]) -> tuple[str, Optional[str]]:
+    def journal_details(self, items: list[Any]) -> tuple[str, str | None]:
         value: Any = items[0] if items else None
         return ("details", self._extract_text(value))
 
@@ -153,7 +152,7 @@ class TaskRules:
             return text.strip()
         return ""
 
-    def _extract_text(self, value: Any) -> Optional[str]:
+    def _extract_text(self, value: Any) -> str | None:
         """Extract text from a string or rich_text result."""
         if value is None:
             return None

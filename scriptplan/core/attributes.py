@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterator
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from scriptplan.core.property_tree_node import PropertyTreeNode
 
 class AttributeDefinition:
     """Definition of an attribute type that can be added to a PropertySet.
@@ -46,7 +49,7 @@ class AttributeDefinition:
         self,
         id: str,
         name: str,
-        objClass: type["AttributeBase"],
+        objClass: type[AttributeBase],
         inheritedFromParent: bool,
         inheritedFromProject: bool,
         scenarioSpecific: bool,
@@ -86,7 +89,6 @@ def deep_clone(value: Any) -> Any:
     PropertyTreeNode objects (like Task references in depends), we do
     a shallow copy to preserve object identity.
     """
-    import copy
 
     # For lists, check if they contain PropertyTreeNode objects
     if isinstance(value, list):
@@ -125,7 +127,7 @@ class AttributeBase:
     _mode: int = PROVIDED
 
     def __init__(
-        self, property_node: "PropertyTreeNode", type_def: Union[AttributeDefinition, Any], container: Any
+        self, property_node: PropertyTreeNode, type_def: AttributeDefinition | Any, container: Any
     ) -> None:
         self._type = type_def
         self._property = property_node
@@ -145,11 +147,11 @@ class AttributeBase:
         else:
             self._value = self._type
 
-    def getProperty(self) -> "PropertyTreeNode":
+    def getProperty(self) -> PropertyTreeNode:
         """Return the property node this attribute belongs to."""
         return self._property
 
-    def getType(self) -> Union[AttributeDefinition, Any]:
+    def getType(self) -> AttributeDefinition | Any:
         """Return the attribute type definition."""
         return self._type
 
@@ -240,21 +242,21 @@ class AttributeBase:
     def isListClass(cls) -> bool:
         return False
 
-    def to_s(self, query: Optional[Any] = None) -> str:
+    def to_s(self, query: Any | None = None) -> str:
         """Return the value as String."""
         return str(self.get())
 
     def __str__(self) -> str:
         return self.to_s()
 
-    def to_num(self) -> Optional[Union[int, float]]:
+    def to_num(self) -> int | float | None:
         """Return value as number or None."""
         v = self.get()
         if isinstance(v, (int, float)):
             return v
         return None
 
-    def to_sort(self) -> Optional[Union[int, float, str]]:
+    def to_sort(self) -> int | float | str | None:
         """Return value suitable for sorting."""
         v = self.get()
         if isinstance(v, (int, float)):
@@ -266,7 +268,7 @@ class AttributeBase:
             return str(v)
         return None
 
-    def to_rti(self, query: Any) -> Optional[Any]:
+    def to_rti(self, query: Any) -> Any | None:
         """Return RichTextIntermediate value or None."""
         # Placeholder - RichTextIntermediate not implemented
         return None
@@ -286,7 +288,7 @@ class ListAttributeBase(AttributeBase):
     """Specialized AttributeBase for list values."""
 
     def __init__(
-        self, property_node: "PropertyTreeNode", type_def: Union[AttributeDefinition, Any], container: Any
+        self, property_node: PropertyTreeNode, type_def: AttributeDefinition | Any, container: Any
     ) -> None:
         super().__init__(property_node, type_def, container)
         if self._value is None:
@@ -294,7 +296,7 @@ class ListAttributeBase(AttributeBase):
         elif not isinstance(self._value, list):
             self._value = [self._value]
 
-    def to_s(self, query: Optional[Any] = None) -> str:
+    def to_s(self, query: Any | None = None) -> str:
         """Return the value as comma-separated String."""
         return ", ".join(str(x) for x in self.get())
 
@@ -372,12 +374,12 @@ class LeaveList(list):  # type: ignore
 
 
 class RealFormat:
-    def __init__(self, args: Optional[Any] = None) -> None:
+    def __init__(self, args: Any | None = None) -> None:
         pass
 
 
 class KeywordArray:
-    def __init__(self, args: Optional[Any] = None) -> None:
+    def __init__(self, args: Any | None = None) -> None:
         pass
 
 

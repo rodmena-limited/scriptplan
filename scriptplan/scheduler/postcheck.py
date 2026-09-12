@@ -9,12 +9,12 @@ between a constraint the file states and a constraint the schedule keeps.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Callable
 
 __all__ = ["run_post_checks"]
 
 
-def _dependency_parts(dep: Any) -> tuple[Optional[Any], dict[str, Any]]:
+def _dependency_parts(dep: Any) -> tuple[Any | None, dict[str, Any]]:
     """The predecessor and the options recorded with a dependency."""
     if isinstance(dep, dict):
         return dep.get("task"), dep
@@ -65,7 +65,7 @@ def _check_max_gaps(project: Any, scenario_idx: int) -> None:
                 label = f"maxgapduration {calendar_limit}"
             else:
                 allowed = timedelta(
-                    seconds=project_seconds(project, Duration(working_limit, Duration.WORKING))
+                    seconds=project_seconds(project, Duration(str(working_limit), Duration.WORKING))
                 )
                 label = f"maxgaplength {working_limit}"
             if achieved > allowed:
@@ -80,7 +80,7 @@ def _check_max_gaps(project: Any, scenario_idx: int) -> None:
 
 
 def _check_date_limits(project: Any, scenario_idx: int) -> None:
-    checks = (
+    checks: tuple[tuple[str, str, Callable[[datetime, datetime], bool], str], ...] = (
         ("maxstart", "start", lambda actual, limit: actual > limit, "start no later than"),
         ("minstart", "start", lambda actual, limit: actual < limit, "start no earlier than"),
         ("maxend", "end", lambda actual, limit: actual > limit, "end no later than"),

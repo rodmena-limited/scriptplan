@@ -9,21 +9,22 @@ its own.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Optional
+from typing import Any
 
 from lark import Token, Tree  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.core.exceptions import SemanticError, UnsupportedFormatError
 from scriptplan.core.project import Project
+from scriptplan.report.logical_expression import parse_expression
 
 __all__ = [
-    "create_report",
     "apply_report_attribute",
+    "create_report",
     "resolve_sort_criteria",
 ]
 
 
-def create_report(builder: Any, project: Project, report_data: dict[str, Any], parent: Optional[Any] = None) -> Any:
+def create_report(builder: Any, project: Project, report_data: dict[str, Any], parent: Any | None = None) -> Any:
     """Create a Report from parsed data.
 
     Args:
@@ -73,7 +74,6 @@ def apply_report_attribute(builder: Any, report: Any, attr: Any, default_formats
         attr: The attribute (can be tuple, dict, Token, Tree, or string)
         default_formats: List to accumulate format types
     """
-    from lark import Token
 
     from scriptplan.report.report import ReportFormat
 

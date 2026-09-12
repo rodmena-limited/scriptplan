@@ -12,13 +12,13 @@ Project still calls them as such through thin wrappers.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
+    "mark_task_alap",
+    "propagate_alap_mode",
     "propagate_container_end_dates",
     "update_container_task_status",
-    "propagate_alap_mode",
-    "mark_task_alap",
 ]
 
 
@@ -66,7 +66,7 @@ def propagate_container_end_dates(self: Any, scIdx: int) -> None:
                     # Normal finish-to-start: predecessor has a successor
                     has_fs_successor.add(pred.fullId)
 
-    def propagate_end_to_children(task: Any, container_end: Optional[Any]) -> None:
+    def propagate_end_to_children(task: Any, container_end: Any | None) -> None:
         """Recursively propagate end constraint down the task tree."""
         task_end = task.get("end", scIdx)
         # Use the most restrictive (earliest) end date
@@ -121,8 +121,8 @@ def update_container_task_status(self: Any, scIdx: int) -> None:
 
         # All children scheduled - mark container as scheduled
         # Compute start/end from children
-        min_start: Optional[Any] = None
-        max_end: Optional[Any] = None
+        min_start: Any | None = None
+        max_end: Any | None = None
         for child in children:
             child_start = child.get("start", scIdx)
             child_end = child.get("end", scIdx)

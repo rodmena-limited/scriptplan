@@ -56,7 +56,7 @@ task t "Task" {
         parser = ProjectFileParser()
         project = parser.parse(text)
         # Scheduling should have been called by parse()
-        task = list(project.tasks)[0]
+        task = next(iter(project.tasks))
         start = task.get('start', 0)
         self.assertIsNotNone(start)
 
@@ -134,7 +134,7 @@ task start_milestone "Project Start" {
         parser = ProjectFileParser()
         project = parser.parse(text)
 
-        task = list(project.tasks)[0]
+        task = next(iter(project.tasks))
 
         # Milestone should have start = end
         start = task.get('start', 0)
@@ -156,7 +156,7 @@ task t "Task" {
         project = parser.parse(text, schedule=False)
 
         # Task should not have dates yet
-        task = list(project.tasks)[0]
+        task = next(iter(project.tasks))
         start = task.get('start', 0)
         self.assertIsNone(start)
 

@@ -32,8 +32,10 @@ class TestPropertySet(unittest.TestCase):
     def test_index(self):
         project = Project("prj", "Test Project", "1.0")
         t1 = Task(project, "t1", "Task 1", None)
-        t2 = Task(project, "t2", "Task 2", t1)
-        t3 = Task(project, "t3", "Task 3", t1)
+        # Constructed for their effect on the tree: each registers itself with
+        # the project and becomes a child of t1.
+        Task(project, "t2", "Task 2", t1)
+        Task(project, "t3", "Task 3", t1)
 
         # Index logic
         project.tasks.index()

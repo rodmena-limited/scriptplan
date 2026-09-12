@@ -245,7 +245,7 @@ class ResourceScenario(ScenarioData):
         slot rather than zero.
         """
         allowance = self.getAvailableSecondsInSlot(sb_idx)
-        holder = self.property
+        holder: Optional[Any] = self.property
         while holder is not None:
             limits = holder.get("limits", self.scenarioIdx)
             if limits is not None and hasattr(limits, "remaining"):
@@ -370,7 +370,7 @@ class ResourceScenario(ScenarioData):
 
         # Advance every limit counter by the time actually booked, not by a
         # whole slot: a partial booking must consume a partial allowance.
-        holder = self.property
+        holder: Optional[Any] = self.property
         while holder is not None:
             limits = holder.get("limits", self.scenarioIdx)
             if limits is not None and hasattr(limits, "inc"):

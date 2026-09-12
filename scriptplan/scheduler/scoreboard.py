@@ -1,9 +1,10 @@
 import math
 from collections.abc import Generator, Iterator
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Optional, Union
 
 from scriptplan.utils.time import TimeInterval
+
 
 class Scoreboard:
     def __init__(self, start: datetime, end: datetime, granularity: int, init_val: Optional[Any] = None) -> None:

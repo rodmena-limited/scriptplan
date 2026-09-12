@@ -8,18 +8,18 @@ finish soonest, and afterwards what the work cost and how long it took.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
-    "select_best_resources",
+    "advance_working_time",
+    "allocated_time",
+    "cost_of",
     "estimate_completion_time",
-    "is_resource_available",
     "has_contiguous_block",
     "has_project_contiguous_block",
-    "cost_of",
-    "allocated_time",
+    "is_resource_available",
     "resources_for_task",
-    "advance_working_time",
+    "select_best_resources",
 ]
 
 
@@ -72,7 +72,7 @@ def select_best_resources(
         return primary_resources
 
 
-def estimate_completion_time(scenario: Any, resources: list[Any], effort: float) -> Optional[datetime]:
+def estimate_completion_time(scenario: Any, resources: list[Any], effort: float) -> datetime | None:
     """
     Estimate when a task would complete using the given resources.
 
@@ -86,7 +86,6 @@ def estimate_completion_time(scenario: Any, resources: list[Any], effort: float)
     if not resources or effort <= 0:
         return None
 
-    from datetime import timedelta
 
     # Get efficiency (use first resource's efficiency)
     resource = resources[0]
@@ -126,7 +125,7 @@ def estimate_completion_time(scenario: Any, resources: list[Any], effort: float)
     end_slot = current_slot - 1
     end_date_result = scenario.project.idxToDate(end_slot)
     if end_date_result is not None:
-        result: Optional[datetime] = end_date_result + timedelta(seconds=slot_duration)
+        result: datetime | None = end_date_result + timedelta(seconds=slot_duration)
         return result
     else:
         return None
@@ -297,10 +296,11 @@ def allocated_time(scenario: Any) -> float:
 
 def resources_for_task(scenario: Any) -> list[Any]:
     """The Resource objects this task may book."""
-    assigned = scenario.property.get("assignedresources", scenario.scenarioIdx) or []
+    assigned: list[Any] = scenario.property.get("assignedresources", scenario.scenarioIdx) or []
     if assigned:
         return list(assigned)
-    return scenario.allocationPlan().resources()
+    found: list[Any] = scenario.allocationPlan().resources()
+    return found
 
 
 def advance_working_time(scenario: Any, start: datetime, seconds: float) -> datetime:
@@ -311,7 +311,6 @@ def advance_working_time(scenario: Any, start: datetime, seconds: float) -> date
     gap shorter than one slot lands inside a slot instead of being rounded
     away, which is how `gaplength 30min` used to become no gap at all.
     """
-    from datetime import timedelta
 
     if seconds <= 0:
         return start
@@ -327,7 +326,7 @@ def advance_working_time(scenario: Any, start: datetime, seconds: float) -> date
         if scenario.isWorkingTime(idx):
             available = slot_seconds - offset
             if remaining <= available:
-                moment = scenario.project.idxToDate(idx)
+                moment: datetime = scenario.project.idxToDate(idx)
                 return moment + timedelta(seconds=offset + remaining)
             remaining -= available
         idx += 1

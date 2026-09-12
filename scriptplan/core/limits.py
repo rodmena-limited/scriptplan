@@ -19,13 +19,13 @@ exceeded by part of a slot.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scriptplan.core.project import Project
     from scriptplan.core.resource import Resource
 
-__all__ = ["Limit", "Limits", "PERIOD_KINDS"]
+__all__ = ["PERIOD_KINDS", "Limit", "Limits"]
 
 # name -> (period kind, is an upper limit)
 PERIOD_KINDS: dict[str, tuple[str, bool]] = {
@@ -40,7 +40,7 @@ PERIOD_KINDS: dict[str, tuple[str, bool]] = {
 }
 
 
-def _zone(name: Optional[str]) -> Any:
+def _zone(name: str | None) -> Any:
     if not name:
         return None
     try:
@@ -59,12 +59,12 @@ class Limit:
         name: str,
         interval_start: datetime,
         interval_end: datetime,
-        period: Union[int, float, str],
-        value: Union[int, float],
+        period: int | float | str,
+        value: int | float,
         upper: bool,
-        resource: Optional["Resource"] = None,
+        resource: Resource | None = None,
         slot_duration: int = 3600,
-        timezone: Optional[str] = None,
+        timezone: str | None = None,
     ) -> None:
         self.name = name
         self.interval_start = interval_start
@@ -81,7 +81,7 @@ class Limit:
 
     # -- construction ------------------------------------------------------
 
-    def copy(self) -> "Limit":
+    def copy(self) -> Limit:
         return Limit(
             self.name,
             self.interval_start,
@@ -94,7 +94,7 @@ class Limit:
             self.timezone,
         )
 
-    def reset(self, index: Optional[int] = None) -> None:
+    def reset(self, index: int | None = None) -> None:
         """Clear the counters, or just the one covering ``index``."""
         if index is None:
             self._counters.clear()
@@ -130,19 +130,19 @@ class Limit:
 
     # -- counting ----------------------------------------------------------
 
-    def _applies_to(self, resource: Optional[Any]) -> bool:
+    def _applies_to(self, resource: Any | None) -> bool:
         if self.resource is None:
             return True
         return self.resource == resource
 
-    def inc(self, index: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
+    def inc(self, index: int, resource: Any | None = None, seconds: float | None = None) -> None:
         if not self._applies_to(resource) or not self._contains(index):
             return
         amount = self.slot_duration if seconds is None else seconds
         key = self._period_key(index)
         self._counters[key] = self._counters.get(key, 0.0) + amount
 
-    def dec(self, index: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
+    def dec(self, index: int, resource: Any | None = None, seconds: float | None = None) -> None:
         if not self._applies_to(resource) or not self._contains(index):
             return
         amount = self.slot_duration if seconds is None else seconds
@@ -154,10 +154,10 @@ class Limit:
 
     def ok(
         self,
-        index: Optional[int],
+        index: int | None,
         upper: bool,
-        resource: Optional[Any] = None,
-        seconds: Optional[float] = None,
+        resource: Any | None = None,
+        seconds: float | None = None,
     ) -> bool:
         """Whether a booking of ``seconds`` at ``index`` is within this limit.
 
@@ -181,7 +181,7 @@ class Limit:
             return used + wanted <= self.value
         return used >= self.value
 
-    def remaining(self, index: int, resource: Optional[Any] = None) -> Optional[float]:
+    def remaining(self, index: int, resource: Any | None = None) -> float | None:
         """Seconds still allowed in the period covering ``index``.
 
         None means this limit does not constrain that booking. A cap smaller
@@ -199,7 +199,7 @@ class Limit:
         return [(key, self.value - used) for key, used in sorted(self._counters.items()) if used < self.value]
 
 
-def _period_kind_for_seconds(period: Union[int, float]) -> str:
+def _period_kind_for_seconds(period: int | float) -> str:
     """Map a legacy period expressed in seconds onto a period kind."""
     if period >= 60 * 60 * 24 * 28:
         return "month"
@@ -213,25 +213,25 @@ def _period_kind_for_seconds(period: Union[int, float]) -> str:
 class Limits:
     """The limits declared on one task or resource."""
 
-    def __init__(self, limits: Optional["Limits"] = None) -> None:
+    def __init__(self, limits: Limits | None = None) -> None:
         self._limits: list[Limit] = []
-        self.project: Optional[Project] = None
-        self.timezone: Optional[str] = None
+        self.project: Project | None = None
+        self.timezone: str | None = None
 
         if limits is not None:
             self._limits = [limit.copy() for limit in limits._limits]
             self.project = limits.project
             self.timezone = limits.timezone
 
-    def copy(self) -> "Limits":
+    def copy(self) -> Limits:
         return Limits(self)
 
-    def setProject(self, project: "Project") -> None:
+    def setProject(self, project: Project) -> None:
         if self._limits:
             raise RuntimeError("Cannot change project after limits have been set!")
         self.project = project
 
-    def setTimeZone(self, timezone: Optional[str]) -> None:
+    def setTimeZone(self, timezone: str | None) -> None:
         """Count periods in this zone's calendar.
 
         Called once the owning resource's timezone is known, which is after the
@@ -241,7 +241,7 @@ class Limits:
         for limit in self._limits:
             limit.timezone = timezone
 
-    def prepare(self, slot_duration: int, timezone: Optional[str] = None) -> None:
+    def prepare(self, slot_duration: int, timezone: str | None = None) -> None:
         """Ready the counters for a scheduling run.
 
         The slot size is settled after the limits are read -- it can be derived
@@ -261,9 +261,9 @@ class Limits:
     def setLimit(
         self,
         name: str,
-        value: Union[int, float],
-        interval: Optional[tuple[datetime, datetime]] = None,
-        resource: Optional["Resource"] = None,
+        value: int | float,
+        interval: tuple[datetime, datetime] | None = None,
+        resource: Resource | None = None,
     ) -> None:
         """Declare a limit of ``value`` hours per period."""
         if self.project is None:
@@ -294,24 +294,24 @@ class Limits:
             )
         )
 
-    def inc(self, index: int, resource: Optional["Resource"] = None, seconds: Optional[float] = None) -> None:
+    def inc(self, index: int, resource: Resource | None = None, seconds: float | None = None) -> None:
         for limit in self._limits:
             limit.inc(index, resource, seconds)
 
-    def dec(self, index: int, resource: Optional["Resource"] = None, seconds: Optional[float] = None) -> None:
+    def dec(self, index: int, resource: Resource | None = None, seconds: float | None = None) -> None:
         for limit in self._limits:
             limit.dec(index, resource, seconds)
 
     def ok(
         self,
-        index: Optional[int] = None,
+        index: int | None = None,
         upper: bool = True,
-        resource: Optional["Resource"] = None,
-        seconds: Optional[float] = None,
+        resource: Resource | None = None,
+        seconds: float | None = None,
     ) -> bool:
         return all(limit.ok(index, upper, resource, seconds) for limit in self._limits)
 
-    def remaining(self, index: int, resource: Optional["Resource"] = None) -> Optional[float]:
+    def remaining(self, index: int, resource: Resource | None = None) -> float | None:
         """The tightest amount of time still allowed at ``index``."""
         allowances = [
             value

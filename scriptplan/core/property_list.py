@@ -10,9 +10,9 @@ as soon as one row lacks it.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable
 
-from scriptplan.core.property_set import PTNProxy, PropertySet
+from scriptplan.core.property_set import PropertySet, PTNProxy
 
 if TYPE_CHECKING:
     from scriptplan.core.property_tree_node import PropertyTreeNode
@@ -37,7 +37,7 @@ def _sort_by_alert(item: Any, _scenario: int) -> int:
         return 0
     try:
         entries = list(journal.entries())
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
     highest = 0
     for entry in entries:
@@ -66,12 +66,12 @@ class PropertyList:
     """
 
     def __init__(
-        self, arg: Union[PropertySet, "PropertyList", list[Union["PropertyTreeNode", PTNProxy]]], copyItems: bool = True
+        self, arg: PropertySet | PropertyList | list[PropertyTreeNode | PTNProxy], copyItems: bool = True
     ) -> None:
         if isinstance(arg, PropertySet):
-            self._items: list[Union[PropertyTreeNode, PTNProxy]] = list(arg._properties) if copyItems else []
-            self._propertySet: Optional[PropertySet] = arg
-            self._query: Optional[Any] = None
+            self._items: list[PropertyTreeNode | PTNProxy] = list(arg._properties) if copyItems else []
+            self._propertySet: PropertySet | None = arg
+            self._query: Any | None = None
             self.resetSorting()
             self.addSortingCriteria("seqno", True, -1)
             self.sort()
@@ -91,15 +91,15 @@ class PropertyList:
             self.resetSorting()
 
     @property
-    def propertySet(self) -> Optional[PropertySet]:
+    def propertySet(self) -> PropertySet | None:
         return self._propertySet
 
     @property
-    def query(self) -> Optional[Any]:
+    def query(self) -> Any | None:
         return self._query
 
     @query.setter
-    def query(self, value: Optional[Any]) -> None:
+    def query(self, value: Any | None) -> None:
         self._query = value
 
     @property
@@ -119,14 +119,14 @@ class PropertyList:
         return self._scenarioIdx
 
     def includeAdopted(self) -> None:
-        adopted: list[Union[PropertyTreeNode, PTNProxy]] = []
+        adopted: list[PropertyTreeNode | PTNProxy] = []
         for p in self._items:
             for ap in p.adoptees:
                 adopted.extend(self._includeAdoptedR(ap, p))
         self.append(adopted)
 
     def _includeAdoptedR(
-        self, property: "PropertyTreeNode", parent: Union["PropertyTreeNode", PTNProxy]
+        self, property: PropertyTreeNode, parent: PropertyTreeNode | PTNProxy
     ) -> list[PTNProxy]:
         parentProxy = PTNProxy(property, parent)
         adopted: list[PTNProxy] = [parentProxy]
@@ -136,8 +136,8 @@ class PropertyList:
 
         return adopted
 
-    def checkForDuplicates(self, sourceFileInfo: Optional[Any] = None) -> None:
-        ptns: dict[PropertyTreeNode, Union[PropertyTreeNode, PTNProxy]] = {}
+    def checkForDuplicates(self, sourceFileInfo: Any | None = None) -> None:
+        ptns: dict[PropertyTreeNode, PropertyTreeNode | PTNProxy] = {}
         for i in self._items:
             ptn = i.ptn if isinstance(i, PTNProxy) else i
             if ptn in ptns:
@@ -149,7 +149,7 @@ class PropertyList:
                 )
             ptns[ptn] = i
 
-    def __contains__(self, node: Union["PropertyTreeNode", PTNProxy]) -> bool:
+    def __contains__(self, node: PropertyTreeNode | PTNProxy) -> bool:
         target_ptn = node.ptn if isinstance(node, PTNProxy) else node
         for p in self._items:
             p_ptn = p.ptn if isinstance(p, PTNProxy) else p
@@ -158,8 +158,8 @@ class PropertyList:
         return False
 
     def __getitem__(
-        self, key: Union[int, "PropertyTreeNode", PTNProxy]
-    ) -> Optional[Union["PropertyTreeNode", PTNProxy]]:
+        self, key: int | PropertyTreeNode | PTNProxy
+    ) -> PropertyTreeNode | PTNProxy | None:
         if isinstance(key, int):
             return self._items[key]
         # Node lookup
@@ -173,10 +173,10 @@ class PropertyList:
     def __len__(self) -> int:
         return len(self._items)
 
-    def __iter__(self) -> Iterator[Union["PropertyTreeNode", PTNProxy]]:
+    def __iter__(self) -> Iterator[PropertyTreeNode | PTNProxy]:
         return iter(self._items)
 
-    def to_ary(self) -> list[Union["PropertyTreeNode", PTNProxy]]:
+    def to_ary(self) -> list[PropertyTreeNode | PTNProxy]:
         return list(self._items)
 
     def setSorting(self, modes: list[tuple[str, bool, int]]) -> None:
@@ -192,7 +192,7 @@ class PropertyList:
 
     def append(
         self,
-        items: Union[list[Union["PropertyTreeNode", PTNProxy]], "PropertyList", Union["PropertyTreeNode", PTNProxy]],
+        items: list[PropertyTreeNode | PTNProxy] | PropertyList | PropertyTreeNode | PTNProxy,
     ) -> None:
         if isinstance(items, (list, PropertyList)):
             for node in items:
@@ -229,7 +229,7 @@ class PropertyList:
             self._sortInternal()
         self.index()
 
-    def itemIndex(self, item: Union["PropertyTreeNode", PTNProxy]) -> Optional[int]:
+    def itemIndex(self, item: PropertyTreeNode | PTNProxy) -> int | None:
         try:
             return self._items.index(item)
         except ValueError:
@@ -286,9 +286,9 @@ class PropertyList:
                 tree += str(idx).rjust(6, "0")
             property.force("tree", tree)
 
-    def _getIndicies(self, property: "PropertyTreeNode") -> list[int]:
+    def _getIndicies(self, property: PropertyTreeNode) -> list[int]:
         idcs: list[int] = []
-        p: Optional[PropertyTreeNode] = property
+        p: PropertyTreeNode | None = property
         while p is not None:
             parent = p.parent
             idx = p.get("index")
@@ -309,12 +309,12 @@ class PropertyList:
             criteria = self._sortingCriteria[i]
             scIdx = self._scenarioIdx[i]
             ascending = self._sortingUp[i]
-            self._items.sort(
-                key=lambda item, c=criteria, s=scIdx: self._sortKey(item, c, s),
-                reverse=not ascending,
-            )
+            def key_for(item: Any, c: str = criteria, s: int = scIdx) -> tuple[int, Any]:
+                return self._sortKey(item, c, s)
 
-    def _sortKey(self, item: Union["PropertyTreeNode", PTNProxy], criteria: str, scIdx: int) -> tuple[int, Any]:
+            self._items.sort(key=key_for, reverse=not ascending)
+
+    def _sortKey(self, item: PropertyTreeNode | PTNProxy, criteria: str, scIdx: int) -> tuple[int, Any]:
         """A comparable key for one criterion.
 
         The leading number separates rows that have no value from rows that do,
@@ -332,7 +332,7 @@ class PropertyList:
             return (0, value)
         return (0, str(value))
 
-    def _sortValue(self, item: Union["PropertyTreeNode", PTNProxy], criteria: str, scIdx: int) -> Any:
+    def _sortValue(self, item: PropertyTreeNode | PTNProxy, criteria: str, scIdx: int) -> Any:
         if self._query and criteria != "tree":
             self._query.scenarioIdx = None if scIdx < 0 else scIdx
             self._query.attributeId = criteria
@@ -342,15 +342,17 @@ class PropertyList:
         if criteria in COMPUTED_SORT_CRITERIA:
             return COMPUTED_SORT_CRITERIA[criteria](item, scIdx)
         try:
-            return item.get(criteria) if scIdx < 0 else item.get(criteria, scIdx)
+            if scIdx < 0:
+                return item.get(criteria)
+            return item.get(criteria, scIdx)  # type: ignore[call-arg]
         except (ValueError, KeyError, AttributeError):
             return None
 
-    def delete_if(self, func: Callable[[Union["PropertyTreeNode", PTNProxy]], bool]) -> None:
+    def delete_if(self, func: Callable[[PropertyTreeNode | PTNProxy], bool]) -> None:
         to_remove = [i for i in self._items if func(i)]
         for i in to_remove:
             self._items.remove(i)
 
-    def each(self, func: Callable[[Union["PropertyTreeNode", PTNProxy]], None]) -> None:
+    def each(self, func: Callable[[PropertyTreeNode | PTNProxy], None]) -> None:
         for item in self._items:
             func(item)

@@ -10,7 +10,7 @@ Claims under test (SPECS/005-ws3-scheduler-core-engine-package.md):
 
 from __future__ import annotations
 
-from harness import HDR, booked_slots, datetime, main, parse, probe, resource, task, total_booked_hours, window
+from harness import HDR, booked_slots, datetime, main, parse, probe, task, total_booked_hours, window
 
 TWO_RESOURCES = """resource a "A" { workinghours mon-fri 9:00-17:00 }
 resource b "B" { workinghours mon-fri 9:00-17:00 }

@@ -30,7 +30,7 @@ def _rss_mb() -> float:
 @probe(f"500 chained tasks schedule at 1h resolution within {BUDGET_CHAIN_SECONDS:g}s")
 def probe_long_chain_is_fast() -> tuple[bool, str]:
     tasks = "\n".join(
-        'task t%d "T%d" { effort 4h allocate r %s }' % (i, i, ("depends !t%d" % (i - 1)) if i else "")
+        f'task t{i} "T{i}" {{ effort 4h allocate r {f"depends !t{i - 1}" if i else ""} }}'
         for i in range(500)
     )
     started = time.time()
@@ -49,10 +49,12 @@ resource r "R" { workinghours mon-fri 9:00-17:00 }
     f"{BUDGET_MINUTE_SECONDS:g}s and {BUDGET_MINUTE_RSS_MB:g}MB"
 )
 def probe_minute_resolution_year_is_bounded() -> tuple[bool, str]:
-    resources = "\n".join('resource r%d "R%d" { workinghours mon-fri 9:00-17:00 }' % (i, i) for i in range(10))
+    resources = "\n".join(
+        f'resource r{i} "R{i}" {{ workinghours mon-fri 9:00-17:00 }}' for i in range(10)
+    )
     tasks = "\n".join(
-        'task t%d "T%d" { effort 8h allocate r%d %s }'
-        % (i, i, i % 10, ("depends !t%d" % (i - 10)) if i >= 10 else "")
+        f'task t{i} "T{i}" {{ effort 8h allocate r{i % 10} '
+        f'{f"depends !t{i - 10}" if i >= 10 else ""} }}'
         for i in range(100)
     )
     started = time.time()

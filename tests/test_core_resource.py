@@ -19,7 +19,7 @@ class TestResource(unittest.TestCase):
         self.assertIsNotNone(res.data[0])
 
         # Test booking (stub behavior)
-        task = Task(project, "t1", "Task 1", None)
+        Task(project, "t1", "Task 1", None)
         # booking requires initScoreboard which needs project start/end and attributes
 
         # We need to verify ResourceScenario attributes are created

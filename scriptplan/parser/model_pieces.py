@@ -7,19 +7,22 @@ separable from the task and resource construction around it.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from scriptplan.core.task import Task
 
 from scriptplan.core.exceptions import SemanticError
 from scriptplan.core.project import Project
 
 __all__ = [
+    "allocation_ids",
     "create_journal_entry",
     "create_scenario",
-    "scenario_index",
     "inherit_all_attributes",
-    "validate_allocations",
-    "allocation_ids",
     "resolve_task_reference",
+    "scenario_index",
+    "validate_allocations",
 ]
 
 
@@ -62,7 +65,7 @@ def create_journal_entry(builder: Any, task: Task, entry_data: dict[str, Any]) -
     entry.details = body.get("details")
 
 
-def create_scenario(builder: Any, project: Project, scenario_data: dict[str, Any], parent: Optional[Any] = None) -> None:
+def create_scenario(builder: Any, project: Project, scenario_data: dict[str, Any], parent: Any | None = None) -> None:
     """Create a scenario in the project.
 
     Args:
@@ -93,7 +96,7 @@ def create_scenario(builder: Any, project: Project, scenario_data: dict[str, Any
             create_scenario(builder, project, child[1], scenario)
 
 
-def scenario_index(builder: Any, project: Project, scenario_id: str) -> Optional[int]:
+def scenario_index(builder: Any, project: Project, scenario_id: str) -> int | None:
     """Get the index of a scenario by its ID."""
     for i, scenario in enumerate(project.scenarios):
         if scenario.id == scenario_id:
@@ -153,7 +156,7 @@ def allocation_ids(allocations: Any) -> list[str]:
     return names
 
 
-def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref: str) -> Optional[Task]:
+def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref: str) -> Task | None:
     """Resolve a task reference string to a Task object.
 
     Reference formats:

@@ -52,7 +52,7 @@ def probe_cycle_is_an_error() -> tuple[bool, str]:
         parse(CYCLE)
     except CircularDependencyError as exc:
         return True, f"raised CircularDependencyError: {exc}"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, f"raised {type(exc).__name__} instead of CircularDependencyError: {exc}"
     return False, "parse() and schedule() returned normally on a two-task dependency cycle"
 
@@ -81,7 +81,7 @@ def probe_failure_names_the_task() -> tuple[bool, str]:
     project = parse(NO_ALLOCATION, schedule=False)
     project.schedule()
     texts = [str(m) for m in handler.messages]
-    named = any("a" == getattr(m, "task_id", None) or ".a" in str(m) or "'a'" in str(m) for m in handler.messages)
+    named = any(getattr(m, "task_id", None) == "a" or ".a" in str(m) or "'a'" in str(m) for m in handler.messages)
     return named, f"messages={texts}"
 
 

@@ -9,17 +9,17 @@ apart from the scheduling itself.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from scriptplan.core.allocation_plan import AllocationPlan
 
 __all__ = [
     "all_dependencies",
-    "successors",
-    "successors_with_max_gap",
-    "successor_earliest_start",
     "max_gap_delayed_start",
     "start_from_end",
+    "successor_earliest_start",
+    "successors",
+    "successors_with_max_gap",
 ]
 
 
@@ -171,7 +171,6 @@ def max_gap_delayed_start(scenario: Any, earliest_start: datetime, effort: float
     Returns:
         Delayed start time (datetime), or earliest_start if no delay needed
     """
-    from datetime import timedelta
 
     successors_with_maxgap = successors_with_max_gap(scenario, )
     if not successors_with_maxgap:

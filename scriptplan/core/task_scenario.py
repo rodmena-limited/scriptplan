@@ -3,24 +3,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.core.allocation_plan import AllocationPlan
-from scriptplan.core.task_resources import (
-    advance_working_time,
-    allocated_time,
-    cost_of,
-    estimate_completion_time,
-    has_contiguous_block,
-    has_project_contiguous_block,
-    is_resource_available,
-    resources_for_task,
-    select_best_resources,
-)
-from scriptplan.core.task_placement import (
-    finish_scheduling,
-    place_slot,
-    place_task,
-    propagate_date,
-    schedule_container,
-)
+from scriptplan.core.property import AttributeBase
+from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.core.task_booking import (
     all_limits,
     book_resource,
@@ -40,8 +24,24 @@ from scriptplan.core.task_dependencies import (
     successors,
     successors_with_max_gap,
 )
-from scriptplan.core.property import AttributeBase
-from scriptplan.core.scenario_data import ScenarioData
+from scriptplan.core.task_placement import (
+    finish_scheduling,
+    place_slot,
+    place_task,
+    propagate_date,
+    schedule_container,
+)
+from scriptplan.core.task_resources import (
+    advance_working_time,
+    allocated_time,
+    cost_of,
+    estimate_completion_time,
+    has_contiguous_block,
+    has_project_contiguous_block,
+    is_resource_available,
+    resources_for_task,
+    select_best_resources,
+)
 
 if TYPE_CHECKING:
     from scriptplan.core.property import PropertyTreeNode
@@ -321,7 +321,7 @@ class TaskScenario(ScenarioData):
         """Working seconds. `gaplength 1d` is one working day."""
         if not duration_str:
             return 0.0
-        from scriptplan.core.units import project_seconds, Duration
+        from scriptplan.core.units import Duration, project_seconds
 
         return project_seconds(self.project, Duration(duration_str, Duration.WORKING))
 
@@ -346,11 +346,13 @@ class TaskScenario(ScenarioData):
 
     def allocationPlan(self) -> "AllocationPlan":
         """The task's allocations, resolved once per scheduling run."""
-        if getattr(self, "_allocationPlan", None) is None:
-            self._allocationPlan = AllocationPlan.read(
+        plan = getattr(self, "_allocationPlan", None)
+        if plan is None:
+            plan = AllocationPlan.read(
                 self.property.get("allocate", self.scenarioIdx), self._resolve_resource
             )
-        return self._allocationPlan
+            self._allocationPlan = plan
+        return plan
 
     def _resolve_resource(self, alloc: Any) -> Optional[Any]:
         """

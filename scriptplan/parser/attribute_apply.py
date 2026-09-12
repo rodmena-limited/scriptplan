@@ -13,12 +13,12 @@ definition raises InvalidAttributeError naming the attribute.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 from scriptplan.core.exceptions import InvalidAttributeError
 
 if TYPE_CHECKING:
-    from scriptplan.core.project import Project
+    pass
 
 __all__ = ["apply_property_attributes", "set_all_scenarios"]
 
@@ -34,7 +34,7 @@ def _property_set_for(obj: Any) -> Any:
     return getattr(obj, "propertySet", None) or getattr(obj, "_propertySet", None)
 
 
-def _definition_of(obj: Any, key: str) -> Optional[Any]:
+def _definition_of(obj: Any, key: str) -> Any | None:
     holder = _property_set_for(obj)
     if holder is None:
         return None

@@ -48,20 +48,20 @@ from scriptplan.core.attributes import (
     deep_clone,
 )
 from scriptplan.core.property_list import COMPUTED_SORT_CRITERIA, PropertyList
-from scriptplan.core.property_set import PTNProxy, PropertySet
+from scriptplan.core.property_set import PropertySet, PTNProxy
 from scriptplan.core.property_tree_node import PropertyTreeNode
 
 # Alias kept for callers that spell it this way.
 ListAttribute = ListAttributeBase
 
 __all__ = [
+    "COMPUTED_SORT_CRITERIA",
     "AccountAttribute",
     "AlertLevelDefinitions",
     "AttributeBase",
     "AttributeDefinition",
     "AttributeOverwrite",
     "BooleanAttribute",
-    "COMPUTED_SORT_CRITERIA",
     "ColumnListAttribute",
     "DateAttribute",
     "DefinitionListAttribute",

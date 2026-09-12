@@ -104,13 +104,13 @@ def probe_all_limit_kinds_parse() -> tuple[bool, str]:
     for kind in LIMIT_KINDS:
         text = (
             HDR
-            + 'resource r "R" { workinghours mon-fri 9:00-17:00 limits { %s } }\n' % kind
+            + f'resource r "R" {{ workinghours mon-fri 9:00-17:00 limits {{ {kind} }} }}\n'
             + 'task a "A" { start 2025-01-06 effort 2h allocate r }\n'
         )
         try:
             parse(text)
             outcomes[kind] = "ok"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             outcomes[kind] = type(exc).__name__
     ok = all(value == "ok" for value in outcomes.values())
     return ok, f"{outcomes}"

@@ -21,7 +21,7 @@ ONE_RESOURCE = 'resource r "R" { workinghours mon-fri 9:00-17:00 }\n'
 def _expect_error(text: str) -> tuple[bool, str]:
     try:
         parse(text)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return True, f"raised {type(exc).__name__}: {str(exc)[:200]}"
     return False, "parsed and scheduled without complaint"
 
@@ -72,7 +72,7 @@ task a "A" { start 2025-01-06 effort 8h allocate r note "keep me" }
 """)
     try:
         value = task(project, "a").get("note", 0)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, f"reading the note raised {type(exc).__name__}: {exc}"
     return value == "keep me", f"stored note = {value!r} (file said 'keep me')"
 

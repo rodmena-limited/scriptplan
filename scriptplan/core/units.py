@@ -17,21 +17,20 @@ minutes -- writing ``30m`` when you meant ``30min`` is a factor of about
 from __future__ import annotations
 
 import re
-from typing import Union
 
 __all__ = [
     "DEFAULT_DAILY_WORKING_HOURS",
     "DEFAULT_YEARLY_WORKING_DAYS",
     "WEEKS_PER_YEAR",
+    "Duration",
     "DurationError",
     "parse_calendar_duration",
+    "parse_time_of_day",
     "parse_working_duration",
     "parse_working_hours",
-    "parse_time_of_day",
-    "split_duration",
-    "Duration",
-    "project_seconds",
     "project_hours",
+    "project_seconds",
+    "split_duration",
 ]
 
 DEFAULT_DAILY_WORKING_HOURS = 8.0
@@ -60,7 +59,7 @@ class DurationError(ValueError):
     """Raised when a duration cannot be read."""
 
 
-def split_duration(text: Union[str, int, float]) -> tuple[float, str]:
+def split_duration(text: str | int | float) -> tuple[float, str]:
     """Split ``"30min"`` into ``(30.0, "min")``.
 
     A bare number means hours, which is how the .tjp grammar reads a duration
@@ -79,14 +78,14 @@ def split_duration(text: Union[str, int, float]) -> tuple[float, str]:
     return amount, unit
 
 
-def parse_calendar_duration(text: Union[str, int, float]) -> float:
+def parse_calendar_duration(text: str | int | float) -> float:
     """Seconds of wall-clock time. ``2d`` is 172800, weekend or not."""
     amount, unit = split_duration(text)
     return amount * _CALENDAR_SECONDS[unit]
 
 
 def parse_working_duration(
-    text: Union[str, int, float],
+    text: str | int | float,
     daily_working_hours: float = DEFAULT_DAILY_WORKING_HOURS,
     yearly_working_days: float = DEFAULT_YEARLY_WORKING_DAYS,
 ) -> float:
@@ -109,7 +108,7 @@ def parse_working_duration(
 
 
 def parse_working_hours(
-    text: Union[str, int, float],
+    text: str | int | float,
     daily_working_hours: float = DEFAULT_DAILY_WORKING_HOURS,
     yearly_working_days: float = DEFAULT_YEARLY_WORKING_DAYS,
 ) -> float:
@@ -137,12 +136,12 @@ class Duration:
     the project exists.
     """
 
-    __slots__ = ("text", "kind")
+    __slots__ = ("kind", "text")
 
     CALENDAR = "calendar"
     WORKING = "working"
 
-    def __init__(self, text: Union[str, int, float], kind: str) -> None:
+    def __init__(self, text: str | int | float, kind: str) -> None:
         self.text = text
         self.kind = kind
         # Fail at parse time on an unreadable duration rather than at use.

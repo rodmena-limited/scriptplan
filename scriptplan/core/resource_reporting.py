@@ -7,27 +7,28 @@ it decides anything while scheduling; it is read afterwards.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
+    from scriptplan.core.resource_scenario import ResourceScenario
     from scriptplan.core.task import Task
 
 __all__ = [
-    "effective_work",
     "allocated_slots",
-    "free_slots",
-    "work_slots",
-    "tree_sum",
-    "tree_sum_recursive",
     "calc_criticalness",
+    "effective_work",
+    "finish_scheduling",
+    "free_slots",
     "set_direct_reports",
     "set_reports",
     "set_reports_internal",
-    "finish_scheduling",
+    "tree_sum",
+    "tree_sum_recursive",
+    "work_slots",
 ]
 
 
-def effective_work(scenario: Any, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> float:
+def effective_work(scenario: Any, start_idx: int, end_idx: int, task: Task | None = None) -> float:
     """
     Get the effective work done by this resource.
 
@@ -43,7 +44,7 @@ def effective_work(scenario: Any, start_idx: int, end_idx: int, task: Optional["
     if start_idx >= end_idx or (task and task not in duties):
         return 0.0
 
-    def calculate(res_scen: "ResourceScenario") -> float:
+    def calculate(res_scen: ResourceScenario) -> float:
         if res_scen.scoreboard is None:
             return 0.0
         allocated = res_scen.getAllocatedSlots(start_idx, end_idx, task)
@@ -55,7 +56,7 @@ def effective_work(scenario: Any, start_idx: int, end_idx: int, task: Optional["
     return tree_sum(scenario, start_idx, end_idx, task, block=calculate)
 
 
-def allocated_slots(scenario: Any, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> int:
+def allocated_slots(scenario: Any, start_idx: int, end_idx: int, task: Task | None = None) -> int:
     """
     Count booked slots in the given range.
 
@@ -167,12 +168,14 @@ def tree_sum_recursive(
     Returns:
         Accumulated sum
     """
-    if scenario.property.container:  # type: ignore[attr-defined]
+    if scenario.property.container:
         sum_val = 0.0
         for resource in scenario.property.kids():
             if resource.data and resource.data[scenario.scenarioIdx]:
                 res_scenario = resource.data[scenario.scenarioIdx]
-                sum_val += res_tree_sum_recursive(scenario, cache_tag, start_idx, end_idx, *args, block=block)
+                sum_val += tree_sum_recursive(
+                    res_scenario, cache_tag, start_idx, end_idx, *args, block=block
+                )
         return sum_val
     else:
         return block(scenario)
@@ -206,7 +209,11 @@ def set_direct_reports(scenario: Any) -> None:
     new_managers = []
 
     for manager_id in managers:
-        manager = scenario.project.resources.get(manager_id) if isinstance(manager_id, str) else manager_id  # type: ignore[attr-defined]
+        manager = (
+            scenario.project.resources.get(manager_id)
+            if isinstance(manager_id, str)
+            else manager_id
+        )
 
         if manager is None:
             scenario.error("resource_id_expected", f"{manager_id} is not a defined resource.")

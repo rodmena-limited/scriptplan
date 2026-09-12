@@ -4,13 +4,8 @@ Split from message_handler so that the types a caller needs in order to read a
 message do not drag in the handler that produces them.
 """
 
-import contextlib
-import sys
-import threading
-from datetime import datetime
 from enum import Enum
-from collections.abc import Iterator
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional
 
 from scriptplan.utils.logger import ANSIColor
 

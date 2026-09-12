@@ -9,7 +9,10 @@ the pioneering open-source project management tool created by Chris Schlaeger.
 The TJP file format and scheduling concepts originate from TaskJuggler.
 """
 
-__version__ = "0.9.2"
+# The single source of truth for the version; pyproject reads it from here.
+# A semantic change: effort is now person-time, failures are reported as
+# failures, and the compiled extensions are gone.
+__version__ = "0.10.0"
 __author__ = "ScriptPlan Team"
 
 from scriptplan.core.project import Project

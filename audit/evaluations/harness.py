@@ -26,7 +26,7 @@ import sys
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 # --------------------------------------------------------------------------
 # target resolution
@@ -42,16 +42,10 @@ def target_info() -> str:
     """Describe the package actually under test."""
     import scriptplan
 
-    try:
-        from scriptplan._cython import CYTHON_AVAILABLE
-
-        accel = ", ".join(k for k, v in sorted(CYTHON_AVAILABLE.items()) if v) or "none"
-    except Exception:  # pragma: no cover - defensive
-        accel = "unavailable"
     return (
         f"scriptplan {getattr(scriptplan, '__version__', '?')} "
         f"at {os.path.dirname(scriptplan.__file__)}\n"
-        f"python {sys.version.split()[0]} | accelerated modules: {accel}"
+        f"python {sys.version.split()[0]}"
     )
 
 
@@ -81,7 +75,7 @@ def probe(claim: str) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[],
                 status = "PASS" if ok else "FAIL"
                 if mh is not None:
                     messages = [_plain(str(m)) for m in mh.messages]
-            except Exception as exc:  # noqa: BLE001 - a probe must never abort the run
+            except Exception as exc:
                 status = "ERROR"
                 evidence = f"{type(exc).__name__}: {exc}\n" + "".join(
                     traceback.format_exception_only(type(exc), exc)
@@ -198,7 +192,7 @@ def booked_hours_by_local_day(project: Any, rid: str, tz_name: str, scenario: in
     return dict(out)
 
 
-def _board(project: Any, rid: str, scenario: int) -> Optional[list[int]]:
+def _board(project: Any, rid: str, scenario: int) -> list[int] | None:
     """Indices this resource has booked, whichever backend holds them."""
     res = resource(project, rid)
     rs = res.data[scenario] if res.data else None
@@ -222,7 +216,7 @@ def total_booked_hours(project: Any, rid: str, scenario: int = 0) -> float:
 # --------------------------------------------------------------------------
 
 
-def run_cli(args: list[str], stdin: Optional[str] = None) -> subprocess.CompletedProcess:
+def run_cli(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
     """Run the `plan` CLI as the customer does: a fresh process."""
     env = dict(os.environ)
     import scriptplan
@@ -283,6 +277,7 @@ __all__ = [
     "booked_hours_by_day",
     "booked_hours_by_local_day",
     "booked_slots",
+    "datetime",
     "main",
     "parse",
     "probe",
@@ -293,5 +288,4 @@ __all__ = [
     "total_booked_hours",
     "window",
     "write_tjp",
-    "datetime",
 ]

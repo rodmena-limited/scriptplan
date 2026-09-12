@@ -7,7 +7,10 @@ of tabular reports. All tabular reports are converted to an abstract
 the requested output format.
 """
 
-from scriptplan.report.table_headers import default_column_title, header_cell
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from scriptplan.report.report_base import ReportBase
 from scriptplan.report.table_cells import (
     cell_value,
     cost_value,
@@ -15,10 +18,7 @@ from scriptplan.report.table_cells import (
     format_value,
     revenue_value,
 )
-from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
-
-from scriptplan.report.report_base import ReportBase
+from scriptplan.report.table_headers import default_column_title, header_cell
 
 if TYPE_CHECKING:
     from scriptplan.core.property import PropertyList

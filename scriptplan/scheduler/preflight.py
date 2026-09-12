@@ -10,14 +10,14 @@ reference each other, never on resource availability or the calendar.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from scriptplan.core.exceptions import CircularDependencyError
 
-__all__ = ["dependency_of", "iter_dependencies", "find_dependency_cycle", "check_no_cycles"]
+__all__ = ["check_no_cycles", "dependency_of", "find_dependency_cycle", "iter_dependencies"]
 
 
-def dependency_of(dep: Any) -> Optional[Any]:
+def dependency_of(dep: Any) -> Any | None:
     """Return the predecessor task in a dependency entry.
 
     A dependency is stored either as the task itself or as a mapping carrying
@@ -46,7 +46,7 @@ def iter_dependencies(task: Any, scenario_idx: int, finish_to_start_only: bool =
     them would report a loop where the schedule is satisfiable.
     """
     found: list[Any] = []
-    node: Optional[Any] = task
+    node: Any | None = task
     while node is not None:
         for dep in node.get("depends", scenario_idx) or []:
             if finish_to_start_only and _is_onstart(dep):
@@ -58,7 +58,7 @@ def iter_dependencies(task: Any, scenario_idx: int, finish_to_start_only: bool =
     return found
 
 
-def find_dependency_cycle(tasks: Any, scenario_idx: int) -> Optional[list[str]]:
+def find_dependency_cycle(tasks: Any, scenario_idx: int) -> list[str] | None:
     """Return one finish-to-start dependency cycle, or None if there is none.
 
     Only finish-to-start edges are followed. A complete loop check would work

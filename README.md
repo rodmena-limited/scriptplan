@@ -4,11 +4,10 @@
 
 # ScriptPlan
 
-![Logic Certified](https://img.shields.io/badge/Logic-Certified_Airport--Grade-success?style=for-the-badge&logo=github)
-![Tests Passed](https://img.shields.io/badge/Stress_Tests-24%2F24_Passed-success?style=for-the-badge)
-![Temporal Physics](https://img.shields.io/badge/Temporal_Physics-Verified-blue?style=for-the-badge)
-![Scheduling](https://img.shields.io/badge/Scheduling-ALAP_%7C_JIT_%7C_Priority-blueviolet?style=for-the-badge)
-![Constraints](https://img.shields.io/badge/Constraints-Hard_Limits_%7C_Quotas-orange?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-411_passing-success?style=for-the-badge)
+![Probes](https://img.shields.io/badge/audit_probes-67_passing-success?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)
+![Licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey?style=for-the-badge)
 
 A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management. The syntax is compatible with TaskJuggler (.tjp files).
 
@@ -65,11 +64,11 @@ done
 **Features**:
 - Output to stdout (Unix philosophy)
 - Messages to stderr
-- SHA256 report_id (content-based hash)
+- SHA256 `report_id` over the rendered result, so it changes when the schedule does
 - Lowercase column names
 - No HTML metadata
 - No file pollution (uses temp directories)
-- Safe for concurrent execution (100+ instances)
+- Separate processes do not collide: temporary files and directories are unique per run
 
 ### Python API
 
@@ -87,39 +86,69 @@ for task in project.tasks:
         print(f"{task.id}: {start} -> {end}")
 ```
 
-## System Certified
+## What is verified
 
-**Certification Level**: Airport-Grade / Mission Critical
+Each behaviour below has a probe in `audit/evaluations/` that drives ScriptPlan
+through its own API or CLI and asserts the result. They run as part of the test
+suite, and can be run on their own against an installed release:
 
-**Capabilities Verified**:
+```bash
+audit/evaluations/run_all.sh
+```
 
-- **Temporal Physics**: Floating point precision, Timezones, DST awareness, Date Line crossing.
+**Time**
 
-- **Resource Constraints**: Daily/Weekly limits, Hierarchical quotas, Shift intersections.
+- Dates are read in the project's timezone and scheduled in UTC; reports convert back.
+- Resource shifts follow their own timezone across daylight-saving changes in both directions.
+- A working-hours interval that crosses midnight applies to the following day.
+- Slot size is derived from the times a project uses, so `start 09:30` is honoured
+  exactly and a shift of `08:13 - 11:59, 13:07 - 17:47` yields its true 8h26m a day.
+  `timingresolution` overrides this.
 
-- **Advanced Scheduling**: ALAP (Backward pass), Priority preemption, Smart Resource Selection (Failover).
+**Units**
 
-- **Workflow Logic**: Atomicity (Contiguous), Perishability (Max Gap), Zero-Buffer Synchronization.
+- Calendar time (`duration`, `gapduration`) and working time (`effort`, `length`,
+  `gaplength`) are distinguished, with working time derived from
+  `dailyworkinghours` and `yearlyworkingdays`. `m` means months; `min` means minutes.
 
-## Features
+**Resources**
 
-- Minute-level scheduling precision
-- ASAP and ALAP scheduling modes
-- Resource allocation with contention handling
-- Working hours and shift definitions
-- Dependency chains with gap constraints
-- Leap year and timezone handling
+- `effort` is person-time: two resources available in a slot contribute two
+  slots of it. `mandatory` requires a resource for the task to progress at all;
+  `persistent` keeps the one first chosen; `alternative` falls back.
+- `dailymax`, `weeklymax`, `monthlymax`, `maximum` and their `min` counterparts
+  block at the cap **and** release in the next period. Periods are counted in the
+  resource's own calendar, and a cap smaller than one slot is honoured exactly.
 
-## Accuracy
+**Scheduling**
 
-ScriptPlan uses integer arithmetic for all time calculations, avoiding floating-point drift. The scheduler correctly handles:
+- ASAP and ALAP, including chains that mix the two.
+- Contention is resolved by priority, then criticalness, then declaration order.
+- The declared project period is never rewritten. A task that does not fit is
+  reported, with its name and the reason.
+- Scheduling the same project twice produces the same dates and the same bookings.
+- `maxgapduration`, `maxgaplength`, `maxstart`, `minstart`, `maxend` and `minend`
+  are checked once the schedule is complete, and a violation is an error.
 
-- Non-standard shift boundaries (e.g., 08:13 - 11:59, 13:07 - 17:47)
-- Prime-number effort durations with prime-number gaps
-- Resource contention across multi-day tasks
-- Calendar gaps (weekends, holidays) vs working time gaps
+**Honesty**
 
-Example: A chain of 500 tasks, each with 73-minute effort and 29-minute gaps, scheduled across leap year boundaries with non-standard shifts, produces exact minute-aligned results.
+- A project that cannot be scheduled exits non-zero and says why. A dependency
+  cycle is rejected before scheduling, naming the cycle.
+- An attribute or reference the parser cannot place is an error, never a silent
+  drop.
+- `report_id` is a SHA-256 of the rendered result, so it differs when the
+  schedule differs.
+
+## Known limits
+
+- `include`, `supplement`, `leaveallowance` and `statussheet` are not implemented.
+- Output formats are JSON and CSV. `ical`, `tjp`, `niku` and MS Project XML are
+  rejected at parse time rather than silently producing nothing.
+- Accounts are parsed but not yet modelled, so `chargeset` and `charge` record an
+  amount without posting it anywhere.
+- `onstart` dependencies are read as "the dependent task must finish before the
+  predecessor starts", which is ScriptPlan's own reading rather than
+  TaskJuggler's start-to-start one.
 
 ## Example Project
 

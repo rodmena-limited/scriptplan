@@ -9,7 +9,7 @@ other still occupies the schedule.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from scriptplan.core.attributes import (
     AttributeDefinition,
@@ -18,6 +18,7 @@ from scriptplan.core.attributes import (
 )
 
 if TYPE_CHECKING:
+    from scriptplan.core.attributes import AttributeBase
     from scriptplan.core.property_tree_node import PropertyTreeNode
 
 class PropertySet:
@@ -38,14 +39,14 @@ class PropertySet:
         self.addAttributeType(AttributeDefinition("name", "Name", StringAttribute, False, False, False, ""))
         self.addAttributeType(AttributeDefinition("seqno", "Seq. No", IntegerAttribute, False, False, False, 0))
 
-    def addAttributeType(self, attribute_definition: "AttributeDefinition") -> None:
+    def addAttributeType(self, attribute_definition: AttributeDefinition) -> None:
         if self._properties:
             raise RuntimeError("Fatal Error: Attribute types must be defined before properties are added.")
 
         self.attributes.append(attribute_definition)
         self.attributeDefinitions[attribute_definition.id] = attribute_definition
 
-    def eachAttributeDefinition(self) -> Iterator["AttributeDefinition"]:
+    def eachAttributeDefinition(self) -> Iterator[AttributeDefinition]:
         return iter(self.attributes)
 
     def items(self) -> int:
@@ -57,17 +58,17 @@ class PropertySet:
     def __len__(self) -> int:
         return len(self._properties)
 
-    def __getitem__(self, key: str) -> Optional["PropertyTreeNode"]:
+    def __getitem__(self, key: str) -> PropertyTreeNode | None:
         return self._propertyMap.get(key)
 
-    def __setitem__(self, key: str, value: "PropertyTreeNode") -> None:
+    def __setitem__(self, key: str, value: PropertyTreeNode) -> None:
         # Should typically use addProperty
         pass
 
-    def __iter__(self) -> Iterator["PropertyTreeNode"]:
+    def __iter__(self) -> Iterator[PropertyTreeNode]:
         return iter(self._properties)
 
-    def __contains__(self, item: Union[str, "PropertyTreeNode"]) -> bool:
+    def __contains__(self, item: str | PropertyTreeNode) -> bool:
         if isinstance(item, str):
             return item in self._propertyMap
         return item in self._properties
@@ -75,7 +76,7 @@ class PropertySet:
     def empty(self) -> bool:
         return len(self._properties) == 0
 
-    def addProperty(self, property: "PropertyTreeNode") -> None:
+    def addProperty(self, property: PropertyTreeNode) -> None:
         # An anonymous property (a nested report with no id) cannot be referred
         # to, so two of them colliding is harmless; only named ones must be unique.
         existing = self._propertyMap.get(property.fullId) if property.id else None
@@ -89,7 +90,7 @@ class PropertySet:
         self._propertyMap[property.fullId] = property
         self._properties.append(property)
 
-    def removeProperty(self, prop: Union[str, "PropertyTreeNode"]) -> Optional["PropertyTreeNode"]:
+    def removeProperty(self, prop: str | PropertyTreeNode) -> PropertyTreeNode | None:
         property_node = self._propertyMap.get(prop) if isinstance(prop, str) else prop
 
         if not property_node:
@@ -125,7 +126,7 @@ class PropertySet:
             bsi = ".".join(map(str, bsIdcs))
             p.force("bsi", bsi)
 
-    def levelSeqNo(self, property_node: "PropertyTreeNode") -> int:
+    def levelSeqNo(self, property_node: PropertyTreeNode) -> int:
         seqNo = 1
         for p in self._properties:
             if not p.parent:
@@ -148,7 +149,7 @@ class PropertySet:
                 items += 1
         return items
 
-    def to_ary(self) -> list["PropertyTreeNode"]:
+    def to_ary(self) -> list[PropertyTreeNode]:
         return list(self._properties)
 
     def to_s(self) -> str:
@@ -158,7 +159,7 @@ class PropertySet:
     def knownAttribute(self, attrId: str) -> bool:
         return attrId in self.attributeDefinitions
 
-    def hasQuery(self, attrId: str, scenarioIdx: Optional[int] = None) -> bool:
+    def hasQuery(self, attrId: str, scenarioIdx: int | None = None) -> bool:
         if not self._properties:
             return False
 
@@ -205,11 +206,11 @@ class PropertySet:
         defn = self.attributeDefinitions.get(attrId)
         return defn.default if defn else None
 
-    def attributeName(self, attrId: str) -> Optional[str]:
+    def attributeName(self, attrId: str) -> str | None:
         defn = self.attributeDefinitions.get(attrId)
         return defn.name if defn else None
 
-    def attributeType(self, attrId: str) -> Optional[type["AttributeBase"]]:
+    def attributeType(self, attrId: str) -> type[AttributeBase] | None:
         defn = self.attributeDefinitions.get(attrId)
         return defn.objClass if defn else None
 
@@ -217,21 +218,21 @@ class PropertySet:
 class PTNProxy:
     """Proxy for PropertyTreeNode that represents adopted nodes in their new parental context."""
 
-    def __init__(self, ptn: "PropertyTreeNode", parent: Union["PropertyTreeNode", "PTNProxy"]) -> None:
+    def __init__(self, ptn: PropertyTreeNode, parent: PropertyTreeNode | PTNProxy) -> None:
         self._ptn = ptn
         if not parent:
             raise ValueError("Adopted properties must have a parent")
         self._parent = parent
-        self._index: Optional[int] = None
-        self._tree: Optional[str] = None
+        self._index: int | None = None
+        self._tree: str | None = None
         self._level = -1
 
     @property
-    def parent(self) -> Union["PropertyTreeNode", "PTNProxy"]:
+    def parent(self) -> PropertyTreeNode | PTNProxy:
         return self._parent
 
     @property
-    def ptn(self) -> "PropertyTreeNode":
+    def ptn(self) -> PropertyTreeNode:
         return self._ptn
 
     @property
@@ -260,7 +261,7 @@ class PTNProxy:
         else:
             return self._ptn.get(attribute)
 
-    def __getitem__(self, key: Union[str, tuple[str, int]]) -> Any:
+    def __getitem__(self, key: str | tuple[str, int]) -> Any:
         if isinstance(key, tuple):
             attribute, scenarioIdx = key
         else:
@@ -280,15 +281,15 @@ class PTNProxy:
         if self._level >= 0:
             return self._level
 
-        t: Union[PropertyTreeNode, PTNProxy] = self
+        t: PropertyTreeNode | PTNProxy = self
         self._level = 0
         while t.parent is not None:
             t = t.parent
             self._level += 1
         return self._level
 
-    def isChildOf(self, ancestor: Union["PropertyTreeNode", "PTNProxy"]) -> bool:
-        parent: Union[PropertyTreeNode, PTNProxy] = self
+    def isChildOf(self, ancestor: PropertyTreeNode | PTNProxy) -> bool:
+        parent: PropertyTreeNode | PTNProxy = self
         while parent.parent is not None:
             parent = parent.parent
             if parent == ancestor:
@@ -297,7 +298,7 @@ class PTNProxy:
 
     def getIndicies(self) -> list[int]:
         idcs: list[int] = []
-        p: Optional[Union[PropertyTreeNode, PTNProxy]] = self
+        p: PropertyTreeNode | PTNProxy | None = self
         while p is not None:
             parent = p.parent
             idcs.insert(0, p.get("index"))
@@ -317,11 +318,11 @@ class PTNProxy:
         return self._ptn.fullId
 
     @property
-    def kids(self) -> list["PropertyTreeNode"]:
+    def kids(self) -> list[PropertyTreeNode]:
         return self._ptn.kids()
 
     @property
-    def adoptees(self) -> list["PropertyTreeNode"]:
+    def adoptees(self) -> list[PropertyTreeNode]:
         return self._ptn.adoptees
 
     @property

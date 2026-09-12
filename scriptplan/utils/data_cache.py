@@ -5,5 +5,5 @@ from __future__ import annotations
 __all__ = ["FileList"]
 
 
-class FileList(list):
+class FileList(list):  # type: ignore[type-arg]
     """The input files a project was built from, in the order they were read."""

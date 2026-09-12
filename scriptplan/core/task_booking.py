@@ -12,18 +12,18 @@ smaller than the slot size is honoured exactly rather than rounded away.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
+    "all_limits",
+    "book_resource",
     "book_resources",
     "first_bookable",
-    "record_effort_start",
-    "book_resource",
-    "all_limits",
-    "limits_ok",
     "inc_limits",
-    "precise_end_time_and_release",
+    "limits_ok",
     "precise_end_time",
+    "precise_end_time_and_release",
+    "record_effort_start",
 ]
 
 
@@ -86,7 +86,7 @@ def book_resources(scenario: Any) -> None:
         scenario.doneEffort += gained_total
 
 
-def first_bookable(scenario: Any, allocation: Any, slot_idx: int) -> Optional[Any]:
+def first_bookable(scenario: Any, allocation: Any, slot_idx: int) -> Any | None:
     """The first candidate for this allocation that is free in this slot."""
     for resource in allocation.candidates():
         resource_scenario = resource.data[scenario.scenarioIdx] if resource.data else None
@@ -104,7 +104,6 @@ def first_bookable(scenario: Any, allocation: Any, slot_idx: int) -> Optional[An
 
 def record_effort_start(scenario: Any) -> None:
     """Set the task's start at its first booking, honouring a mid-slot start."""
-    from datetime import timedelta
 
     forward = scenario.property.get("forward", scenario.scenarioIdx)
     if not forward:
@@ -164,7 +163,7 @@ def all_limits(scenario: Any) -> list[Any]:
     Returns a list of Limits objects.
     """
     all_limits = []
-    task: Optional[Any] = scenario.property
+    task: Any | None = scenario.property
     while task is not None:
         limits = task.get("limits", scenario.scenarioIdx)
         if limits:
@@ -173,7 +172,7 @@ def all_limits(scenario: Any) -> list[Any]:
     return all_limits
 
 
-def limits_ok(scenario: Any, sbIdx: int, resource: Optional[Any] = None) -> bool:
+def limits_ok(scenario: Any, sbIdx: int, resource: Any | None = None) -> bool:
     """
     Check if all task limits (including parent limits) are satisfied.
 
@@ -190,7 +189,7 @@ def limits_ok(scenario: Any, sbIdx: int, resource: Optional[Any] = None) -> bool
     return True
 
 
-def inc_limits(scenario: Any, sbIdx: int, resource: Optional[Any] = None, seconds: Optional[float] = None) -> None:
+def inc_limits(scenario: Any, sbIdx: int, resource: Any | None = None, seconds: float | None = None) -> None:
     """
     Increment all task limit counters (including parent limits).
 
@@ -223,7 +222,6 @@ def precise_end_time_and_release(
     Returns:
         tuple: (precise_end_datetime, seconds_used_in_slot)
     """
-    from datetime import timedelta
 
     # Get slot parameters
     slot_duration_seconds = scenario.project.attributes.get("scheduleGranularity", 3600)
@@ -263,10 +261,7 @@ def precise_end_time_and_release(
     effort_needed_in_slot = required_effort - effort_before_slot
 
     # How many seconds into the slot does that take?
-    if effort_per_second > 0:
-        seconds_into_slot = effort_needed_in_slot / effort_per_second
-    else:
-        seconds_into_slot = slot_duration_seconds
+    seconds_into_slot = effort_needed_in_slot / effort_per_second if effort_per_second > 0 else slot_duration_seconds
 
     # Clamp to slot duration (shouldn't exceed, but safety check)
     seconds_into_slot = min(seconds_into_slot, slot_duration_seconds)

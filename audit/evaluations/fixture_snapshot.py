@@ -16,9 +16,9 @@ than a missing file.
 
 from __future__ import annotations
 
-import io
 import contextlib
 import difflib
+import io
 import os
 import sys
 import traceback
@@ -41,7 +41,7 @@ def render(path: str) -> str:
             text = handle.read()
         with contextlib.redirect_stderr(noise), contextlib.redirect_stdout(noise):
             project = ParsedProject(ProjectFileParser().parse(text))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         first = traceback.format_exception_only(type(exc), exc)[-1].strip()
         return f"! {type(exc).__name__}: {first[:200]}\n"
 

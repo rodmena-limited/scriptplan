@@ -88,7 +88,7 @@ task a "A" { effort 2h allocate r }
 taskreport t "t" { formats csv columns id, start, end timeformat "%Y-%m-%d-%H:%M" }
 """)
     stored_start, stored_end = window(project, "a")
-    report = list(project.reports)[0]
+    report = next(iter(project.reports))
     report.generate_intermediate_format()
     rows = report.content.table.to_json().get("data", []) if report.content else []
     shown = rows[0] if rows else {}

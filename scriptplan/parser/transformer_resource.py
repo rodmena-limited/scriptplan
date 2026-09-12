@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from typing import Any
 
-from lark import Token, Tree  # type: ignore[import-untyped,unused-ignore]
+from lark import Token  # type: ignore[import-untyped,unused-ignore]
 
-from scriptplan.core.units import Duration, parse_calendar_duration, parse_working_hours
-
+from scriptplan.core.units import parse_calendar_duration, parse_working_hours
 
 
 class ResourceRules:
@@ -59,8 +58,8 @@ class ResourceRules:
     def _limit(self, kind: str, items: list[Any]) -> dict[str, Any]:
         """One limit of any kind: an amount of working time per period."""
         duration: Any = items[0] if items else "0h"
-        resources: Optional[Any] = items[1] if len(items) > 1 else None
-        hours: Union[float, int] = (
+        resources: Any | None = items[1] if len(items) > 1 else None
+        hours: float | int = (
             self._parse_duration_to_hours(duration) if isinstance(duration, str) else float(duration)
         )
         return {"type": kind, "value": hours, "resources": resources}
@@ -93,7 +92,7 @@ class ResourceRules:
         """Parse limits resources: { resources id1, id2, ... }."""
         return [self._get_value(i) for i in items]
 
-    def _parse_duration_to_hours(self, duration_str: str, round_to_slots: bool = False) -> Union[float, int]:
+    def _parse_duration_to_hours(self, duration_str: str, round_to_slots: bool = False) -> float | int:
         """A limit is an amount of working time, read with the shared table.
 
         The previous regex matched a single optional unit letter, so `30min`

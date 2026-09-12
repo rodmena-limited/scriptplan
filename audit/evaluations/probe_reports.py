@@ -18,7 +18,7 @@ resource r "R" { workinghours mon-fri 9:00-17:00 }
 
 
 def _rows(project) -> list[dict]:
-    report = list(project.reports)[0]
+    report = next(iter(project.reports))
     report.generate_intermediate_format()
     if not report.content or not hasattr(report.content, "table"):
         return []
@@ -77,7 +77,7 @@ def probe_unimplemented_format_rejected() -> tuple[bool, str]:
 task a "Alpha" { start 2025-01-06 effort 1h allocate r }
 taskreport t "t" { formats ical columns id, start, end }
 """)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return True, f"raised {type(exc).__name__}: {str(exc)[:160]}"
     return False, "an 'ical' report was accepted; it writes no file and the CLI then blames scheduling"
 

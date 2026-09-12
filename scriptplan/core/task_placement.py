@@ -9,14 +9,14 @@ believing.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any
 
 __all__ = [
-    "place_task",
-    "place_slot",
-    "propagate_date",
     "finish_scheduling",
+    "place_slot",
+    "place_task",
+    "propagate_date",
     "schedule_container",
 ]
 

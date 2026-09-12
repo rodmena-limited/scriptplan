@@ -13,7 +13,7 @@ project's working day five hours out.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from scriptplan.core.timezones import from_utc
 from scriptplan.scheduler.scoreboard import Scoreboard
@@ -23,14 +23,14 @@ DEFAULT_WORK_START_HOUR = 9
 DEFAULT_WORK_END_HOUR = 17
 
 __all__ = [
+    "DEFAULT_WORK_END_HOUR",
+    "DEFAULT_WORK_START_HOUR",
+    "date_to_idx",
+    "idx_to_date",
     "init_scoreboards",
     "is_default_working_time",
     "is_working_time",
     "scoreboard_size",
-    "date_to_idx",
-    "idx_to_date",
-    "DEFAULT_WORK_START_HOUR",
-    "DEFAULT_WORK_END_HOUR",
 ]
 
 
@@ -57,7 +57,7 @@ def init_scoreboards(project: Any) -> None:
             project.scoreboardNoLeaves[i] = None
 
 
-def is_default_working_time(project: Any, date: Optional[Any]) -> bool:
+def is_default_working_time(project: Any, date: Any | None) -> bool:
     """Whether a slot falls in the project's default working hours.
 
     Slots are UTC; the default calendar (weekdays, 9am to 5pm) is meant in
@@ -93,7 +93,8 @@ def is_working_time(project: Any, sbIdx: int) -> bool:
 
 def scoreboard_size(project: Any) -> int:
     if project.scoreboard:
-        return project.scoreboard.size
+        size: int = project.scoreboard.size
+        return size
     if project.attributes["start"] and project.attributes["end"]:
         try:
             diff_seconds: float = (project.attributes["end"] - project.attributes["start"]).total_seconds()
@@ -116,7 +117,7 @@ def date_to_idx(project: Any, date: Any, forceIntoProject: bool = True) -> int:
     return idx
 
 
-def idx_to_date(project: Any, idx: int) -> Optional[Any]:
+def idx_to_date(project: Any, idx: int) -> Any | None:
     if not project.attributes["start"]:
         return None
 
