@@ -31,6 +31,27 @@ from scriptplan.core.property import (
     SymbolListAttribute,
     TaskDepListAttribute,
 )
+from scriptplan.core.project_attributes import (
+    define_account_attributes,
+    define_report_attributes,
+    define_resource_attributes,
+    define_scenario_attributes,
+    define_shift_attributes,
+    define_task_attributes,
+)
+from scriptplan.core.project_calendar import (
+    date_to_idx,
+    idx_to_date,
+    init_scoreboards,
+    is_default_working_time,
+    is_working_time,
+    scoreboard_size,
+)
+from scriptplan.core.project_tree import (
+    propagate_alap_mode,
+    propagate_container_end_dates,
+    update_container_task_status,
+)
 from scriptplan.core.scenario import Scenario
 from scriptplan.core.timezones import from_utc
 from scriptplan.core.timesheet import TimeSheets
@@ -137,164 +158,31 @@ class Project(MessageHandler):
         self.warnTsDeltas: bool = False
 
     def _define_scenario_attributes(self) -> None:
-        attrs: list[list[Any]] = [
-            ["active", "Enabled", BooleanAttribute, True, False, False, True],
-            ["ownbookings", "Own Bookings", BooleanAttribute, False, False, False, True],
-            ["projection", "Projection Mode", BooleanAttribute, True, False, False, False],
-        ]
-        for a in attrs:
-            self.scenarios.addAttributeType(AttributeDefinition(*a))
+        define_scenario_attributes(self.scenarios)
 
     def _define_account_attributes(self) -> None:
-        attrs: list[list[Any]] = [
-            # ID           Name            Type                     Inh   InhPrj Scen  Default
-            ["aggregate", "Aggregate", SymbolAttribute, True, False, False, "tasks"],
-            ["bsi", "BSI", StringAttribute, False, False, False, ""],
-            ["credits", "Credits", ListAttribute, False, False, True, []],
-            ["index", "Index", IntegerAttribute, False, False, False, -1],
-            ["flags", "Flags", FlagListAttribute, True, False, True, []],
-            ["tree", "Tree Index", StringAttribute, False, False, False, ""],
-        ]
-        for a in attrs:
-            self.accounts.addAttributeType(AttributeDefinition(*a))
+        define_account_attributes(self.accounts)
 
     def _define_shift_attributes(self) -> None:
-        attrs: list[list[Any]] = [
-            # ID           Name            Type                     Inh   InhPrj Scen  Default
-            ["bsi", "BSI", StringAttribute, False, False, False, ""],
-            ["index", "Index", IntegerAttribute, False, False, False, -1],
-            ["leaves", "Leaves", LeaveListAttribute, True, True, True, []],
-            ["replace", "Replace", BooleanAttribute, True, False, True, False],
-            ["timezone", "Time Zone", StringAttribute, True, True, True, TjTime.timeZone()],
-            ["tree", "Tree Index", StringAttribute, False, False, False, ""],
-            ["workinghours", "Working Hours", ShiftAssignmentsAttribute, True, True, True, None],
-        ]
-        for a in attrs:
-            self.shifts.addAttributeType(AttributeDefinition(*a))
+        define_shift_attributes(self.shifts)
 
     def _define_resource_attributes(self) -> None:
-        # Add attributes required by ResourceScenario
-        attrs: list[list[Any]] = [
-            ["alloctdeffort", "Allocated Effort", IntegerAttribute, True, False, True, 0],
-            ["booking", "Booking", ResourceListAttribute, True, False, True, []],
-            ["bsi", "BSI", StringAttribute, False, False, False, ""],
-            ["email", "Email", StringAttribute, False, False, False, ""],
-            ["index", "Index", IntegerAttribute, False, False, False, -1],
-            ["chargeset", "Charge Set", StringAttribute, True, False, True, []],
-            ["criticalness", "Criticalness", FloatAttribute, False, False, True, 0.0],
-            ["directreports", "Direct Reports", ResourceListAttribute, True, False, True, []],
-            ["duties", "Duties", TaskDepListAttribute, True, False, True, []],
-            ["efficiency", "Efficiency", FloatAttribute, True, False, True, 1.0],
-            ["effort", "Effort", IntegerAttribute, True, False, True, 0],
-            ["flags", "Flags", FlagListAttribute, True, False, True, []],
-            ["leaves", "Leaves", LeaveListAttribute, True, False, True, []],  # Changed to LeaveListAttribute
-            ["leaveallowances", "Leave Allowances", AttributeBase, True, False, True, None],  # Placeholder
-            ["limits", "Limits", AttributeBase, True, False, True, None],  # Placeholder
-            ["managers", "Managers", ResourceListAttribute, True, False, True, []],
-            ["note", "Note", StringAttribute, False, False, False, None],
-            ["rate", "Rate", FloatAttribute, True, False, True, 0.0],
-            ["reports", "Reports", ResourceListAttribute, True, False, True, []],
-            ["shifts", "Shifts", ShiftAssignmentsAttribute, True, False, True, None],
-            ["timezone", "Time Zone", StringAttribute, True, False, True, None],
-            ["workinghours", "Working Hours", AttributeBase, True, False, True, None],
-        ]
-        for a in attrs:
-            self.resources.addAttributeType(AttributeDefinition(*a))
+        define_resource_attributes(self.resources)
 
     def _define_task_attributes(self) -> None:
-        attrs: list[list[Any]] = [
-            ["allocate", "Allocate", ListAttribute, True, False, True, []],
-            ["assignedresources", "Assigned Resources", ListAttribute, False, False, True, []],
-            ["booking", "Booking", ResourceListAttribute, True, False, True, []],
-            ["bsi", "BSI", StringAttribute, False, False, False, ""],
-            ["charge", "Charge", FloatAttribute, True, False, True, 0.0],
-            ["chargeset", "Charge Set", StringAttribute, True, False, True, []],
-            ["complete", "Complete", FloatAttribute, True, False, True, 0.0],
-            ["competitors", "Competitors", ListAttribute, True, False, True, []],
-            ["criticalness", "Criticalness", FloatAttribute, False, False, True, 0.0],
-            ["depends", "Dependencies", TaskDepListAttribute, True, False, True, []],
-            ["duration", "Duration", IntegerAttribute, True, False, True, 0],
-            ["effort", "Effort", IntegerAttribute, True, False, True, 0],
-            ["effortdone", "Effort Done", IntegerAttribute, True, False, True, 0],
-            ["effortleft", "Effort Left", IntegerAttribute, True, False, True, 0],
-            ["end", "End", DateAttribute, False, False, True, None],
-            ["flags", "Flags", FlagListAttribute, True, False, True, []],
-            ["forward", "Forward", BooleanAttribute, True, False, True, True],
-            ["gauge", "Gauge", StringAttribute, True, False, True, None],
-            ["index", "Index", IntegerAttribute, False, False, False, -1],
-            ["length", "Length", IntegerAttribute, True, False, True, 0],
-            ["limits", "Limits", PropertyAttribute, True, False, True, None],
-            ["maxend", "Max End", DateAttribute, True, False, True, None],
-            ["maxstart", "Max Start", DateAttribute, True, False, True, None],
-            ["minend", "Min End", DateAttribute, True, False, True, None],
-            ["minstart", "Min Start", DateAttribute, True, False, True, None],
-            ["milestone", "Milestone", BooleanAttribute, True, False, True, False],
-            ["note", "Note", StringAttribute, False, False, False, None],
-            ["pathcriticalness", "Path Criticalness", FloatAttribute, False, False, True, 0.0],
-            ["precedes", "Precedes", TaskDepListAttribute, True, False, True, []],
-            ["priority", "Priority", IntegerAttribute, True, False, True, 500],
-            ["projectionmode", "Projection Mode", BooleanAttribute, True, False, True, False],
-            ["responsible", "Responsible", ListAttribute, True, False, True, []],
-            ["scheduled", "Scheduled", BooleanAttribute, True, False, True, False],
-            ["shifts", "Shifts", ShiftAssignmentsAttribute, True, False, True, None],
-            ["start", "Start", DateAttribute, True, False, True, None],
-            ["status", "Status", StringAttribute, True, False, True, ""],
-        ]
-        for a in attrs:
-            self.tasks.addAttributeType(AttributeDefinition(*a))
+        define_task_attributes(self.tasks)
 
     def _define_report_attributes(self) -> None:
-        attrs: list[list[Any]] = [
-            # ID               Name                Type                     Inh    InhPrj  Scen   Default
-            ["accountRoot", "Account Root", StringAttribute, True, False, False, None],
-            ["auxDir", "Aux Directory", StringAttribute, True, True, False, ""],
-            ["balance", "Balance", ListAttribute, True, False, False, []],
-            ["caption", "Caption", RichTextAttribute, True, False, False, None],
-            ["center", "Center", RichTextAttribute, True, False, False, None],
-            ["columns", "Columns", ColumnListAttribute, True, False, False, []],
-            ["currencyFormat", "Currency Format", StringAttribute, True, True, False, None],
-            ["end", "End Date", DateAttribute, True, True, False, None],
-            ["epilog", "Epilog", RichTextAttribute, True, False, False, None],
-            ["flags", "Flags", FlagListAttribute, True, False, False, []],
-            ["footer", "Footer", RichTextAttribute, True, False, False, None],
-            ["formats", "Formats", FormatListAttribute, True, False, False, []],
-            ["header", "Header", RichTextAttribute, True, False, False, None],
-            ["headline", "Headline", RichTextAttribute, True, False, False, None],
-            ["hideAccount", "Hide Account", LogicalExpressionAttribute, True, False, False, None],
-            ["hideResource", "Hide Resource", LogicalExpressionAttribute, True, False, False, None],
-            ["hideTask", "Hide Task", LogicalExpressionAttribute, True, False, False, None],
-            ["interactive", "Interactive", BooleanAttribute, True, False, False, False],
-            ["journalAttributes", "Journal Attributes", SymbolListAttribute, True, False, False, []],
-            ["journalMode", "Journal Mode", SymbolAttribute, True, False, False, None],
-            ["leafTasksOnly", "Leaf Tasks Only", BooleanAttribute, True, False, False, False],
-            ["left", "Left", RichTextAttribute, True, False, False, None],
-            ["loadUnit", "Load Unit", SymbolAttribute, True, True, False, "days"],
-            ["numberFormat", "Number Format", StringAttribute, True, True, False, None],
-            ["openNodes", "Open Nodes", ListAttribute, True, False, False, []],
-            ["period", "Period", StringAttribute, True, True, False, None],
-            ["prolog", "Prolog", RichTextAttribute, True, False, False, None],
-            ["resourceRoot", "Resource Root", StringAttribute, True, False, False, None],
-            ["right", "Right", RichTextAttribute, True, False, False, None],
-            ["rollupAccount", "Rollup Account", LogicalExpressionAttribute, True, False, False, None],
-            ["rollupResource", "Rollup Resource", LogicalExpressionAttribute, True, False, False, None],
-            ["rollupTask", "Rollup Task", LogicalExpressionAttribute, True, False, False, None],
-            ["scenarios", "Scenarios", ScenarioListAttribute, True, True, False, []],
-            ["selfContained", "Self Contained", BooleanAttribute, True, False, False, False],
-            ["showResources", "Show Resources", BooleanAttribute, True, False, False, False],
-            ["showTasks", "Show Tasks", BooleanAttribute, True, False, False, False],
-            ["sort", "Sort", SortListAttribute, True, False, False, []],
-            ["sortAccounts", "Sort Accounts", SortListAttribute, True, False, False, []],
-            ["sortResources", "Sort Resources", SortListAttribute, True, False, False, []],
-            ["sortTasks", "Sort Tasks", SortListAttribute, True, False, False, []],
-            ["start", "Start Date", DateAttribute, True, True, False, None],
-            ["taskRoot", "Task Root", StringAttribute, True, False, False, None],
-            ["timeFormat", "Time Format", StringAttribute, True, True, False, "%Y-%m-%d"],
-            ["timeZone", "Time Zone", StringAttribute, True, True, False, None],
-            ["title", "Title", StringAttribute, True, False, False, None],
-            ["width", "Width", IntegerAttribute, True, False, False, None],
-        ]
-        for a in attrs:
-            self.reports.addAttributeType(AttributeDefinition(*a))
+        define_report_attributes(self.reports)
+
+    def _propagateContainerEndDates(self, scIdx: int) -> None:
+        propagate_container_end_dates(self, scIdx)
+
+    def _updateContainerTaskStatus(self, scIdx: int) -> None:
+        update_container_task_status(self, scIdx)
+
+    def _propagateALAPMode(self, scIdx: int) -> None:
+        propagate_alap_mode(self, scIdx)
 
     def scenarioCount(self) -> Any:
         return self.scenarios.items()
@@ -398,81 +286,6 @@ class Project(MessageHandler):
 
         for resource in self.resources:
             resource.prepareScheduling(scIdx)  # type: ignore[attr-defined]
-
-    def _propagateContainerEndDates(self, scIdx: int) -> None:
-        """
-        Propagate container task end dates to their leaf children as constraints.
-
-        In ALAP mode, if a container has an end date, only the "terminal" tasks
-        (those with no successors within the container) should get the end constraint.
-        Other tasks will get their end constraints from their successors.
-
-        Special handling for `onstart` dependencies in ALAP mode:
-        - `A depends B { onstart }` means A.start >= B.start
-        - In ALAP, this translates to: A must END before B can START
-        - So B is the anchor (terminal), not A
-        - A derives its end from B's start
-        """
-        # First, identify which tasks have successors via normal (finish-to-start) dependencies
-        # For onstart dependencies in ALAP, the dependent task (A) derives its END from
-        # predecessor's START, so the predecessor (B) is the terminal task
-        has_fs_successor: set[Any] = set()  # Tasks that are predecessors in finish-to-start deps
-        has_onstart_dep: set[Any] = set()  # Tasks that have onstart dependencies (not terminal)
-
-        for task in self.tasks:
-            if not task.leaf():
-                continue
-            deps = task.get("depends", scIdx) or []
-            for dep in deps:
-                if isinstance(dep, dict):
-                    pred = dep.get("task")
-                    onstart = dep.get("onstart", False)
-                elif hasattr(dep, "task"):
-                    pred = dep.task
-                    onstart = getattr(dep, "onstart", False)
-                else:
-                    pred = dep
-                    onstart = False
-
-                if pred and hasattr(pred, "fullId"):
-                    if onstart:
-                        # For onstart deps in ALAP: the dependent task (this task)
-                        # derives END from predecessor's START, so this task is NOT terminal
-                        has_onstart_dep.add(task.fullId if hasattr(task, "fullId") else None)
-                    else:
-                        # Normal finish-to-start: predecessor has a successor
-                        has_fs_successor.add(pred.fullId)
-
-        def propagate_end_to_children(task: Any, container_end: Optional[Any]) -> None:
-            """Recursively propagate end constraint down the task tree."""
-            task_end = task.get("end", scIdx)
-            # Use the most restrictive (earliest) end date
-            effective_end = task_end if task_end else container_end
-
-            if task.leaf():
-                # Leaf task - apply the constraint if ALAP, no explicit end,
-                # AND the task is terminal
-                forward = task.get("forward", scIdx)
-                task_id = task.fullId if hasattr(task, "fullId") else None
-
-                # A task is terminal if:
-                # 1. No finish-to-start successors (nothing depends on its END), AND
-                # 2. No onstart dependencies (doesn't derive END from another task's START)
-                is_terminal = (task_id not in has_fs_successor) and (task_id not in has_onstart_dep)
-
-                if forward is False and not task_end and container_end and is_terminal:
-                    task[("end", scIdx)] = container_end
-            else:
-                # Container - propagate to children
-                for child in task.children:
-                    propagate_end_to_children(child, effective_end)
-
-        # Start from root tasks (no parent)
-        for task in self.tasks:
-            if task.parent is None:
-                task_end = task.get("end", scIdx)
-                if task_end:
-                    propagate_end_to_children(task, task_end)
 
     def finishScenario(self, scIdx: int) -> None:
         for task in self.tasks:
@@ -624,245 +437,23 @@ class Project(MessageHandler):
         self.scheduleErrors.append((task_id, detail))
         self.error("unscheduled_task", message, data=task_id)
 
-    def _updateContainerTaskStatus(self, scIdx: int) -> None:
-        """Mark container tasks as scheduled when all their children are scheduled.
-
-        Also compute start/end dates for container tasks based on children.
-        """
-        for task in self.tasks:
-            if task.leaf():
-                continue  # Skip leaf tasks
-
-            if task.get("scheduled", scIdx):
-                continue  # Already scheduled
-
-            # Check if all children are scheduled
-            children = task.children
-            if not children:
-                continue
-
-            all_scheduled = all(child.get("scheduled", scIdx) for child in children)
-            if not all_scheduled:
-                continue
-
-            # All children scheduled - mark container as scheduled
-            # Compute start/end from children
-            min_start: Optional[Any] = None
-            max_end: Optional[Any] = None
-            for child in children:
-                child_start = child.get("start", scIdx)
-                child_end = child.get("end", scIdx)
-                if child_start and (min_start is None or child_start < min_start):
-                    min_start = child_start
-                if child_end and (max_end is None or child_end > max_end):
-                    max_end = child_end
-
-            if min_start:
-                task[("start", scIdx)] = min_start
-            if max_end:
-                task[("end", scIdx)] = max_end
-            task[("scheduled", scIdx)] = True
-
-    def _propagateALAPMode(self, scIdx: int) -> None:
-        """
-        Propagate ALAP scheduling mode backward through dependency chains.
-
-        When task B depends on task A, and B is ALAP with a fixed end date,
-        task A should also be scheduled ALAP (as late as possible) to allow
-        B to meet its deadline.
-
-        This implements "backward propagation" of ALAP constraints:
-        1. Find all ALAP tasks with fixed end dates (anchor tasks)
-        2. For each anchor, traverse its dependencies backward
-        3. Mark predecessor tasks as ALAP and set their end constraint
-           to the dependent task's calculated start
-        """
-        # Build reverse dependency map: task -> list of tasks that depend on it
-        reverse_deps: dict[Any, list[Any]] = {}  # predecessor_id -> [successor tasks]
-        for task in self.tasks:
-            if not task.leaf():
-                continue
-            deps = task.get("depends", scIdx) or []
-            for dep in deps:
-                # Extract the predecessor task from dependency
-                if isinstance(dep, dict):
-                    pred = dep.get("task")
-                elif hasattr(dep, "task"):
-                    pred = dep.task
-                else:
-                    pred = dep
-
-                if pred:
-                    pred_id = pred.fullId if hasattr(pred, "fullId") else id(pred)
-                    if pred_id not in reverse_deps:
-                        reverse_deps[pred_id] = []
-                    reverse_deps[pred_id].append(task)
-
-        # Find ALAP anchor tasks (ALAP with fixed end)
-        alap_anchors: list[Any] = []
-        for task in self.tasks:
-            if not task.leaf():
-                continue
-            forward = task.get("forward", scIdx)
-            end = task.get("end", scIdx)
-            if forward is False and end:  # ALAP with fixed end
-                alap_anchors.append(task)
-
-        # Propagate ALAP backward from each anchor
-        # Use BFS to traverse dependency chains
-        processed: set[Any] = set()
-        for anchor in alap_anchors:
-            anchor_id = anchor.fullId if hasattr(anchor, "fullId") else id(anchor)
-            processed.add(anchor_id)
-
-            # Get dependencies of the anchor (tasks that must finish before anchor starts)
-            deps = anchor.get("depends", scIdx) or []
-            for dep in deps:
-                if isinstance(dep, dict):
-                    pred = dep.get("task")
-                elif hasattr(dep, "task"):
-                    pred = dep.task
-                else:
-                    pred = dep
-
-                if not pred:
-                    continue
-
-                pred_id = pred.fullId if hasattr(pred, "fullId") else id(pred)
-                if pred_id in processed:
-                    continue
-
-                # Mark predecessor as ALAP
-                # It should finish as late as possible while still allowing the anchor to start
-                self._markTaskALAP(pred, scIdx, processed, reverse_deps)
-
-    def _markTaskALAP(self, task: Any, scIdx: int, processed: set[Any], reverse_deps: dict[Any, list[Any]]) -> None:
-        """
-        Mark a task as ALAP and propagate to its predecessors.
-
-        Args:
-            task: The task to mark as ALAP
-            scIdx: Scenario index
-            processed: Set of already processed task IDs
-            reverse_deps: Map of task ID -> list of successor tasks
-        """
-        task_id = task.fullId if hasattr(task, "fullId") else id(task)
-        if task_id in processed:
-            return
-        processed.add(task_id)
-
-        # Only process leaf tasks
-        if not task.leaf():
-            return
-
-        # Check if task is already explicitly ASAP with a fixed start
-        # In that case, don't override
-        forward = task.get("forward", scIdx)
-        start = task.get("start", scIdx)
-        if forward is True and start:
-            # Explicitly ASAP with start date - don't change
-            return
-
-        # Mark as ALAP (forward=False)
-        task[("forward", scIdx)] = False
-
-        # Now propagate to predecessors of this task
-        deps = task.get("depends", scIdx) or []
-        for dep in deps:
-            if isinstance(dep, dict):
-                pred = dep.get("task")
-            elif hasattr(dep, "task"):
-                pred = dep.task
-            else:
-                pred = dep
-
-            if pred:
-                self._markTaskALAP(pred, scIdx, processed, reverse_deps)
-
     def initScoreboards(self) -> None:
-        if not self.attributes["start"] or not self.attributes["end"]:
-            return
-
-        self.scoreboard = Scoreboard(
-            self.attributes["start"], self.attributes["end"], self.attributes["scheduleGranularity"], 2
-        )
-        self.scoreboardNoLeaves = Scoreboard(
-            self.attributes["start"], self.attributes["end"], self.attributes["scheduleGranularity"], 2
-        )
-
-        # Initialize working time slots - mark working hours as None
-        # Default working hours: Mon-Fri, 9am-5pm
-        size: int = self.scoreboardSize()
-        self.attributes["scheduleGranularity"]
-
-        for i in range(size):
-            date = self.idxToDate(i)
-            if self._isDefaultWorkingTime(date):
-                self.scoreboard[i] = None
-                self.scoreboardNoLeaves[i] = None
+        init_scoreboards(self)
 
     def _isDefaultWorkingTime(self, date: Optional[Any]) -> bool:
-        """Whether a slot falls in the project's default working hours.
-
-        Slots are UTC; the default calendar (weekdays, 9am to 5pm) is meant in
-        the project's own timezone, so the slot is read there. Comparing the
-        hour of a UTC slot against 9-17 puts a New York project's working day
-        five hours out.
-        """
-        if date is None:
-            return False
-        # Check global vacations, which are stored in UTC like the slot.
-        vacations = self.attributes.get("vacations", [])
-        for vac in vacations:
-            if hasattr(vac, "interval") and vac.interval:
-                if vac.interval.start <= date < vac.interval.end:
-                    return False
-            elif hasattr(vac, "contains") and vac.contains(date):
-                return False
-
-        local = from_utc(date, self.attributes.get("timezone")) or date
-        if local.weekday() >= 5:  # Saturday or Sunday
-            return False
-        result: bool = DEFAULT_WORK_START_HOUR <= local.hour < DEFAULT_WORK_END_HOUR
-        return result
+        return is_default_working_time(self, date)
 
     def isWorkingTime(self, sbIdx: int) -> bool:
-        """Check if a scoreboard slot is working time."""
-        if self.scoreboard is None:
-            return self._isDefaultWorkingTime(self.idxToDate(sbIdx))
-        result: Any = self.scoreboard[sbIdx]
-        return result is None
+        return is_working_time(self, sbIdx)
 
     def scoreboardSize(self) -> int:
-        if self.scoreboard:
-            return self.scoreboard.size
-        if self.attributes["start"] and self.attributes["end"]:
-            try:
-                diff_seconds: float = (self.attributes["end"] - self.attributes["start"]).total_seconds()
-            except AttributeError:
-                diff_seconds = float(self.attributes["end"] - self.attributes["start"])
-            return int(diff_seconds / self.attributes["scheduleGranularity"]) + 1
-        return 0
+        return scoreboard_size(self)
 
     def dateToIdx(self, date: Any, forceIntoProject: bool = True) -> int:
-        if not self.attributes["start"]:
-            return 0
-
-        try:
-            diff_seconds: float = (date - self.attributes["start"]).total_seconds()
-        except AttributeError:
-            diff_seconds = float(date - self.attributes["start"])
-
-        idx: int = int(diff_seconds / self.attributes["scheduleGranularity"])
-        return idx
+        return date_to_idx(self, date, forceIntoProject)
 
     def idxToDate(self, idx: int) -> Optional[Any]:
-        if not self.attributes["start"]:
-            return None
-
-        # Assuming idx is integer steps of scheduleGranularity from start
-        seconds: int = idx * self.attributes["scheduleGranularity"]
-        return self.attributes["start"] + timedelta(seconds=seconds)
+        return idx_to_date(self, idx)
 
     def addReport(self, report: Any) -> None:
         """
