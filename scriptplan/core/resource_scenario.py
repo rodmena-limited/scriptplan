@@ -8,6 +8,19 @@ scenario-specific data for a Resource.
 import contextlib
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from scriptplan.core.resource_reporting import (
+    allocated_slots,
+    calc_criticalness,
+    effective_work,
+    finish_scheduling,
+    free_slots,
+    set_direct_reports,
+    set_reports,
+    set_reports_internal,
+    tree_sum,
+    tree_sum_recursive,
+    work_slots,
+)
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.scheduler.scoreboard import Scoreboard
 
@@ -178,112 +191,11 @@ class ResourceScenario(ScenarioData):
                             leave_type = leave.type_idx if hasattr(leave, "type_idx") else 0
                             self.scoreboard[i] = leave_type << 2
 
-    def calcCriticalness(self) -> None:
-        """
-        Calculate the criticalness of the resource.
-
-        The criticalness is a measure for the probability that all allocations
-        can be fulfilled. A value above 1.0 means that statistically some tasks
-        will not get their resources.
-        """
-        if self.scoreboard is None:
-            self.property["criticalness", self.scenarioIdx] = 0.0
-        else:
-            free_slots = sum(1 for slot in self.scoreboard if slot is None)
-            allocated_effort = self.property.get("alloctdeffort", self.scenarioIdx) or 0
-
-            if free_slots == 0:
-                self.property["criticalness", self.scenarioIdx] = 1.0
-            else:
-                self.property["criticalness", self.scenarioIdx] = allocated_effort / free_slots
-
-    def setDirectReports(self) -> None:
-        """
-        Set up the direct reports relationships based on managers.
-        """
-        managers = self.property.get("managers", self.scenarioIdx) or []
-        new_managers = []
-
-        for manager_id in managers:
-            manager = self.project.resources.get(manager_id) if isinstance(manager_id, str) else manager_id  # type: ignore[attr-defined]
-
-            if manager is None:
-                self.error("resource_id_expected", f"{manager_id} is not a defined resource.")
-                continue
-
-            if not manager.leaf():
-                self.error(
-                    "manager_is_group",
-                    f"Resource {self.property.fullId} has group {manager.fullId} assigned as manager.",
-                )
-
-            if manager == self.property:
-                self.error("manager_is_self", f"Resource {self.property.fullId} cannot manage itself.")
-
-            if self.property.leaf():
-                direct_reports = manager.get("directreports", self.scenarioIdx) or []
-                if self.property not in direct_reports:
-                    direct_reports.append(self.property)
-
-            new_managers.append(manager)
-
-        # Update managers list with unique entries
-        seen = set()
-        unique_managers = []
-        for m in new_managers:
-            if m not in seen:
-                unique_managers.append(m)
-                seen.add(m)
-
-        self.property["managers", self.scenarioIdx] = unique_managers
-
-    def setReports(self) -> None:
-        """
-        Set up reporting relationships.
-        """
-        direct_reports = self.property.get("directreports", self.scenarioIdx)
-        if not direct_reports:
-            return
-
-        managers = self.property.get("managers", self.scenarioIdx) or []
-        for r in managers:
-            if hasattr(r, "setReports_i"):
-                r.setReports_i(self.scenarioIdx, [self.property])
-
     def preScheduleCheck(self) -> None:
         """
         Pre-schedule validation check.
         """
         pass
-
-    def finishScheduling(self) -> None:
-        """
-        Finish scheduling housekeeping.
-
-        This method is called after scheduling is completed to do housekeeping
-        like updating parent resources with duties from children.
-        """
-        # Recursively descend into all child resources
-        for resource in self.property.children:
-            if hasattr(resource, "finishScheduling"):
-                resource.finishScheduling(self.scenarioIdx)
-
-        # Add parent tasks of each task to the duties list
-        duties = self.property.get("duties", self.scenarioIdx) or []
-        current_duties = list(duties)
-        for task in current_duties:
-            if hasattr(task, "ancestors"):
-                for p_task in task.ancestors(True):
-                    if p_task not in duties:
-                        duties.append(p_task)
-
-        # Add assigned tasks to parent resource duties
-        parents = self.property.parents() if callable(self.property.parents) else self.property.parents
-        for p_resource in parents or []:
-            p_duties = p_resource.get("duties", self.scenarioIdx) or []
-            for task in duties:
-                if task not in p_duties:
-                    p_duties.append(task)
 
     def available(self, sb_idx: int) -> bool:
         """
@@ -568,167 +480,37 @@ class ResourceScenario(ScenarioData):
         result3: bool = self.project.isWorkingTime(sb_idx)
         return result3
 
+    def calcCriticalness(self) -> None:
+        calc_criticalness(self)
+
+    def setDirectReports(self) -> None:
+        set_direct_reports(self)
+
+    def setReports(self) -> None:
+        set_reports(self)
+
     def setReports_i(self, reports: list[Any]) -> None:
-        """
-        Internal method to set reports relationship.
+        set_reports_internal(self, reports)
 
-        Args:
-            reports: List of resources reporting to this one
-        """
-        if self.property in reports:
-            self.error("manager_loop", f"Management loop detected. {self.property.fullId} has self in list of reports")
+    def finishScheduling(self) -> None:
+        finish_scheduling(self)
 
-        current_reports = self.property.get("reports", self.scenarioIdx) or []
-        for r in reports:
-            if r not in current_reports:
-                current_reports.append(r)
-
-        managers = self.property.get("managers", self.scenarioIdx) or []
-        for r in managers:
-            if hasattr(r, "setReports_i"):
-                r.setReports_i(self.scenarioIdx, current_reports)
-
-    def treeSum(self, start_idx: int, end_idx: int, *args: Any, block: Callable[["ResourceScenario"], float]) -> float:
-        """
-        Generic tree iterator that recursively accumulates results.
-
-        Args:
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-            *args: Additional arguments
-            block: Callable to execute on leaf nodes
-
-        Returns:
-            Accumulated sum
-        """
-        cache_tag = "treeSum"
-        return self.treeSumR(cache_tag, start_idx, end_idx, *args, block=block)
+    def treeSum(self, start_idx: int, end_idx: int, *args: Any, block: Callable[[Any], float]) -> float:
+        return tree_sum(self, start_idx, end_idx, *args, block=block)
 
     def treeSumR(
-        self, cache_tag: str, start_idx: int, end_idx: int, *args: Any, block: Callable[["ResourceScenario"], float]
+        self, cache_tag: str, start_idx: int, end_idx: int, *args: Any, block: Callable[[Any], float]
     ) -> float:
-        """
-        Recursive implementation of treeSum.
-
-        Args:
-            cache_tag: Cache key tag
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-            *args: Additional arguments
-            block: Callable to execute on leaf nodes
-
-        Returns:
-            Accumulated sum
-        """
-        if self.property.container:  # type: ignore[attr-defined]
-            sum_val = 0.0
-            for resource in self.property.kids():
-                if resource.data and resource.data[self.scenarioIdx]:
-                    res_scenario = resource.data[self.scenarioIdx]
-                    sum_val += res_scenario.treeSumR(cache_tag, start_idx, end_idx, *args, block=block)
-            return sum_val
-        else:
-            return block(self)
+        return tree_sum_recursive(self, cache_tag, start_idx, end_idx, *args, block=block)
 
     def getEffectiveWork(self, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> float:
-        """
-        Get the effective work done by this resource.
-
-        Args:
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-            task: Optional task filter
-
-        Returns:
-            Work in daily load units
-        """
-        duties = self.property.get("duties", self.scenarioIdx) or []
-        if start_idx >= end_idx or (task and task not in duties):
-            return 0.0
-
-        def calculate(res_scen: "ResourceScenario") -> float:
-            if res_scen.scoreboard is None:
-                return 0.0
-            allocated = res_scen.getAllocatedSlots(start_idx, end_idx, task)
-            granularity = res_scen.project.attributes.get("scheduleGranularity", 3600)
-            efficiency = res_scen.property.get("efficiency", res_scen.scenarioIdx) or 1.0
-            daily_load: float = res_scen.project.convertToDailyLoad(allocated * granularity) * efficiency  # type: ignore[attr-defined]
-            return daily_load
-
-        return self.treeSum(start_idx, end_idx, task, block=calculate)
+        return effective_work(self, start_idx, end_idx, task)
 
     def getAllocatedSlots(self, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> int:
-        """
-        Count booked slots in the given range.
-
-        Args:
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-            task: Optional task filter
-
-        Returns:
-            Number of allocated slots
-        """
-        if self.scoreboard is None:
-            return 0
-
-        if start_idx >= end_idx:
-            return 0
-
-        from scriptplan.core.task import Task
-
-        booked_slots = 0
-        task_list = task.all() if task and hasattr(task, "all") else []
-
-        actual_end = min(end_idx, len(self.scoreboard))
-        for i in range(start_idx, actual_end):
-            slot = self.scoreboard[i]
-            if isinstance(slot, Task) and (task is None or slot in task_list or slot == task):
-                booked_slots += 1
-
-        return booked_slots
+        return allocated_slots(self, start_idx, end_idx, task)
 
     def getFreeSlots(self, start_idx: int, end_idx: int) -> int:
-        """
-        Count free slots in the given range.
-
-        Args:
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-
-        Returns:
-            Number of free slots
-        """
-        if self.scoreboard is None:
-            return 0
-
-        count = 0
-        actual_end = min(end_idx, len(self.scoreboard))
-        for i in range(start_idx, actual_end):
-            if self.scoreboard[i] is None:
-                count += 1
-        return count
+        return free_slots(self, start_idx, end_idx)
 
     def getWorkSlots(self, start_idx: int, end_idx: int) -> int:
-        """
-        Count work slots (free + allocated) in the given range.
-
-        Args:
-            start_idx: Start scoreboard index
-            end_idx: End scoreboard index
-
-        Returns:
-            Number of work slots
-        """
-        from scriptplan.core.task import Task
-
-        if self.scoreboard is None:
-            return 0
-
-        count = 0
-        actual_end = min(end_idx, len(self.scoreboard))
-        for i in range(start_idx, actual_end):
-            slot = self.scoreboard[i]
-            if slot is None or isinstance(slot, Task):
-                count += 1
-        return count
+        return work_slots(self, start_idx, end_idx)

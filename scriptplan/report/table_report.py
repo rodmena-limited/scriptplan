@@ -7,6 +7,14 @@ of tabular reports. All tabular reports are converted to an abstract
 the requested output format.
 """
 
+from scriptplan.report.table_headers import default_column_title, header_cell
+from scriptplan.report.table_cells import (
+    cell_value,
+    cost_value,
+    duration_value,
+    format_value,
+    revenue_value,
+)
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
@@ -345,25 +353,6 @@ class TableReport(ReportBase):
         return self.table.to_csv()
 
     @classmethod
-    def default_column_title(cls, column_id: str) -> Optional[str]:
-        """
-        Get the default column title for a column ID.
-
-        Args:
-            column_id: The column identifier
-
-        Returns:
-            Default title or None
-        """
-        # Special columns without fixed titles
-        if column_id in ("chart", "hourly", "daily", "weekly", "monthly", "quarterly", "yearly"):
-            return ""
-
-        if column_id in cls.PROPERTIES_BY_ID:
-            return cls.PROPERTIES_BY_ID[column_id][0]
-        return None
-
-    @classmethod
     def indent(cls, column_id: str, property_type: Any = None) -> bool:
         """
         Determine if column values should be indented.
@@ -423,33 +412,6 @@ class TableReport(ReportBase):
             return cls.PROPERTIES_BY_ID[column_id][3]
         return False
 
-    def generate_header_cell(self, column_def: Any) -> ReportTableCell:
-        """
-        Generate a header cell for a column.
-
-        Args:
-            column_def: Column definition (can be dict, object with id attr, or string)
-
-        Returns:
-            ReportTableCell for the header
-        """
-        # Handle different column_def formats
-        if isinstance(column_def, dict):
-            column_id = column_def.get("id", str(column_def))
-            options = column_def.get("options", {})
-            title = options.get("title") if options else None
-        elif hasattr(column_def, "id"):
-            column_id = column_def.id
-            title = getattr(column_def, "title", None)
-        else:
-            column_id = str(column_def)
-            title = None
-
-        if not title:
-            title = self.default_column_title(column_id) or column_id
-
-        return ReportTableCell(text=title, alignment=self.alignment(column_id), is_header=True)
-
     def generate_cell(self, property_node: Any, column_def: Any, scenario_idx: int = 0) -> ReportTableCell:
         """
         Generate a data cell for a property and column.
@@ -479,147 +441,6 @@ class TableReport(ReportBase):
         text = self._format_value(value, column_id)
 
         return ReportTableCell(text=text, alignment=alignment, indent=indent_level)
-
-    def _get_cell_value(self, property_node: Any, column_id: str, scenario_idx: int) -> Any:
-        """
-        Get the value for a cell.
-
-        Args:
-            property_node: The property
-            column_id: Column identifier
-            scenario_idx: Scenario index
-
-        Returns:
-            The cell value
-        """
-        try:
-            # Handle special computed columns
-            if column_id == "revenue":
-                return self._get_revenue_value(property_node, scenario_idx)
-            elif column_id == "cost":
-                return self._get_cost_value(property_node, scenario_idx)
-            elif column_id == "duration":
-                return self._get_duration_value(property_node, scenario_idx)
-
-            if self.is_scenario_specific(column_id):
-                return property_node.get(column_id, scenario_idx) if hasattr(property_node, "get") else None
-            else:
-                return property_node.get(column_id) if hasattr(property_node, "get") else None
-        except (ValueError, KeyError, AttributeError):
-            # Unknown attribute - return placeholder
-            return "-"
-
-    def _get_duration_value(self, property_node: Any, scenario_idx: int) -> Any:
-        """Elapsed scheduled time, as a number of days.
-
-        The `duration` attribute is what the file asked for, and is zero for
-        every task that did not ask for one. What a report means by "duration"
-        is how long the task actually took, so it is measured from the dates
-        the scheduler worked out.
-        """
-        try:
-            start = property_node.get("start", scenario_idx)
-            end = property_node.get("end", scenario_idx)
-        except (ValueError, KeyError, AttributeError):
-            return None
-        if not start or not end:
-            return None
-        return (end - start).total_seconds() / 86400.0
-
-    def _get_revenue_value(self, property_node: Any, scenario_idx: int) -> Any:
-        """
-        Get the revenue value for a task.
-
-        Revenue is the sum of charges that go to revenue accounts.
-        """
-        if not hasattr(property_node, "get"):
-            return None
-
-        charge = property_node.get("charge", scenario_idx)
-        if not charge or charge == 0:
-            return None
-
-        # Check if the chargeset is a revenue account
-        chargeset_id = property_node.get("chargeset", scenario_idx)
-        if not chargeset_id:
-            return None
-
-        # Look up the account and check if it's a revenue account
-        # For now, use a simple heuristic: if the chargeset is 'rev' or similar
-        # A more complete implementation would check the account's properties
-        if isinstance(chargeset_id, str) and ("rev" in chargeset_id.lower() or chargeset_id == "rev"):
-            # Simple check: 'rev' accounts are revenue accounts
-            return charge
-
-        return None
-
-    def _get_cost_value(self, property_node: Any, scenario_idx: int) -> Any:
-        """
-        Get the cost value for a task.
-
-        Cost is calculated as: allocated_time * resource_rate
-        Uses the task's getCost() method if available.
-        """
-        if not hasattr(property_node, "data"):
-            return None
-
-        # Get the task scenario data
-        if not property_node.data or scenario_idx >= len(property_node.data):
-            return None
-
-        task_scenario = property_node.data[scenario_idx]
-        if task_scenario is None:
-            return None
-
-        # Use getCost() method if available
-        if hasattr(task_scenario, "getCost"):
-            cost = task_scenario.getCost()
-            if cost and cost > 0:
-                return cost
-
-        return None
-
-    def _format_value(self, value: Any, column_id: str) -> str:
-        """
-        Format a value for display.
-
-        Args:
-            value: The value to format
-            column_id: Column identifier for context
-
-        Returns:
-            Formatted string
-        """
-        from datetime import datetime
-
-        if value is None:
-            return ""
-        if isinstance(value, bool):
-            return "Yes" if value else "No"
-        if isinstance(value, datetime):
-            # Scheduling happens in UTC. A reader wrote their file in the
-            # project's timezone, so that is what they are shown, unless the
-            # report asks for another.
-            from scriptplan.core.timezones import from_utc
-
-            zone = self.a("timeZone") or self.project.attributes.get("timezone")
-            local = from_utc(value, zone) or value
-
-            # Use report's timeFormat, falling back to project's timeformat
-            timeformat = self.a("timeFormat")
-            # Check if it's the default - if so, try project's timeformat
-            if timeformat == "%Y-%m-%d":
-                project_timeformat = self.project.attributes.get("timeformat")
-                if project_timeformat:
-                    timeformat = project_timeformat
-            if timeformat:
-                return local.strftime(timeformat)
-            return str(local)
-        if isinstance(value, float):
-            return f"{value:.2f}"
-        if isinstance(value, list):
-            return ", ".join(str(v) for v in value)
-        return str(value)
 
     def adjust_column_period(
         self, column_def: Any, tasks: Optional["PropertyList"] = None, scenarios: Optional[list[int]] = None
@@ -682,3 +503,27 @@ class TableReport(ReportBase):
             self.columns[column_def].start = task_start
         if task_end and not do_not_adjust_end:
             self.columns[column_def].end = task_end
+
+    def _get_cell_value(self, property_node: Any, column_id: str, scenario_idx: int) -> Any:
+        return cell_value(self, property_node, column_id, scenario_idx)
+
+    def _get_duration_value(self, property_node: Any, scenario_idx: int) -> Any:
+        return duration_value(self, property_node, scenario_idx)
+
+    def _get_revenue_value(self, property_node: Any, scenario_idx: int) -> Any:
+        return revenue_value(self, property_node, scenario_idx)
+
+    def _get_cost_value(self, property_node: Any, scenario_idx: int) -> Any:
+        return cost_value(self, property_node, scenario_idx)
+
+    def _format_value(self, value: Any, column_id: str) -> str:
+        return format_value(self, value, column_id)
+
+    def generate_header_cell(self, *args: Any, **kwargs: Any) -> Any:
+        return header_cell(self, *args, **kwargs)
+
+    @staticmethod
+    def default_column_title(column_id: str) -> Any:
+        """The heading a column gets when the report names none."""
+        return default_column_title(column_id)
+
