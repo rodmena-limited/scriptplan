@@ -36,6 +36,7 @@ from scriptplan.core.timezones import from_utc
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.scoreboard import Scoreboard
 from scriptplan.utils.data_cache import FileList
+from scriptplan.scheduler.postcheck import run_post_checks
 from scriptplan.scheduler.preflight import check_no_cycles
 from scriptplan.utils.message_handler import MessageHandler, get_message_handler_instance
 from scriptplan.utils.time import TjTime
@@ -357,8 +358,15 @@ class Project(MessageHandler):
                     if not self.scheduleScenario(scIdx):
                         ok = False
 
-                # Finish
-                self.finishScenario(scIdx)
+                    # Finish
+                    self.finishScenario(scIdx)
+
+                    # Constraints that can only be judged once everything is
+                    # placed: a maximum gap, a deadline.
+                    before = handler.errors
+                    run_post_checks(self, scIdx)
+                    if handler.errors > before:
+                        ok = False
         finally:
             AttributeBase.setMode(previous_mode)
 
@@ -546,6 +554,11 @@ class Project(MessageHandler):
                 tasks.remove(taskToRemove)
                 # After scheduling a leaf, check if any container tasks should be marked scheduled
                 self._updateContainerTaskStatus(scIdx)
+            elif tasks and self._breakDeadlock(tasks, scIdx):
+                # An unanchored backward task was waiting on a forward task
+                # that was waiting on it. One of them was turned around, so
+                # there is progress to be made; go round again.
+                continue
             elif tasks:
                 # Nothing is ready and nothing was placed this pass: the
                 # remaining tasks are waiting on each other or on a constraint
@@ -562,6 +575,39 @@ class Project(MessageHandler):
             return False
 
         return True
+
+    def _breakDeadlock(self, tasks: list[Any], scIdx: int) -> bool:
+        """Turn one stuck backward task around, if that unblocks the schedule.
+
+        A task scheduled as late as possible waits to learn when its
+        successors start. A task scheduled as early as possible waits to learn
+        when its predecessors finish. Put one of each in a chain with no fixed
+        end and they wait for each other for ever.
+
+        A backward task with no end of its own, and no successor that can give
+        it one, has nothing to be late against. It is scheduled forwards
+        instead, and the reader is told, which beats reporting a deadlock and
+        scheduling nothing.
+        """
+        for task in tasks:
+            if task.get("forward", scIdx) is not False:
+                continue
+            if task.get("end", scIdx):
+                continue
+            scenario = task.data[scIdx] if task.data else None
+            successors = scenario._getSuccessors() if scenario is not None else []
+            if any(successor.get("scheduled", scIdx) for successor in successors):
+                continue
+            task[("forward", scIdx)] = True
+            self.warning(
+                "alap_degraded",
+                f"Task '{task.fullId}' asks to be scheduled as late as possible, but nothing "
+                f"fixes when it must end: it has no end date and no scheduled successor. "
+                f"It has been scheduled as early as possible instead. Give it an end date, "
+                f"or a successor that has one, to schedule it backwards.",
+            )
+            return True
+        return False
 
     def _reportUnscheduled(self, task: Any, scIdx: int, reason: str) -> None:
         """Record why one task could not be placed, naming the task."""
