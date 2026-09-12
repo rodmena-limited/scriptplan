@@ -40,3 +40,17 @@ ALTERNATIVES:
 - Availability: per-day bitmaps [CHOSEN: ~73KB/resource-year at 1min, O(1) next-free via (m & -m).bit_length()] vs flat list of slots [REJECTED: 525k refs/resource-year, measured 37-59s] vs run-length intervals [REJECTED: interleaved booking fragments runs; split/merge bookkeeping].
 - Loop shape: event-driven cursor jumps to next availability [CHOSEN] vs visiting every slot [REJECTED: O(slots x tasks) at 1min].
 - Sub-slot precise end: keep the existing formula as a documented ScriptPlan extension [CHOSEN: the t_float 14:57:05 golden depends on it] vs end on slot boundaries as TaskJuggler does [REJECTED: loses accuracy the README advertises].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+effort is person-time; allocation options bind per resource, and `mandatory` and `persistent` work. Cost is charged once per resource-hour. Mixed ASAP/ALAP chains schedule, with a warning where a backward task has nothing to be late against. maxgap and the min/max dates are verified after scheduling (scheduler/postcheck.py). Scheduling twice gives the same answer.
+
+The engine was not extracted into a separate package: the defects were addressable in place once the allocation model (core/allocation_plan.py) existed, and the file-size work split the module into task_placement, task_booking, task_dependencies and task_resources, which gives the same separation without a migration. The per-day bitmap board was not needed either, because deriving the slot size keeps hour-aligned projects on hour-sized slots. Both are recorded here as deliberately not done rather than pending.
+
+Fixture changes: eclipse.tjp and bottleneck.tjp express 'these two together' as `mandatory` with the effort in person-hours, keeping every expected datetime; simple.tjp and tutorial.tjp finish sooner because effort is now shared, which tutorial.tjp's own comment says it should.
+
+Probes: probe_effort_semantics 5/5, probe_alap 5/5, probe_idempotency 4/4, probe_priority 2/2.

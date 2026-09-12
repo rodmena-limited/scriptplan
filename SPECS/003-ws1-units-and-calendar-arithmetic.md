@@ -34,3 +34,13 @@ SOLUTION DOMAINS:
 ALTERNATIVES:
 - Units: one core/units.py returning typed Duration(kind, seconds) [CHOSEN] vs per-call-site regexes [REJECTED: this is the current defect] vs a third-party duration parser [REJECTED: none implements TaskJuggler working-vs-calendar units].
 - Midnight crossing: normalise at set_hours time [CHOSEN: onShift becomes a pure lookup] vs check the previous weekday at query time [REJECTED: this is the current code and it is wrong in both the Python and Cython paths].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+core/units.py is the single duration table, with calendar and working time distinguished and carried from the grammar to where the project's working-hours settings are known. `duration` and `length` are parsed, stored and scheduled. core/limits.py was rewritten to count seconds in the resource's own calendar and to admit partial slots, so `dailymax 6.4h` is exact; all eight limit kinds reach the grammar, as do maxend/maxstart/minend/minstart. Cross-midnight working hours are split at definition time.
+
+Probes: probe_units 9/9, probe_calendar 8/8, probe_limits 6/6.

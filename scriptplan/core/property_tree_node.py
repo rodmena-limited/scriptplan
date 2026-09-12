@@ -283,13 +283,17 @@ class PropertyTreeNode(MessageHandler):
         there is how a column ends up rendering "-".
         """
         if scenarioIdx is not None:
-            definition = self.propertySet.attributeDefinitions.get(attribute_id)
-            if definition is not None and not definition.scenarioSpecific:
+            # The scenario lookup first: it is the overwhelmingly common case
+            # and this is the scheduler's hottest call. Only when it refuses
+            # is it worth asking whether the attribute has a scenario at all.
+            try:
+                return self._get_scenario_attribute(attribute_id, scenarioIdx).get()
+            except ValueError:
+                definition = self.propertySet.attributeDefinitions.get(attribute_id)
+                if definition is None or definition.scenarioSpecific:
+                    raise
                 return self._get_attribute(attribute_id).get()
-            attr = self._get_scenario_attribute(attribute_id, scenarioIdx)
-        else:
-            attr = self._get_attribute(attribute_id)
-        return attr.get()
+        return self._get_attribute(attribute_id).get()
 
     def __getitem__(self, key: str | tuple[str, int]) -> Any:
         if isinstance(key, tuple):

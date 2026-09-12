@@ -73,35 +73,50 @@ def successors(scenario: Any) -> list[Any]:
     return successors
 
 
-def successors_with_max_gap(scenario: Any) -> list[tuple[Any, Any, Any]]:
-    """
-    Get successors that have maxgapduration constraint on this task.
+def _max_gap_index(project: Any, scenario_idx: int) -> dict[int, list[tuple[Any, Any, Any]]]:
+    """Predecessor -> the successors that hold it to a maximum gap.
 
-    Returns list of (task, maxgapduration, gapduration) tuples.
+    Built once per scheduling run and cached on the project. Asking each task
+    to scan every other task for its successors is quadratic, and it is asked
+    once per task.
     """
-    result = []
-    for task in scenario.project.tasks:
+    cache = getattr(project, "_maxGapIndex", None)
+    if cache is None:
+        cache = {}
+        project._maxGapIndex = cache
+    index: dict[int, list[tuple[Any, Any, Any]]] | None = cache.get(scenario_idx)
+    if index is not None:
+        return index
+
+    index = {}
+    for task in project.tasks:
         if not task.leaf():
             continue
-        deps = task.get("depends", scenario.scenarioIdx) or []
-        for dep in deps:
+        for dep in task.get("depends", scenario_idx) or []:
             if isinstance(dep, dict):
-                pred = dep.get("task")
-                maxgap = dep.get("maxgapduration")
+                predecessor = dep.get("task")
+                max_gap = dep.get("maxgapduration")
                 gap = dep.get("gapduration")
             elif hasattr(dep, "task"):
-                pred = dep.task
-                maxgap = getattr(dep, "maxgapduration", None)
+                predecessor = dep.task
+                max_gap = getattr(dep, "maxgapduration", None)
                 gap = getattr(dep, "gapduration", None)
             else:
-                pred = dep
-                maxgap = None
-                gap = None
-
-            if pred is scenario.property and maxgap:
-                result.append((task, maxgap, gap))
+                predecessor, max_gap, gap = dep, None, None
+            if predecessor is not None and max_gap:
+                index.setdefault(id(predecessor), []).append((task, max_gap, gap))
                 break
-    return result
+    cache[scenario_idx] = index
+    return index
+
+
+def successors_with_max_gap(scenario: Any) -> list[tuple[Any, Any, Any]]:
+    """The successors that hold this task to a maximum gap.
+
+    Returns (successor, maxgapduration, gapduration) for each.
+    """
+    index = _max_gap_index(scenario.project, scenario.scenarioIdx)
+    return index.get(id(scenario.property), [])
 
 
 def successor_earliest_start(scenario: Any, successor: Any) -> datetime:

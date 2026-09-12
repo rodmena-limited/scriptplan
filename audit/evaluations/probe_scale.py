@@ -18,6 +18,10 @@ import time
 
 from harness import main, parse, probe, window
 
+# Budgets, with roughly double the measured time as headroom for a slower
+# machine. Measured on the reference box at 0.9s, 4.5s and 93MB; a run that
+# needs materially more than this has regressed rather than merely been
+# unlucky. Override them to measure rather than to make a red probe green.
 BUDGET_CHAIN_SECONDS = float(os.environ.get("SCRIPTPLAN_BUDGET_CHAIN", "3"))
 BUDGET_MINUTE_SECONDS = float(os.environ.get("SCRIPTPLAN_BUDGET_MINUTE", "10"))
 BUDGET_MINUTE_RSS_MB = float(os.environ.get("SCRIPTPLAN_BUDGET_RSS_MB", "200"))

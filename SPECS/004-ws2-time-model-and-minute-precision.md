@@ -30,3 +30,13 @@ SOLUTION DOMAINS:
 ALTERNATIVES:
 - Precision: derive the effective resolution as gcd of the file's time offsets [CHOSEN: hour-aligned files keep 3600 and today's performance; 08:13 files get 60 automatically] vs always 60s [REJECTED: 525k slots per resource-year for every project] vs require the user to set timingresolution [REJECTED: README claims minute accuracy out of the box].
 - Timezone: convert on ingest, store UTC [CHOSEN] vs carry aware datetimes everywhere [REJECTED: every comparison and every report format becomes tz-sensitive; larger blast radius].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+Dates are read in the project's timezone and stored as UTC (core/timezones.py); reports convert back; the default 9-to-5 calendar is read in project time. The slot size is derived from the times a project uses (core/resolution.py), which measured identical to the current size for all 24 fixtures, so nothing moved while `start 09:30` and an 08:13 shift became exact.
+
+Probes: probe_precision 6/6.

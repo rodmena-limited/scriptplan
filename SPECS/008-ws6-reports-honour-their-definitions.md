@@ -30,3 +30,13 @@ SOLUTION DOMAINS:
 ALTERNATIVES:
 - Filters: implement flags/isleaf/~/&/| evaluator [CHOSEN] vs reject hidetask at parse time [REJECTED: fixtures and the tutorial use it] vs keep ignoring it [REJECTED: currently hides every row, which is worse than ignoring].
 - Unimplemented formats: reject at parse time [CHOSEN: today they silently write nothing and the CLI blames scheduling] vs implement ical/tjp/niku [REJECTED: out of scope for readiness].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+Sort criteria are plumbed to the keys the reports read and applied; PropertyList sorting is one stable pass per criterion, so descending works and a missing value does not raise. report/logical_expression.py evaluates hidetask/hideresource/rolluptask/rollupresource, including predicates with arguments and comparisons against scenario-qualified attributes. The duration column reports elapsed time. Unimplemented formats are rejected at parse time.
+
+Probes: probe_reports 5/5.

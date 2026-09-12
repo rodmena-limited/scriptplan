@@ -251,10 +251,9 @@ def place_slot(scenario: Any) -> bool:
     # Determine duration type
     # :effortTask, :lengthTask, :durationTask, :startEndTask, or milestone
 
-    effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
-    length = scenario.property.get("length", scenario.scenarioIdx) or 0
-    duration = scenario.property.get("duration", scenario.scenarioIdx) or 0
-    milestone = scenario.property.get("milestone", scenario.scenarioIdx)
+    # How much work the task represents does not change while it is being
+    # placed, and place_slot runs once per slot, so it is read once per run.
+    effort, length, duration, milestone = scenario.workSpecification()
 
     # We need state tracking for done effort/duration
     if not hasattr(scenario, "doneEffort"):

@@ -36,3 +36,15 @@ ALTERNATIVES:
 - Errors: collect-then-fail with a per-project collector [CHOSEN: TaskJuggler reports all errors in one run] vs raise on first error [REJECTED: one typo hides the rest].
 - Parser strictness: raise on unhandled attribute [CHOSEN] vs warn and continue [REJECTED: this is exactly the silent-drop defect, and a warning nobody reads is the same bug].
 - report_id: hash of canonical result JSON [CHOSEN] vs hash of input file [REJECTED: identical id for a correct and a broken schedule, and README calls it content-based].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+Project.schedule() returns the real result and names each failing task; a dependency cycle is rejected before scheduling by scheduler/preflight.py; MessageHandlerInstance.error() no longer calls sys.exit(); parser/attribute_apply.py replaced the suppressed attribute sink, so `complete`, `note`, `responsible` and `managers` reach the model and an unplaceable attribute raises; unresolved depends/precedes/allocate/shift references and duplicate ids are errors; the plan CLI renders the reports the file declares and hashes the rendered result.
+
+Surfaced two defects in the fixtures: jit_supply.tjp used `!` where `!!` was needed, leaving its whole connection_setup block inert; and the loop check had to be scoped to finish-to-start edges because `onstart` constrains starts.
+
+Probes: probe_error_propagation 9/9, probe_parser_strictness 8/8.

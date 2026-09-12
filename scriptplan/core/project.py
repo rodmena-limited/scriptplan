@@ -193,6 +193,8 @@ class Project(MessageHandler):
             p.index()
 
         self.scheduleErrors: list[tuple[str, str]] = []
+        # Dependency indexes are rebuilt for each run.
+        self._maxGapIndex: dict[int, dict[int, list[Any]]] = {}
 
         if self.tasks.empty():
             # Nothing to schedule is a valid, complete result.
@@ -238,6 +240,10 @@ class Project(MessageHandler):
         return ok
 
     def prepareScenario(self, scIdx: int) -> None:
+        # Dependency indexes are derived from the model, which a caller may
+        # have changed between runs, so they are rebuilt rather than reused.
+        self._maxGapIndex = {}
+
         # Simplified preparation
         # In Ruby: computes criticalness, propagates initial values, checks loops
 

@@ -25,3 +25,13 @@ SOLUTION DOMAINS:
 ALTERNATIVES:
 - Drop Cython [CHOSEN: the three .pyx modules accelerate exactly the flat-slot representation WS3 retires; deleting removes the divergence permanently and makes the wheel pure-Python] vs fix and keep behind a parity gate [REJECTED: permanent parity cost for a ~25% gain on code being deleted] vs keep as-is [REJECTED: confirmed wrong schedules in every published wheel: (0-1)%7 == -1 under cdivision loses Monday 00:00-06:00 after a Sunday night shift].
 - Interim: fix working_hours_cy.pyx modulo and add a source-vs-wheel parity probe [CHOSEN if WS0-WS2 ship before WS3 as 0.9.3].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+scriptplan/_cython, the setup.py extensions and the cython build requirement are deleted, with the three _USE_CYTHON branches. The wheel is py3-none-any, so source and wheel cannot diverge. The divergence was real: under cdivision the compiled path computed (0 - 1) % 7 as -1, losing Monday morning after a Sunday night shift in every published wheel.
+
+Verified by installing the built wheel into a clean virtualenv and running the probe harness against it from outside the checkout: 67/67.

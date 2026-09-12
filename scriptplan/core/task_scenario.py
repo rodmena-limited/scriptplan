@@ -137,6 +137,7 @@ class TaskScenario(ScenarioData):
         self.scheduled = False
         self._selectedResources = None  # Reset alternative resource selection
         self._allocationPlan = None  # Re-read the allocations for this run
+        self._workSpecification: Optional[tuple[float, float, float, Any]] = None
 
         # Track exact start time within a slot (for mid-slot dependency starts)
         # This is the number of seconds into the slot where we should start booking
@@ -304,6 +305,24 @@ class TaskScenario(ScenarioData):
 
     def scheduleContainer(self) -> None:
         schedule_container(self)
+
+    def workSpecification(self) -> tuple[float, float, float, Any]:
+        """How much work this task is: (effort, length, duration, milestone).
+
+        Read once per scheduling run. These come from the file and cannot
+        change while the task is being placed, and the placement loop asks for
+        them once per slot.
+        """
+        cached = getattr(self, "_workSpecification", None)
+        if cached is None:
+            cached = (
+                self.property.get("effort", self.scenarioIdx) or 0,
+                self.property.get("length", self.scenarioIdx) or 0,
+                self.property.get("duration", self.scenarioIdx) or 0,
+                self.property.get("milestone", self.scenarioIdx),
+            )
+            self._workSpecification = cached
+        return cached
 
     def _slotSeconds(self) -> int:
         """Length of one scheduling slot, in seconds."""

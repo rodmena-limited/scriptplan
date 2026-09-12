@@ -8,6 +8,8 @@ for specific days of the week.
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
+from scriptplan.core.timezones import is_utc
+
 try:
     import zoneinfo
 
@@ -134,32 +136,64 @@ class WorkingHours:
         if not self._custom_hours_set:
             return self.project.isWorkingTime(slot_idx)
 
-        # Get datetime for this slot (in UTC)
+        if not timezone or is_utc(timezone):
+            # Slots are UTC and evenly spaced, so which weekday and which
+            # minute of it a slot falls on is arithmetic. Building a datetime
+            # per slot instead dominates the cost of setting up a scoreboard:
+            # a year at one-minute slots asks this question half a million
+            # times per resource.
+            placement = self._utc_placement(slot_idx)
+            if placement is None:
+                return False
+            weekday, slot_minutes = placement
+            return self._within_hours(weekday, slot_minutes)
+
+        # A resource in another timezone needs the real conversion, because a
+        # zone that observes daylight saving is not weekly-periodic.
         dt = self.project.idxToDate(slot_idx)
         if dt is None:
             return False
-
-        # Convert UTC time to resource's local timezone if specified
-        if timezone:
-            dt = self._convert_to_timezone(dt, timezone)
-            if dt is None:
-                return False
+        dt = self._convert_to_timezone(dt, timezone)
+        if dt is None:
+            return False
 
         weekday = dt.weekday()
 
-        # Check if this day has working hours defined
-        if weekday not in self._hours or not self._hours[weekday]:
-            # No working hours defined for this day = not working
+        return self._within_hours(weekday, dt.hour * 60 + dt.minute)
+
+    def _within_hours(self, weekday: int, slot_minutes: int) -> bool:
+        """Whether a minute of a weekday falls in a working interval.
+
+        Intervals are normalised at definition time, so each lies inside its
+        own day and this is a plain containment test.
+        """
+        intervals = self._hours.get(weekday)
+        if not intervals:
             return False
-
-        slot_minutes = dt.hour * 60 + dt.minute
-
-        # Intervals are normalised at definition time, so every one of them
-        # lies inside its own day and this is a plain containment test.
-        for (start_h, start_m), (end_h, end_m) in self._hours[weekday]:
+        for (start_h, start_m), (end_h, end_m) in intervals:
             if start_h * 60 + start_m <= slot_minutes < end_h * 60 + end_m:
                 return True
         return False
+
+    def _utc_placement(self, slot_idx: int) -> Optional[tuple[int, int]]:
+        """(weekday, minute of day) for a UTC slot, without building a date."""
+        base = getattr(self, "_utc_base", None)
+        granularity = int(self.project.attributes.get("scheduleGranularity", 3600))
+        if base is None or base[2] != granularity:
+            start = self.project.attributes.get("start")
+            if start is None:
+                return None
+            base = (
+                start.weekday(),
+                start.hour * 60 + start.minute,
+                granularity,
+            )
+            self._utc_base = base
+        start_weekday, start_minute, _ = base
+
+        minutes = start_minute + (slot_idx * granularity) // 60
+        days, minute_of_day = divmod(minutes, 1440)
+        return (start_weekday + days) % 7, minute_of_day
 
     def get_daily_hours(self, weekday: int) -> float:
         """

@@ -8,6 +8,13 @@ scenario-specific data for a Resource.
 import contextlib
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from scriptplan.core.resource_availability import (
+    cache_shift_inputs,
+    init_scoreboard,
+    mark_shift_pattern,
+    on_shift,
+    on_shift_ignoring_leave,
+)
 from scriptplan.core.resource_reporting import (
     allocated_slots,
     calc_criticalness,
@@ -133,63 +140,10 @@ class ResourceScenario(ScenarioData):
                 self.property.get("timezone", self.scenarioIdx),
             )
 
+        self._cacheShiftInputs()
+
         if self.property.leaf():
             self.initScoreboard()
-
-    def initScoreboard(self) -> None:
-        """
-        Initialize the scoreboard for this resource.
-
-        The scoreboard tracks the availability and bookings for each time slot.
-        """
-        start = self.project.attributes.get("start")
-        end = self.project.attributes.get("end")
-        granularity = self.project.attributes.get("scheduleGranularity", 3600)
-
-        if not start or not end:
-            return
-
-        self.scoreboard = Scoreboard(start, end, granularity, 2)
-        size = self.project.scoreboardSize()
-
-        # Initialize working hours
-        for i in range(size):
-            if not self.onShift(i):
-                # Mark as non-working time (bit 1 set)
-                self.scoreboard[i] = 2
-            else:
-                self.scoreboard[i] = None
-
-        # Apply global leaves
-        leaves = self.project.attributes.get("leaves", [])
-        if leaves:
-            for leave in leaves:
-                if hasattr(leave, "interval"):
-                    start_idx = self.project.dateToIdx(leave.interval.start)
-                    end_idx = self.project.dateToIdx(leave.interval.end)
-                    for i in range(start_idx, min(end_idx, size)):
-                        sb = self.scoreboard[i]
-                        val = 0 if sb is None else (sb & 2)
-                        leave_type = leave.type_idx if hasattr(leave, "type_idx") else 0
-                        self.scoreboard[i] = val | (leave_type << 2)
-
-        # Apply resource-specific leaves
-        res_leaves = self.property.get("leaves", self.scenarioIdx)
-        if res_leaves:
-            for leave in res_leaves:
-                if hasattr(leave, "interval"):
-                    start_idx = self.project.dateToIdx(leave.interval.start)
-                    end_idx = self.project.dateToIdx(leave.interval.end)
-                    for i in range(start_idx, min(end_idx, size)):
-                        sb = self.scoreboard[i]
-                        if sb is not None:
-                            leave_idx = (sb & 0x3C) >> 2
-                            leave_type = leave.type_idx if hasattr(leave, "type_idx") else 0
-                            if leave_type > leave_idx:
-                                self.scoreboard[i] = (sb & 0x2) | (leave_type << 2)
-                        else:
-                            leave_type = leave.type_idx if hasattr(leave, "type_idx") else 0
-                            self.scoreboard[i] = leave_type << 2
 
     def preScheduleCheck(self) -> None:
         """
@@ -431,54 +385,20 @@ class ResourceScenario(ScenarioData):
                     effort += r.data[self.scenarioIdx].bookedEffort()
             return effort
 
+    def initScoreboard(self) -> None:
+        init_scoreboard(self)
+
+    def _markShiftPattern(self, size: int, granularity: int) -> None:
+        mark_shift_pattern(self, size, granularity)
+
+    def _cacheShiftInputs(self) -> None:
+        cache_shift_inputs(self)
+
     def onShift(self, sb_idx: int) -> bool:
-        """
-        Check if the resource is on shift at the given time slot.
+        return on_shift(self, sb_idx)
 
-        Args:
-            sb_idx: Scoreboard index
-
-        Returns:
-            True if on shift, False otherwise
-        """
-        date = self.project.idxToDate(sb_idx)
-
-        # First check global vacations - they override everything
-        vacations = self.project.attributes.get("vacations", [])
-        if vacations:
-            for vac in vacations:
-                if hasattr(vac, "interval") and vac.interval and vac.interval.start <= date < vac.interval.end:
-                    return False
-
-        # Check resource-level leaves/vacations
-        leaves = self.property.get("leaves", self.scenarioIdx)
-        if leaves:
-            for leave in leaves:
-                if hasattr(leave, "interval") and leave.interval and leave.interval.start <= date < leave.interval.end:
-                    return False
-
-        # Get resource's timezone for local time conversion
-        # Working hours are defined in local time, but slots are in UTC
-        resource_tz = self.property.get("timezone", self.scenarioIdx)
-
-        # Check if resource has a shift reference
-        shift = self.property.get("shifts", self.scenarioIdx)
-        if shift:
-            # Use the shift's working hours
-            shift_wh = shift.get("workinghours", self.scenarioIdx)
-            if shift_wh and hasattr(shift_wh, "onShift"):
-                result: bool = shift_wh.onShift(sb_idx, timezone=resource_tz)
-                return result
-
-        # Check if resource has direct working hours
-        workinghours = self.property.get("workinghours", self.scenarioIdx)
-        if workinghours and hasattr(workinghours, "onShift"):
-            result2: bool = workinghours.onShift(sb_idx, timezone=resource_tz)
-            return result2
-
-        # Default: use project's working time
-        result3: bool = self.project.isWorkingTime(sb_idx)
-        return result3
+    def onShiftIgnoringLeave(self, sb_idx: int) -> bool:
+        return on_shift_ignoring_leave(self, sb_idx)
 
     def calcCriticalness(self) -> None:
         calc_criticalness(self)

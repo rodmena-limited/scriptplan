@@ -27,3 +27,11 @@ SOLUTION DOMAINS:
 ALTERNATIVES:
 - Mode: per-project attribute with a context manager [CHOSEN] vs thread-local [REJECTED: two projects on one thread still collide] vs pass explicitly through every setter [REJECTED: touches every call site for the same guarantee].
 - Dead code: delete batch_processor/data_cache/logger [CHOSEN: unreachable, racy, and data_cache never caches] vs fix in place [REJECTED: nothing calls them; fixing unreachable code is unverifiable].
+
+---
+
+## Outcome
+
+**Status**: closed.
+
+AttributeBase._mode is scoped to the project and restored on failure, covered by tests/test_project_isolation.py. batch_processor, DataCache and Log are deleted as unreachable; ANSIColor and FileList remain. PropertyList sorting was rewritten under WS6.
