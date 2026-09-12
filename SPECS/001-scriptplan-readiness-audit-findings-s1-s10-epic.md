@@ -47,3 +47,84 @@ ALTERNATIVES:
 - Error propagation: collect-then-fail [CHOSEN] vs raise at first error [REJECTED: TaskJuggler collects all errors].
 
 EVIDENCE: 56 live probes, 32 failing on source checkout and 33 on the published cp313 wheel, while all 383 tests pass on both paths.
+
+---
+
+## Closing statement
+
+### What was exercised
+
+Every guarantee in the EARS specs was driven through ScriptPlan's own interface
+and asserted: 69 probes across 12 files in `audit/evaluations`, run against the
+source checkout on Python 3.9 and against the built wheel installed into a
+clean virtualenv, from a directory outside the checkout, so what is verified is
+what is shipped. The probes cover error propagation and exit codes, parser
+strictness, duration units, the calendar (midnight crossing, leave, local-day
+limits, daylight saving in both directions), minute-level precision, every
+limit kind in both directions, person-time effort with mandatory and persistent
+allocations, backward scheduling and mixed-direction chains, idempotency,
+priority contention and report definitions.
+
+Alongside them, 411 tests pass from any working directory without optional
+plugins, including a golden snapshot of what all 24 example projects schedule
+to, and 16 sub-process tests of the `plan` CLI. `scripts/ci.sh` runs lint,
+types, the file-size cap, the tests, the showcase check and the probes: all six
+steps pass. Every fixture renders through `plan report` with exit code 0.
+
+Scale exercised: 500 chained tasks at one-minute resolution (3.3s), and 100
+tasks over 10 resources for a year at one-minute resolution (4.5s, 93MB peak).
+
+### What was not tested
+
+Concurrency. Nothing runs two schedules in one process on two threads, and the
+message handler remains a process-wide singleton that accumulates; the
+project-scoped attribute mode was fixed and covered, but thread safety was not
+established and should not be assumed.
+
+Python 3.10 through 3.14. Everything here ran on 3.9. The wheel is
+`py3-none-any` so there is no per-version build to diverge, but no version
+other than 3.9 was exercised.
+
+Long-running service behaviour. Memory over thousands of sequential parses,
+and whether anything besides the message handler accumulates, was not measured.
+
+`include`, `supplement`, `leaveallowance`, `statussheet`, accounts end to end,
+`timesheet` and `journal` as scheduler inputs. `include` is accepted on the
+command line and discarded, which is now the only remaining silent drop I know
+of and is recorded in the README's known limits.
+
+Multi-year projects at minute resolution, and sustained load of any kind.
+
+### What I remain unsure about
+
+**`onstart`.** ScriptPlan reads `A depends B { onstart }` as "A must finish
+before B starts". TaskJuggler reads it as start-to-start. I left ScriptPlan's
+reading in place and documented it, because changing it would move the README's
+own worked example and `jit_supply.tjp` depends on it, but it means files
+written for TaskJuggler will schedule differently here. This is the one
+semantic decision I deferred rather than settled.
+
+**Whether the remaining fixture expectations are TaskJuggler-correct.** Several
+were written from this implementation's output rather than derived
+independently. I re-derived the ones I changed, and `TestIssue41` and
+`TestIssue42` compute theirs by independent simulation, but I could not compare
+against real TaskJuggler: it is not available in this environment. Until
+someone does, "TaskJuggler-compatible" rests on reading the manual rather than
+on running both.
+
+**The loop check.** It follows finish-to-start edges only. A project mixing
+`onstart` and ordinary dependencies could in principle describe an unsatisfiable
+schedule that it does not catch; a complete check works over (task, start|end)
+pairs and was not written.
+
+**Report coverage.** `hidetask` and sorting are now exercised, but the report
+layer still has code I did not probe: nested reports, `rollupresource`, period
+columns, `loadUnit`, and the text report's rich-text handling. They are not
+known to be broken; they are unverified.
+
+Two defects were introduced during the refactoring and caught by the probes
+rather than by the tests: a rename that shadowed the task scenario with the
+resource's, which silently stopped every booking, and a tiled shift pattern
+that repeated one week's holiday across the year. Both are fixed. That the
+probes caught them and 411 tests did not is the most useful thing I learned
+about this codebase's test coverage.
