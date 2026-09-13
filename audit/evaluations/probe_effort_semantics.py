@@ -16,6 +16,11 @@ TWO_RESOURCES = """resource a "A" { workinghours mon-fri 9:00-17:00 }
 resource b "B" { workinghours mon-fri 9:00-17:00 }
 """
 
+FOUR_RESOURCES = "".join(
+    f'resource {name} "{name.upper()}" {{ workinghours mon-fri 9:00-17:00 rate 100 }}\n'
+    for name in "abcd"
+)
+
 
 @probe("16h of effort on two resources finishes in one 8h working day")
 def probe_effort_is_person_time() -> tuple[bool, str]:
@@ -85,6 +90,79 @@ task a "A" { start 2025-01-06 effort 90min allocate r }
     cost = scenario.getCost()
     _, end = window(project, "a")
     return abs(cost - 90.0) < 1e-6, f"cost={cost} for 1.5h at rate 60 (expected 90); end={end}"
+
+
+@probe("Work is conserved: resource time consumed equals the effort credited")
+def probe_work_is_conserved() -> tuple[bool, str]:
+    """Whatever is booked must count towards finishing the task.
+
+    The engine once took the maximum contribution across resources in a slot
+    rather than the sum, so a task with four allocations booked four people and
+    credited one person's work. Sixty-four hours were consumed and billed,
+    sixteen were credited, and the other forty-eight simply vanished.
+    """
+    crews = ("a", "a, b", "a, b, c, d")
+    lines, ok = [], True
+    for crew in crews:
+        project = parse(HDR + FOUR_RESOURCES + f"""
+task t "T" {{ start 2025-01-06 effort 16h allocate {crew} }}
+""")
+        consumed = sum(total_booked_hours(project, name) for name in "abcd")
+        balanced = abs(consumed - 16.0) < 1e-6
+        ok = ok and balanced
+        lines.append(f"{crew!r}: consumed {consumed:.0f}h for 16h credited{'' if balanced else '  <-- UNBALANCED'}")
+    return ok, "; ".join(lines)
+
+
+@probe("Adding people shortens the work, rather than only multiplying the bill")
+def probe_more_resources_finish_sooner() -> tuple[bool, str]:
+    """Duration is work over rate, so a bigger crew finishes sooner.
+
+    A model where the completion date does not move when resources are added
+    cannot answer the question a resource planner asks of it.
+    """
+    ends, costs = [], []
+    for crew in ("a", "a, b", "a, b, c, d"):
+        project = parse(HDR + FOUR_RESOURCES + f"""
+task t "T" {{ start 2025-01-06 effort 16h allocate {crew} }}
+""")
+        ends.append(window(project, "t")[1])
+        costs.append(task(project, "t").data[0].getCost())
+    shortens = ends[0] > ends[1] > ends[2]
+    same_cost = max(costs) - min(costs) < 1e-6
+    return shortens and same_cost, (
+        f"one/two/four workers finish {ends[0]}, {ends[1]}, {ends[2]}; "
+        f"cost {costs[0]:.0f}, {costs[1]:.0f}, {costs[2]:.0f} "
+        f"(the same work costs the same however it is staffed)"
+    )
+
+
+@probe("Scheduled backwards, a bigger crew starts later rather than finishing sooner")
+def probe_alap_compresses_against_the_deadline() -> tuple[bool, str]:
+    """The deadline is fixed, so parallelism buys a later start.
+
+    This is the question a deadline-driven plan actually asks: how late can the
+    work begin if more people are put on it. Both the conservation defect and
+    the missing parallelism were present in the backward pass too, so it is
+    probed in its own right rather than assumed to follow from the forward one.
+    """
+    starts, ends, consumed = [], [], []
+    for crew in ("a", "a, b", "a, b, c, d"):
+        project = parse(HDR + FOUR_RESOURCES + f"""
+task t "T" {{ scheduling alap end 2025-01-31-17:00 effort 16h allocate {crew} }}
+""")
+        start, end = window(project, "t")
+        starts.append(start)
+        ends.append(end)
+        consumed.append(sum(total_booked_hours(project, name) for name in "abcd"))
+
+    later = starts[0] < starts[1] < starts[2]
+    on_deadline = all(e == datetime(2025, 1, 31, 17, 0) for e in ends)
+    balanced = all(abs(c - 16.0) < 1e-6 for c in consumed)
+    return later and on_deadline and balanced, (
+        f"one/two/four workers start {starts[0]}, {starts[1]}, {starts[2]}; "
+        f"all end {ends[0]}; consumed {[f'{c:.0f}h' for c in consumed]} for 16h credited"
+    )
 
 
 if __name__ == "__main__":
