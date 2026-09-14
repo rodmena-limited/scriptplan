@@ -1,5 +1,6 @@
 include LICENSE
 include README.md
+include CHANGELOG.md
 include pyproject.toml
 recursive-include scriptplan *.lark
 recursive-include scriptplan py.typed
