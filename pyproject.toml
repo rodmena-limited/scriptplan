@@ -62,6 +62,7 @@ plan = "scriptplan.cli.plan:main"
 "Documentation" = "https://github.com/rodmena-limited/scriptplan#readme"
 "Bug Tracker" = "https://github.com/rodmena-limited/scriptplan/issues"
 "Source" = "https://github.com/rodmena-limited/scriptplan"
+"Changelog" = "https://github.com/rodmena-limited/scriptplan/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 include-package-data = true
