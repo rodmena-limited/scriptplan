@@ -1,7 +1,7 @@
 # Tasks that share a slot on one resource are booked into time that does not exist
 
 **Ticket**: issuedb #11  
-**Status**: in-progress  
+**Status**: closed  
 **Priority**: critical  
 **Release**: 0.10.1
 
