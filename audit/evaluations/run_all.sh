@@ -26,6 +26,7 @@ probes=(
   probe_precision.py
   probe_limits.py
   probe_effort_semantics.py
+  probe_slot_sharing.py
   probe_alap.py
   probe_idempotency.py
   probe_priority.py

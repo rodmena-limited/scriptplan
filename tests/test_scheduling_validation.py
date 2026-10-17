@@ -1405,20 +1405,19 @@ class TestIssue56UnionContract:
         from collections import defaultdict
 
         project = ProjectFileParser().parse(self.TJP_FILE.read_text())
-        granularity = project.attributes["scheduleGranularity"]
 
+        # Summed from what each task was booked for, not read from the
+        # resource's own used-seconds counter: that counter is the thing a
+        # booking defect corrupts (issuedb #11), so it cannot be the witness.
         booked_per_week = defaultdict(float)
         for resource in project.resources:
             scenario = resource.data[0]
-            if scenario is None or scenario.scoreboard is None:
+            if scenario is None:
                 continue
-            for index, slot in enumerate(scenario.scoreboard):
-                if slot is None or isinstance(slot, int):
-                    continue
+            for index, usage in scenario.slotTaskUsage.items():
                 moment = project.idxToDate(index)
-                seconds = scenario.slotSecondsUsed.get(index, granularity)
                 year, week, _ = moment.isocalendar()
-                booked_per_week[(year, week)] += seconds / 3600.0
+                booked_per_week[(year, week)] += sum(seconds for _, seconds in usage) / 3600.0
 
         assert booked_per_week, "FAIL: the worker was booked for nothing at all."
         week40 = booked_per_week.get((2025, 40), 0.0)

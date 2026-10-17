@@ -5,7 +5,7 @@ The pre-audit SHOWCASE.md recorded the start and end of every task in all 24
 example projects. legacy_showcase.json holds those 594 schedules, taken from
 commit 1ea3287. This replays each project and compares.
 
-Three projects are expected to differ, each for a reason recorded in the commit
+Four projects are expected to differ, each for a reason recorded in the commit
 that changed it. They are listed below with what changed and why, and the probe
 fails if any *other* project moves, if an expected change stops happening, or
 if a project stops scheduling at all. An expected change that no longer appears
@@ -28,6 +28,12 @@ TIME_FORMAT = "%Y-%m-%d-%H:%M"
 
 #: project -> why its schedule is expected to differ.
 EXPECTED_CHANGES = {
+    "airport_stress_test.tjp": (
+        "t_install and t_low were reported as starting at the top of a slot the "
+        "electrician was still working in: t_install at 11:00 while t_crit ran until "
+        "11:40, t_low at 10:00 while t_install ran until 10:20. They now start when e1 "
+        "is free. Their ends, and every other task, are unchanged (issuedb #11)."
+    ),
     "jit_supply.tjp": (
         "connection_setup.set_deps referenced '!delivery.assemble_a', which resolves "
         "relative to the parent and so pointed at a task that does not exist. The whole "
@@ -44,7 +50,10 @@ EXPECTED_CHANGES = {
         "Same shared-effort correction, across a project that allocates two or three "
         "developers to most of its tasks; it finishes in roughly half the elapsed time. "
         "The fixture's own comment says this is what should happen: 'Because they can "
-        "work in parallel, they may finish this task earlier than in 20 working-days.'"
+        "work in parallel, they may finish this task earlier than in 20 working-days.' "
+        "Since issuedb #11 the last slot of a shared task also ends when the people on it "
+        "have done the remaining work between them, rather than at the top of the next "
+        "hour, and the milestones after it sit at that moment."
     ),
 }
 
@@ -108,7 +117,7 @@ def probe_no_project_stopped_scheduling() -> tuple[bool, str]:
     )
 
 
-@probe("Only the three projects with a recorded reason schedule differently")
+@probe("Only the projects with a recorded reason schedule differently")
 def probe_only_expected_projects_changed() -> tuple[bool, str]:
     baseline = _load_baseline()
     unchanged, changed = [], {}
@@ -134,6 +143,22 @@ def probe_only_expected_projects_changed() -> tuple[bool, str]:
         lines.append(f"  expected to differ but no longer does: {vanished}")
 
     return not unexpected and not vanished, "\n".join(lines)
+
+
+@probe("airport_stress_test moves only the two starts that preceded a free electrician")
+def probe_airport_starts_follow_the_electrician() -> tuple[bool, str]:
+    """Each moved start is the moment e1 finished the task before it, nothing else."""
+    baseline = _load_baseline()["airport_stress_test.tjp"]
+    actual = _current("airport_stress_test.tjp")
+    diffs = _differences(baseline, actual)
+    moved = {d.split(" ")[0] for d in diffs}
+    follows = (
+        actual["airport.t_install"][0] == actual["airport.t_crit"][1]
+        and actual["airport.t_low"][0] == actual["airport.t_install"][1]
+    )
+    ends_kept = all(actual[t][1] == baseline[t][1] for t in ("airport.t_install", "airport.t_low"))
+    ok = moved == {"airport.t_install", "airport.t_low"} and follows and ends_kept
+    return ok, f"moved {sorted(moved)}; t_crit {actual['airport.t_crit']}, t_install {actual['airport.t_install']}, t_low {actual['airport.t_low']}"
 
 
 @probe("The delivery tasks in jit_supply are untouched by its reference fix")

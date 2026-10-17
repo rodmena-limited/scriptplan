@@ -62,6 +62,11 @@ class TaskScenario(ScenarioData):
         self.doneLength: int = 0
         self.doneEffort: float = 0.0
         self.slotStartOffset: float = 0.0
+        self.slotStartOffsetSlot: Optional[int] = None
+        # Bookings made in the current slot, and where backward work ends
+        self.slotBookings: list[Any] = []
+        self.firstWorkSlot: Optional[int] = None
+        self.workEnd: Optional[datetime] = None
         self._selectedResources: Optional[list[Any]] = None
         self._allocationPlan: Optional[AllocationPlan] = None
         self._lastBookedResource: Optional[Any] = None
@@ -140,8 +145,13 @@ class TaskScenario(ScenarioData):
         self._workSpecification: Optional[tuple[float, float, float, Any]] = None
 
         # Track exact start time within a slot (for mid-slot dependency starts)
-        # This is the number of seconds into the slot where we should start booking
+        # This is the number of seconds into the slot where we should start
+        # booking, and the one slot it applies to
         self.slotStartOffset = 0.0
+        self.slotStartOffsetSlot = None
+        self.slotBookings = []
+        self.firstWorkSlot = None
+        self.workEnd = None
 
         # Reset the counters of all limits of this task (not parent tasks).
         # This is critical - limits track usage per period and must be reset

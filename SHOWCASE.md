@@ -1,7 +1,7 @@
 # ScriptPlan example projects
 
 **ScriptPlan**: 0.10.0  
-**Generated**: 2026-09-12 13:00:21 UTC  
+**Generated**: 2026-10-17 21:50:45 UTC  
 **Command**: `plan report --csv <project>`
 
 Every project in `tests/data`, with the schedule ScriptPlan produces for it.
@@ -265,9 +265,9 @@ taskreport status_csv "status" {
 Id,Name,Start,End,Effort,Duration
 airport,Terminal 5 Upgrade,2025-06-02,2025-06-24,0,22.33
 airport.t_software,Control Software,2025-06-02,2025-06-04,16.00,2.17
-airport.t_install,Hardware Install,2025-06-05,2025-06-06,8.00,0.97
+airport.t_install,Hardware Install,2025-06-05,2025-06-06,8.00,0.94
 airport.t_crit,Critical Power Patch,2025-06-04,2025-06-05,8.00,0.94
-airport.t_low,Labeling Cables,2025-06-06,2025-06-06,4.00,0.15
+airport.t_low,Labeling Cables,2025-06-06,2025-06-06,4.00,0.14
 airport.t_migration,Database Migration,2025-06-05,2025-06-06,6.00,0.98
 airport.t_audit,Safety Audit,2025-06-19,2025-06-24,16.00,5.33
 airport.deliver,Go Live,2025-06-24,2025-06-24,0,0.00
@@ -5743,21 +5743,21 @@ resourcereport resourceGraph "" {
 
 ```
 Id,Start,End
-AcSo,2002-01-16-00:00,2002-04-18-13:00
+AcSo,2002-01-16-00:00,2002-04-18-12:48
 AcSo.spec,2002-01-16-09:00,2002-01-24-15:00
 AcSo.software,2002-01-24-15:00,2002-03-28-14:00
 AcSo.software.database,2002-01-24-15:00,2002-02-07-15:00
 AcSo.software.gui,2002-02-28-15:00,2002-03-28-14:00
 AcSo.software.backend,2002-02-07-15:00,2002-02-28-15:00
-AcSo.test,2002-03-28-14:00,2002-04-18-13:00
-AcSo.test.alpha,2002-03-28-14:00,2002-04-03-12:00
-AcSo.test.beta,2002-04-03-12:00,2002-04-18-13:00
+AcSo.test,2002-03-28-14:00,2002-04-18-12:48
+AcSo.test.alpha,2002-03-28-14:00,2002-04-03-11:36
+AcSo.test.beta,2002-04-03-11:36,2002-04-18-12:48
 AcSo.manual,2002-01-16-09:00,2002-02-26-12:00
-AcSo.deliveries,2002-01-16-00:00,2002-04-18-13:00
+AcSo.deliveries,2002-01-16-00:00,2002-04-18-12:48
 AcSo.deliveries.start,2002-01-16-00:00,2002-01-16-00:00
 AcSo.deliveries.prev,2002-02-28-15:00,2002-02-28-15:00
-AcSo.deliveries.beta,2002-04-03-12:00,2002-04-03-12:00
-AcSo.deliveries.done,2002-04-18-13:00,2002-04-18-13:00
+AcSo.deliveries.beta,2002-04-03-11:36,2002-04-03-11:36
+AcSo.deliveries.done,2002-04-18-12:48,2002-04-18-12:48
 ```
 
 ---

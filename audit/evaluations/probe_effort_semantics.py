@@ -5,12 +5,24 @@ Claims under test (SPECS/005-ws3-scheduler-core-engine-package.md):
   - with N resources available in a slot the task accrues N slots of effort
   - each resource-slot is charged once, so cost matches the effort actually done
   - a mandatory allocation must be present in every booked slot
-  - two tasks sharing a resource never double-book a slot
+  - two tasks sharing a resource never double-book a slot (off the slot grid;
+    probe_slot_sharing.py covers it in depth)
 """
 
 from __future__ import annotations
 
-from harness import HDR, booked_slots, datetime, main, parse, probe, task, total_booked_hours, window
+from harness import (
+    HDR,
+    booked_seconds,
+    booked_slots,
+    datetime,
+    main,
+    parse,
+    probe,
+    task,
+    total_booked_hours,
+    window,
+)
 
 TWO_RESOURCES = """resource a "A" { workinghours mon-fri 9:00-17:00 }
 resource b "B" { workinghours mon-fri 9:00-17:00 }
@@ -69,15 +81,27 @@ task t "T" { start 2025-01-06 effort 4h allocate a { mandatory }, b { mandatory 
 
 @probe("Two tasks sharing one resource never double-book a slot")
 def probe_no_double_booking() -> tuple[bool, str]:
+    """Efforts off the slot grid, on purpose.
+
+    The first version used 3h/3h/2h. Whole-hour efforts never share a slot,
+    and the total booked stays right even when work overlaps, so it could not
+    fail on the defect it was named after: 0.10.0 put 40, 13 and 40 minutes
+    on one person all at 09:00 (issuedb #11).
+    """
     project = parse(HDR + """
 resource r "R" { workinghours mon-fri 9:00-17:00 }
-task a "A" { start 2025-01-06 effort 3h allocate r }
-task b "B" { start 2025-01-06 effort 3h allocate r }
-task c "C" { depends !a effort 2h allocate r }
+task a "A" { start 2025-01-06 effort 100min allocate r }
+task b "B" { start 2025-01-06 effort 50min allocate r }
+task c "C" { depends !a effort 70min allocate r }
 """)
-    booked = total_booked_hours(project, "r")
-    windows = {name: window(project, name) for name in ("a", "b", "c")}
-    return abs(booked - 8.0) < 1e-6, f"total booked = {booked}h (3+3+2 = 8); windows={windows}"
+    per_slot = booked_seconds(project, "r")
+    over = {f"{project.idxToDate(i):%H:%M}": s for i, s in per_slot.items() if s > 3600 + 1e-6}
+    booked = sum(per_slot.values()) / 60.0
+    windows = {name: tuple(f"{d:%H:%M}" for d in window(project, name)) for name in ("a", "b", "c")}
+    # a, then b where a stopped; c may follow a but the desk is busy with b.
+    expected = {"a": ("09:00", "10:40"), "b": ("10:40", "11:30"), "c": ("11:30", "12:40")}
+    ok = not over and abs(booked - 220) < 1e-6 and windows == expected
+    return ok, f"windows {windows} expected {expected}; booked {booked:.0f} of 220 min; overfull slots {over}"
 
 
 @probe("A resource is charged only for the time it actually worked")

@@ -158,15 +158,24 @@ def booked_slots(project: Any, rid: str, scenario: int = 0) -> list[tuple[int, d
     return [(i, project.idxToDate(i)) for i in board]
 
 
+def booked_seconds(project: Any, rid: str, scenario: int = 0) -> dict[int, float]:
+    """Seconds booked per slot, summed from what each task was booked for.
+
+    Not slotSecondsUsed: that is the engine's own capacity counter, and the
+    defect in issuedb #11 corrupted it in the same step that overbooked the
+    slot, so every check that read it stayed green while three tasks ran at
+    once on one person.
+    """
+    rs = resource(project, rid).data[scenario]
+    usage = getattr(rs, "slotTaskUsage", {}) or {}
+    return {idx: sum(seconds for _, seconds in rows) for idx, rows in usage.items()}
+
+
 def booked_hours_by_day(project: Any, rid: str, scenario: int = 0) -> dict[Any, float]:
     """Hours booked per UTC calendar day, honouring partial-slot usage."""
-    res = resource(project, rid)
-    rs = res.data[scenario]
-    granularity = project.attributes["scheduleGranularity"]
     out: dict[Any, float] = defaultdict(float)
-    for idx in _board(project, rid, scenario) or []:
-        used = getattr(rs, "slotSecondsUsed", {}).get(idx, granularity)
-        out[project.idxToDate(idx).date()] += used / 3600.0
+    for idx, seconds in booked_seconds(project, rid, scenario).items():
+        out[project.idxToDate(idx).date()] += seconds / 3600.0
     return dict(out)
 
 
@@ -179,16 +188,12 @@ def booked_hours_by_local_day(project: Any, rid: str, tz_name: str, scenario: in
     except ImportError:  # pragma: no cover - py<3.9
         raise RuntimeError("zoneinfo required for local-day probes") from None
     zone = ZoneInfo(tz_name)
-    res = resource(project, rid)
-    rs = res.data[scenario]
-    granularity = project.attributes["scheduleGranularity"]
     out: dict[Any, float] = defaultdict(float)
-    for idx in _board(project, rid, scenario) or []:
+    for idx, seconds in booked_seconds(project, rid, scenario).items():
         slot = project.idxToDate(idx)
         if slot.tzinfo is None:
             slot = slot.replace(tzinfo=_tz.utc)
-        used = getattr(rs, "slotSecondsUsed", {}).get(idx, granularity)
-        out[slot.astimezone(zone).date()] += used / 3600.0
+        out[slot.astimezone(zone).date()] += seconds / 3600.0
     return dict(out)
 
 
@@ -276,6 +281,7 @@ __all__ = [
     "HDR",
     "booked_hours_by_day",
     "booked_hours_by_local_day",
+    "booked_seconds",
     "booked_slots",
     "datetime",
     "main",

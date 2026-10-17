@@ -29,6 +29,7 @@ from scriptplan.core.resource_reporting import (
     work_slots,
 )
 from scriptplan.core.scenario_data import ScenarioData
+from scriptplan.core.slot_ledger import SlotBooking, free_seconds, release, reserve
 from scriptplan.scheduler.scoreboard import Scoreboard
 
 if TYPE_CHECKING:
@@ -84,10 +85,15 @@ class ResourceScenario(ScenarioData):
         # Internal effort counter
         self._effort: float = 0.0
 
-        # Track partial slot usage: slot_idx -> seconds_used
-        # When a task ends mid-slot, this records how much of the slot was used
-        # Subsequent tasks can use the remaining time in that slot
+        # A slot is filled from both ends (see slot_ledger): forward work takes
+        # seconds from its start and backward work from its end.
+        # slot_idx -> seconds taken from the start / from the end
+        self.slotFrontUsed: dict[int, float] = {}
+        self.slotBackUsed: dict[int, float] = {}
+        # slot_idx -> seconds no longer free (front + back)
         self.slotSecondsUsed: dict[int, float] = {}
+        # Length of one slot, read once per run rather than once per slot
+        self.slotLength: float = float(self.project.attributes.get("scheduleGranularity", 3600))
 
         # Track which tasks used which slots and how much
         # slot_idx -> list of (task, seconds_used)
@@ -123,6 +129,9 @@ class ResourceScenario(ScenarioData):
         This method must be called at the beginning of each scheduling run.
         """
         self._effort = 0.0
+        self.slotLength = float(self.project.attributes.get("scheduleGranularity", 3600))
+        self.slotFrontUsed = {}
+        self.slotBackUsed = {}
         self.slotSecondsUsed = {}
         self.slotTaskUsage = {}
         self.firstBookedSlot = None
@@ -247,7 +256,7 @@ class ResourceScenario(ScenarioData):
         """
         Get the available seconds in a slot, accounting for partial usage.
 
-        If a previous task ended mid-slot, only the remaining time is available.
+        Work booked from either end of the slot is not available.
 
         Args:
             sb_idx: Scoreboard index
@@ -255,24 +264,9 @@ class ResourceScenario(ScenarioData):
         Returns:
             Available seconds in the slot (0 to slot_duration)
         """
-        slot_duration: float = self.project.attributes.get("scheduleGranularity", 3600)
-        seconds_used = self.slotSecondsUsed.get(sb_idx, 0.0)
-        return float(max(0.0, slot_duration - seconds_used))
+        return free_seconds(self, sb_idx)
 
-    def markSlotPartiallyUsed(self, sb_idx: int, seconds_used: float) -> None:
-        """
-        Record that a task used only part of a slot.
-
-        This allows subsequent tasks to use the remaining time.
-
-        Args:
-            sb_idx: Scoreboard index
-            seconds_used: Seconds of the slot that were used
-        """
-        current_used = self.slotSecondsUsed.get(sb_idx, 0.0)
-        self.slotSecondsUsed[sb_idx] = current_used + seconds_used
-
-    def book(self, sb_idx: int, task: "Task", force: bool = False) -> float:
+    def book(self, sb_idx: int, task: "Task", force: bool = False, forward: bool = True) -> float:
         """
         Book a time slot for a task.
 
@@ -280,94 +274,24 @@ class ResourceScenario(ScenarioData):
             sb_idx: Scoreboard index
             task: The task to book
             force: If True, overwrite existing booking
+            forward: Fill the slot from its start (True) or its end (False)
 
         Returns:
             Effort gained from this booking (hours), or 0 if booking failed.
             This accounts for partial slot usage.
         """
-        if not force and not self.available(sb_idx):
-            return 0.0
+        booking = self.reserve(sb_idx, task, force=force, forward=forward)
+        return booking.effort if booking is not None else 0.0
 
-        # Make sure task is in duties list
-        duties = self.property.get("duties", self.scenarioIdx) or []
-        if task not in duties:
-            duties.append(task)
+    def reserve(
+        self, sb_idx: int, task: "Task", force: bool = False, forward: bool = True, not_before: float = 0.0
+    ) -> Optional[SlotBooking]:
+        """Book what the slot and the limits allow, and say where it sits."""
+        return reserve(self, sb_idx, task, forward=forward, force=force, not_before=not_before)
 
-        # Initialize scoreboard if needed
-        if self.scoreboard is None:
-            self.initScoreboard()
-
-        # Only as much of the slot as both the slot and the limits allow.
-        available_seconds = self.limitAllowance(sb_idx) if not force else self.getAvailableSecondsInSlot(sb_idx)
-        if available_seconds <= 0:
-            return 0.0
-        efficiency = self.property.get("efficiency", self.scenarioIdx) or 1.0
-
-        # Effort = (available_seconds / 3600) * efficiency
-        effort_gained = (available_seconds / 3600.0) * efficiency
-
-        # Track effort
-        self._effort += effort_gained
-
-        # Track per-task slot usage for cost calculation
-        if sb_idx not in self.slotTaskUsage:
-            self.slotTaskUsage[sb_idx] = []
-        self.slotTaskUsage[sb_idx].append((task, available_seconds))
-
-        # Update total seconds used in this slot
-        current_used = self.slotSecondsUsed.get(sb_idx, 0.0)
-        self.slotSecondsUsed[sb_idx] = current_used + available_seconds
-
-        # Update scoreboard (may be overwritten if multiple tasks share slot)
-        if self.scoreboard is not None:
-            self.scoreboard[sb_idx] = task
-
-        # Advance every limit counter by the time actually booked, not by a
-        # whole slot: a partial booking must consume a partial allowance.
-        holder: Optional[Any] = self.property
-        while holder is not None:
-            limits = holder.get("limits", self.scenarioIdx)
-            if limits is not None and hasattr(limits, "inc"):
-                limits.inc(sb_idx, self.property.id, seconds=available_seconds)
-            holder = holder.parent
-
-        # Update task limits (including parent task limits)
-        task_scenario = task.data[self.scenarioIdx] if hasattr(task, "data") and task.data else None
-        if task_scenario and hasattr(task_scenario, "incLimits"):
-            task_scenario.incLimits(sb_idx, self.property, seconds=available_seconds)
-
-        # Track booked slot ranges
-        if self.firstBookedSlot is None or self.firstBookedSlot > sb_idx:
-            self.firstBookedSlot = sb_idx
-            self.firstBookedSlots[task] = sb_idx
-        elif task not in self.firstBookedSlots or self.firstBookedSlots[task] > sb_idx:
-            self.firstBookedSlots[task] = sb_idx
-
-        if self.lastBookedSlot is None or self.lastBookedSlot < sb_idx:
-            self.lastBookedSlot = sb_idx
-            self.lastBookedSlots[task] = sb_idx
-        elif task not in self.lastBookedSlots or self.lastBookedSlots[task] < sb_idx:
-            self.lastBookedSlots[task] = sb_idx
-
-        return effort_gained
-
-    def releasePartialSlot(self, sb_idx: int, seconds_to_release: float) -> None:
-        """
-        Release part of a slot back for other tasks to use.
-
-        Called when a task ends mid-slot to make the remaining time available.
-
-        Args:
-            sb_idx: Scoreboard index
-            seconds_to_release: Seconds to release back
-        """
-        slot_duration = self.project.attributes.get("scheduleGranularity", 3600)
-        current_used = self.slotSecondsUsed.get(sb_idx, slot_duration)
-        # Reduce the used time, making more available
-        self.slotSecondsUsed[sb_idx] = max(0.0, current_used - seconds_to_release)
-        # Clear the booking so another task can use it
-        if self.scoreboard is not None:
-            self.scoreboard[sb_idx] = None
+    def release(self, booking: SlotBooking, keep: float) -> None:
+        """Hand back the part of a booking past its first ``keep`` seconds."""
+        release(booking, keep)
 
     def bookedEffort(self) -> float:
         """

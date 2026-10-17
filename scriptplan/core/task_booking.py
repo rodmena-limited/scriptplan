@@ -1,6 +1,6 @@
 """Committing a task's work to resources, slot by slot.
 
- is person-time: every allocated resource that works in a slot
+`effort` is person-time: every allocated resource that works in a slot
 contributes its own time to the task. A mandatory allocation that cannot be
 filled skips the slot entirely rather than booking the others, which is how a
 task that needs two people together is expressed.
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any
+
+from scriptplan.core.slot_ledger import finish_offset
 
 __all__ = [
     "all_limits",
@@ -42,6 +44,8 @@ def book_resources(scenario: Any) -> None:
 
     slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
     effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
+    # Where in this slot each booking sits, for settling a mid-slot finish.
+    scenario.slotBookings = []
 
     # Every mandatory allocation must be satisfiable before anything is
     # booked, so a slot is never half-committed to a task that cannot use it.
@@ -68,7 +72,11 @@ def book_resources(scenario: Any) -> None:
         if gained <= 0:
             if allocation.mandatory:
                 # A mandatory resource turned out not to be bookable after
-                # all; stop rather than record partial progress.
+                # all; stop rather than record partial progress, and give
+                # back what was booked so no one's time is spent on nothing.
+                for booking in reversed(scenario.slotBookings):
+                    booking.resource.release(booking, 0.0)
+                scenario.slotBookings = []
                 return
             continue
         booked_any = True
@@ -103,16 +111,27 @@ def first_bookable(scenario: Any, allocation: Any, slot_idx: int) -> Any | None:
 
 
 def record_effort_start(scenario: Any) -> None:
-    """Set the task's start at its first booking, honouring a mid-slot start."""
+    """Record where the task's work begins, to the second.
 
-    forward = scenario.property.get("forward", scenario.scenarioIdx)
-    if not forward:
-        return
+    Work begins where the first bookings sit, which is after whatever earlier
+    tasks or a predecessor left of the slot. Forward work starts at the
+    earliest of them. Backward work is placed from its end, so its first
+    bookings are its last work, and they set when it ends.
+    """
     slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
-    start_date = scenario.project.idxToDate(slot_idx)
-    if start_date is not None and getattr(scenario, "slotStartOffset", 0) > 0:
-        start_date = start_date + timedelta(seconds=scenario.slotStartOffset)
-    scenario.property[("start", scenario.scenarioIdx)] = start_date
+    slot_start = scenario.project.idxToDate(slot_idx)
+    if slot_start is None:
+        return
+    bookings = getattr(scenario, "slotBookings", None) or []
+    # Reported to the second, rounded the same way as the end of whatever
+    # task's work this follows, so the two dates meet exactly.
+    offset = round(min((b.offset for b in bookings), default=0.0))
+    if scenario.property.get("forward", scenario.scenarioIdx):
+        scenario.property[("start", scenario.scenarioIdx)] = slot_start + timedelta(seconds=offset)
+    else:
+        slot_seconds = scenario.project.attributes.get("scheduleGranularity", 3600)
+        scenario.workEnd = slot_start + timedelta(seconds=slot_seconds - offset)
+    scenario.firstWorkSlot = slot_idx
 
 
 def book_resource(scenario: Any, resource: Any) -> float:
@@ -135,26 +154,25 @@ def book_resource(scenario: Any, resource: Any) -> float:
     if res_scenario.scoreboard is None:
         res_scenario.prepareScheduling()
 
-    # For the FIRST slot of this task, apply start offset from dependency
-    # This marks the portion already used by predecessor as unavailable
-    if hasattr(scenario, "slotStartOffset") and scenario.slotStartOffset > 0 and scenario.doneEffort == 0:
-        # Mark the offset portion as used (by predecessor task)
-        current_used = res_scenario.slotSecondsUsed.get(scenario.currentSlotIdx, 0.0)
-        if current_used < scenario.slotStartOffset:
-            res_scenario.slotSecondsUsed[scenario.currentSlotIdx] = scenario.slotStartOffset
-
-    # Check if resource is available
+    # Check task limits for this resource (including parent limits); the
+    # resource's own availability is checked by reserve()
     slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
-    if not res_scenario.available(slot_idx):
-        return 0.0
-
-    # Check task limits for this resource (including parent limits)
     if not limits_ok(scenario, slot_idx, resource):
         return 0.0
 
-    # Book the resource - returns effort gained (accounts for partial slots)
-    result_float: float = res_scenario.book(slot_idx, scenario.property)
-    return result_float
+    # A predecessor that ends mid-slot keeps this task out of the first part
+    # of that one slot. Later slots are free from their start.
+    not_before = 0.0
+    if slot_idx == getattr(scenario, "slotStartOffsetSlot", None):
+        not_before = scenario.slotStartOffset
+
+    forward = bool(scenario.property.get("forward", scenario.scenarioIdx))
+    booking = res_scenario.reserve(slot_idx, scenario.property, forward=forward, not_before=not_before)
+    if booking is None:
+        return 0.0
+    scenario.slotBookings.append(booking)
+    effort_gained: float = booking.effort
+    return effort_gained
 
 
 def all_limits(scenario: Any) -> list[Any]:
@@ -209,10 +227,10 @@ def precise_end_time_and_release(
     """
     Calculate the precise end time within the final slot and release unused time.
 
-    When a task completes within a slot, we need to determine exactly when
-    within that slot the required effort was reached, rather than rounding
-    to slot boundaries. The unused portion of the slot is released back to
-    the resource for other tasks to use.
+    The task's work in its final slot sits where its bookings there sit: after
+    whatever earlier tasks left of the slot, on each resource. It finishes at
+    the earliest moment that work covers what was still needed, and each
+    resource gets back only the part of its own booking past that moment.
 
     Args:
         required_effort: Total effort required for the task (hours)
@@ -220,95 +238,33 @@ def precise_end_time_and_release(
         forward: True for forward scheduling, False for backward
 
     Returns:
-        tuple: (precise_end_datetime, seconds_used_in_slot)
+        tuple: (the end for forward work or the start for backward work,
+                seconds from the slot edge the work grew from)
     """
-
-    # Get slot parameters
-    slot_duration_seconds = scenario.project.attributes.get("scheduleGranularity", 3600)
+    slot_seconds = scenario.project.attributes.get("scheduleGranularity", 3600)
     slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
     slot_start = scenario.project.idxToDate(slot_idx)
+    if slot_start is None:
+        slot_start = scenario.project["start"]
 
-    # Get the resource and its efficiency for this slot
-    resource = getattr(scenario, "_lastBookedResource", None)
-    efficiency = 1.0
-    if resource:
-        eff = resource.get("efficiency", scenario.scenarioIdx)
-        if eff is not None:
-            efficiency = eff
-    else:
-        # Fallback to allocations
-        allocations = scenario.property.get("allocate", scenario.scenarioIdx) or []
-        for alloc in allocations:
-            if isinstance(alloc, str):
-                for res in scenario.project.resources:
-                    if res.id == alloc:
-                        resource = res
-                        break
-            else:
-                resource = alloc
-            if resource:
-                eff = resource.get("efficiency", scenario.scenarioIdx)
-                if eff is not None:
-                    efficiency = eff
-                break
+    # The ledger keeps the exact moment, so rounding never accumulates along
+    # a chain of tasks; only the reported date is rounded to the second.
+    bookings = list(getattr(scenario, "slotBookings", None) or [])
+    reach_exact = finish_offset(bookings, required_effort - effort_before_slot)
+    for booking in reversed(bookings):
+        booking.resource.release(booking, reach_exact - booking.offset)
+    reach = round(reach_exact)
 
-    # Calculate effort gained per second in this slot
-    slot_duration_hours = slot_duration_seconds / 3600.0
-    effort_per_slot = slot_duration_hours * efficiency
-    effort_per_second = effort_per_slot / slot_duration_seconds
+    if getattr(scenario, "firstWorkSlot", None) == slot_idx:
+        # The task started in this slot too, so its start may have been set
+        # by a booking it turned out not to need.
+        working = [b for b in bookings if b.seconds > 0]
+        if working:
+            scenario.slotBookings = working
+            record_effort_start(scenario)
 
-    # How much effort was needed in this final slot?
-    effort_needed_in_slot = required_effort - effort_before_slot
-
-    # How many seconds into the slot does that take?
-    seconds_into_slot = effort_needed_in_slot / effort_per_second if effort_per_second > 0 else slot_duration_seconds
-
-    # Clamp to slot duration (shouldn't exceed, but safety check)
-    seconds_into_slot = min(seconds_into_slot, slot_duration_seconds)
-
-    # Calculate the precise end time, rounded to nearest second
-    # (Gold standard uses second-level precision)
-    seconds_rounded = round(seconds_into_slot)
-
-    if forward:
-        # For forward scheduling, end time is offset from slot start
-        if slot_start is not None:
-            precise_end = slot_start + timedelta(seconds=seconds_rounded)
-        else:
-            precise_end = scenario.project["start"] + timedelta(seconds=seconds_rounded)
-    else:
-        # For backward scheduling, we're calculating the START time
-        # The start is at the END of the slot minus unused time
-        # If we used the whole slot, start is at slot_start
-        # If we used part of it, start is later in the slot
-        if slot_start is not None:
-            slot_end = slot_start + timedelta(seconds=slot_duration_seconds)
-            precise_end = slot_end - timedelta(seconds=seconds_rounded)
-        else:
-            precise_end = scenario.project["start"]
-
-    # Release unused portion of the slot back to the resource
-    seconds_unused = slot_duration_seconds - seconds_into_slot
-    if seconds_unused > 0 and resource:
-        res_scenario = resource.data[scenario.scenarioIdx] if resource.data else None
-        if res_scenario:
-            # Update the per-task usage record to reflect actual usage
-            if scenario.currentSlotIdx in res_scenario.slotTaskUsage:
-                # Find and update this task's entry
-                for i, (task, _secs) in enumerate(res_scenario.slotTaskUsage[scenario.currentSlotIdx]):
-                    if task == scenario.property:
-                        res_scenario.slotTaskUsage[scenario.currentSlotIdx][i] = (task, seconds_into_slot)
-                        break
-
-            # Update total slotSecondsUsed to release unused time
-            # Old value was full slot duration, new value is actual usage
-            old_total = res_scenario.slotSecondsUsed.get(scenario.currentSlotIdx, slot_duration_seconds)
-            # Subtract what was previously booked (full slot) and add actual usage
-            res_scenario.slotSecondsUsed[scenario.currentSlotIdx] = (
-                old_total - slot_duration_seconds + seconds_into_slot
-            )
-
-    return precise_end, seconds_into_slot
+    seconds_from_start = reach if forward else slot_seconds - reach
+    return slot_start + timedelta(seconds=seconds_from_start), float(reach)
 
 
 def precise_end_time(scenario: Any, required_effort: float, effort_before_slot: float, forward: bool) -> datetime:

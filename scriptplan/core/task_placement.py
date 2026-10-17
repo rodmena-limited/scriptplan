@@ -9,10 +9,11 @@ believing.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 __all__ = [
+    "enter_at",
     "finish_scheduling",
     "place_slot",
     "place_task",
@@ -34,7 +35,7 @@ def place_task(scenario: Any) -> bool:
         if forward:
             start_date = scenario.property.get("start", scenario.scenarioIdx)
             if start_date:
-                scenario.currentSlotIdx = scenario.project.dateToIdx(start_date)
+                scenario.currentSlotIdx = enter_at(scenario, start_date, forward=True)
             else:
                 # ASAP mode, start at project start or after dependencies
                 # Check ALL dependencies (including inherited) to find the earliest start
@@ -66,8 +67,6 @@ def place_task(scenario: Any) -> bool:
                     if dep_time:
                         # Add gap if specified
                         if gapduration:
-                            from datetime import timedelta
-
                             dep_time = dep_time + timedelta(
                                 seconds=scenario._calendarSeconds(gapduration)
                             )
@@ -86,18 +85,9 @@ def place_task(scenario: Any) -> bool:
                     if delayed_start > earliest_start:
                         earliest_start = delayed_start
 
-                # Convert earliest_start to slot index
-                # If earliest_start is mid-slot, track the offset so we don't
-                # book time that overlaps with the predecessor
-                slot_idx = scenario.project.dateToIdx(earliest_start)
-                slot_start = scenario.project.idxToDate(slot_idx)
-                if earliest_start > slot_start:
-                    # earliest_start is mid-slot - calculate offset in seconds
-                    offset_seconds = (earliest_start - slot_start).total_seconds()
-                    scenario.slotStartOffset = offset_seconds
-                else:
-                    scenario.slotStartOffset = 0.0
-                scenario.currentSlotIdx = slot_idx
+                # If earliest_start is mid-slot, the time before it in that
+                # slot must not be booked: the predecessor is still running.
+                scenario.currentSlotIdx = enter_at(scenario, earliest_start, forward=True)
         else:
             # ALAP (backward) scheduling
             end_date = scenario.property.get("end", scenario.scenarioIdx)
@@ -129,8 +119,6 @@ def place_task(scenario: Any) -> bool:
                         if pred_start:
                             # Apply gapduration - A must end (gapduration) before B starts
                             if gapduration:
-                                from datetime import timedelta
-
                                 pred_start = pred_start - timedelta(
                                     seconds=scenario._calendarSeconds(gapduration)
                                 )
@@ -147,8 +135,9 @@ def place_task(scenario: Any) -> bool:
                 end_date = latest_end
 
             if end_date:
-                # For ALAP, start from the last working slot BEFORE the end date
-                scenario.currentSlotIdx = scenario.project.dateToIdx(end_date) - 1
+                # For ALAP, start from the slot the end date falls in, or the
+                # one before it when the end is on a slot boundary
+                scenario.currentSlotIdx = enter_at(scenario, end_date, forward=False)
                 # Find the last working slot
                 # For effort tasks with allocations, check resource availability
                 # (respects resource timezone and working hours)
@@ -236,6 +225,10 @@ def place_task(scenario: Any) -> bool:
         # Use first_booked_slot if we actually booked something, else fall back to start_slot_idx
         end_slot = first_booked_slot if first_booked_slot is not None else start_slot_idx
         actual_end = scenario.project.idxToDate(end_slot + 1)
+        # Work placed after another backward task in the same slot ends
+        # where that task's work begins, not at the slot boundary.
+        if scenario.workEnd is not None:
+            actual_end = scenario.workEnd
         # For effort-based tasks, always use the calculated end (when work actually completes)
         # even if an explicit end constraint was specified (that's just the deadline, not the actual end)
         effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
@@ -245,6 +238,26 @@ def place_task(scenario: Any) -> bool:
     scenario.scheduled = True
     scenario.property[("scheduled", scenario.scenarioIdx)] = True
     return True
+
+
+def enter_at(scenario: Any, moment: datetime, forward: bool) -> int:
+    """The slot to begin placing work in, given a moment that may fall inside one.
+
+    The part of that slot on the wrong side of ``moment`` is kept out of this
+    task's bookings: the part before it for forward work, the part after it
+    for backward work. The offset is measured from the edge the work grows
+    from and applies to that one slot only.
+    """
+    idx: int = scenario.project.dateToIdx(moment)
+    slot_start = scenario.project.idxToDate(idx)
+    into = (moment - slot_start).total_seconds() if slot_start is not None else 0.0
+    scenario.slotStartOffset = 0.0
+    scenario.slotStartOffsetSlot = None
+    if into <= 0:
+        return idx if forward else idx - 1
+    scenario.slotStartOffset = into if forward else scenario._slotSeconds() - into
+    scenario.slotStartOffsetSlot = idx
+    return idx
 
 
 def place_slot(scenario: Any) -> bool:
@@ -277,9 +290,12 @@ def place_slot(scenario: Any) -> bool:
             if start_date:
                 scenario.property[("end", scenario.scenarioIdx)] = start_date
             else:
-                # No start date - use current slot (set by dependency calculation)
+                # No start date - use current slot (set by dependency calculation),
+                # at the moment inside it where the predecessor finished
                 slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
                 date = scenario.project.idxToDate(slot_idx)
+                if slot_idx == scenario.slotStartOffsetSlot:
+                    date = date + timedelta(seconds=round(scenario.slotStartOffset))
                 scenario.property[("start", scenario.scenarioIdx)] = date
                 scenario.property[("end", scenario.scenarioIdx)] = date
         else:

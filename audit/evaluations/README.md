@@ -24,6 +24,7 @@ path and which accelerated modules are active.
 | `probe_precision.py` | minute-level starts and shift boundaries | `SPECS/004` |
 | `probe_limits.py` | every quota blocks **and** releases | `SPECS/003` |
 | `probe_effort_semantics.py` | effort is person-time; cost charged once | `SPECS/005` |
+| `probe_slot_sharing.py` | tasks sharing a slot share its time; nothing overbooked, lost or invented | `SPECS/011` |
 | `probe_alap.py` | backward scheduling; declared project end | `SPECS/005` |
 | `probe_idempotency.py` | scheduling twice gives the same answer | `SPECS/005` |
 | `probe_priority.py` | regression guard: priority contention already works | `SPECS/005` |
@@ -36,7 +37,9 @@ path and which accelerated modules are active.
 - **Both directions for every guard.** A cap is probed for blocking *and* for
   releasing; a cap tested only for blocking is how a queue deadlocks forever.
 - **No self-confirming checks.** Expected values are computed from the stated
-  semantics, never read back from the implementation.
+  semantics, never read back from the implementation. Booked time is summed
+  from `slotTaskUsage`, never read from `slotSecondsUsed`: that counter is what
+  the slot-sharing defect corrupted (`SPECS/011`), so it cannot be the witness.
 - **Safe by default.** No probe writes to the repository or to a shared
   service; there is no destructive probe, so `run_all.sh` needs no opt-in.
 - **A probe that goes red must first have been able to go green.** When a probe
