@@ -10,9 +10,8 @@ The TJP file format and scheduling concepts originate from TaskJuggler.
 """
 
 # The single source of truth for the version; pyproject reads it from here.
-# A semantic change: effort is now person-time, failures are reported as
-# failures, and the compiled extensions are gone.
-__version__ = "0.10.0"
+# 0.10.1: tasks sharing a slot share its time instead of overbooking it.
+__version__ = "0.10.1"
 __author__ = "ScriptPlan Team"
 
 from scriptplan.core.project import Project

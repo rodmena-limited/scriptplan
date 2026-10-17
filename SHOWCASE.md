@@ -1,7 +1,7 @@
 # ScriptPlan example projects
 
-**ScriptPlan**: 0.10.0  
-**Generated**: 2026-10-17 21:50:45 UTC  
+**ScriptPlan**: 0.10.1  
+**Generated**: 2026-10-17 21:52:11 UTC  
 **Command**: `plan report --csv <project>`
 
 Every project in `tests/data`, with the schedule ScriptPlan produces for it.
