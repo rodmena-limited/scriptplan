@@ -164,12 +164,16 @@ def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref:
     path starts at the project root. A path then names children level by
     level ("parent.child").
 
-    A reference that does not resolve that way but can mean only one task in
-    the project, such as "!!pack" written for the sibling "!pack", is bound to
-    that task, as it always was. One that could mean several is an error: the
-    parser used to bind the first task with that id anywhere in the project,
-    silently, which puts a dependency on the wrong task when ids repeat
-    (issuedb #18).
+    When the "!"s stop at a task, the path must name one of its children, or
+    the reference does not resolve. When there are none, or they reach the top
+    level of the project, a path that names no top-level task is bound to the
+    only task in the project with that id, such as "!!pack" written for the
+    sibling "!pack", as it always was. One that could mean several is an
+    error: the parser used to bind the first task with that id anywhere in the
+    project, silently, which puts a dependency on the wrong task when ids
+    repeat (issuedb #18). 0.10.2 also searched the whole project when a task's
+    own children did not match, binding "!a" to an unrelated "h.a"
+    (issuedb #30).
     """
     if not ref:
         return None
@@ -184,7 +188,7 @@ def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref:
         scope = scope.parent
     else:
         found = _walk_path(project, scope, path.split("."))
-        if found is not None:
+        if found is not None or scope is not None:
             return found
 
     candidates = [t for t in project.tasks if t.fullId == path or t.fullId.endswith("." + path)]

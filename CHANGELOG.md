@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.10.3
+
+Fixes four defects Trace reported against 0.10.2, and three found while fixing them.
+Two are regressions: one in 0.10.2 and one in 0.10.0.
+
+### Regressions
+
+- A `!` reference whose scope is a task bound a task elsewhere in the project when that
+  scope had no such child. `g.b` with `depends !a` and no sibling `a` was scheduled after
+  `h.a`, an unrelated task in another branch. 0.10.1 refused the file, and 0.10.3
+  refuses it again. A reference with no `!`, or whose `!`s reach the top level of the
+  project, still binds the only task with that id, and one that could mean two tasks is
+  still refused. This was a regression in 0.10.2.
+- A task that depends on a container nested two or more levels deep never started. With
+  `p { m { w } }` and `s depends p`, 0.10.0 to 0.10.2 reported "Task 's' could not be
+  scheduled: no ready predecessor or successor". Containers were marked done in one
+  pass in declaration order, so p was checked before m and never marked. s now starts
+  09:30, when w ends, as 0.9.2 and the reference scheduler place it.
+
+### Fixed
+
+- A container that depends on another with a gap, `gaplength` or `onstart` never
+  scheduled its children. `q { depends p { gapduration 30min } }` reported "Task 'q.c'
+  could not be scheduled: no ready predecessor or successor" in 0.10.0 to 0.10.2, and
+  0.9.2 left q.c without dates and said nothing. Inheriting the dependency copied the
+  task `p` it names, and q.c waited for the copy, which is never scheduled. q.c now
+  runs 10:00-11:00, 30 minutes after p ends, which is the reference scheduler's answer.
+  An attribute that names a task, resource, account or shift keeps naming that same
+  one when a child inherits it.
+- A task scheduled as late as possible inside a container was not bounded by a
+  successor that depends on the container. With `q depends p` and q.c ending Monday
+  17:30, 0.9.2 to 0.10.1 placed p.p1 on Friday the 20th, after q.c, and said nothing.
+  0.10.2 refused the plan. p.p1 now ends when q.c starts, or 30 minutes earlier with
+  `gapduration 30min`. The same holds for a task nested deeper inside p.
+- `precedes` dropped its options. `a precedes b { gapduration 30min }` let b start the
+  moment a ended, and `gaplength` and `maxgapduration` were dropped the same way, with
+  nothing said. They now hold b back exactly as `b depends a` with the same option
+  does, in both directions; the backward cases match the reference scheduler.
+  `precedes b { onend }` is refused, because ScriptPlan cannot tie a task to another's
+  end, where 0.10.2 dropped it.
+- When a task broke a dependency on a container, the error was printed twice, and it
+  quoted the task's actual start as the start the file declares. It is printed once,
+  and names the declared start when that differs.
+- A milestone took a start inherited from its container as fixed. With the container
+  starting Monday 09:00 and the milestone depending on a task that ends at 17:00, 0.10.1
+  dated the milestone 09:00 and 0.10.2 refused the plan. The inherited start is now an
+  earliest start, as it already was for tasks with work, so the milestone sits at 17:00.
+  A start stated on the milestone itself is still fixed.
+- An unresolved `depends` or `precedes` was reported as "not a task in this project",
+  even when a task with that id existed elsewhere. The error now says the reference
+  names no task from where it is written.
+
+### Documentation
+
+- README now says that a task ranked higher takes a resource's daily or weekly
+  allowance first, so a lower-ranked task that started earlier can finish later. Trace
+  asked about a task that waited two days for 15 minutes on a capped resource. 0.10.2
+  and the hour-level reference scheduler give that schedule, and 0.10.1 gives it too at
+  15-minute slots. 0.10.1 differed only at 30-minute slots, because of the skipped-time
+  regression that 0.10.2 fixed.
+
+### Verification
+
+`tests/test_scope_and_inherited_start.py` runs six plans through the `plan` CLI. The
+three for the defects fail on 0.10.2, and the three that check what must not change pass
+on both versions. `tests/test_container_dependencies.py` runs 18 plans with container
+dependencies and `precedes`, checked against the reference scheduler where it accepts
+the plan and worked out by hand where it does not, and all 18 fail on 0.10.2. No golden snapshot or example answer changes.
+
 ## 0.10.2
 
 0.10.1 shipped two regressions. This release fixes them and the gaps 0.10.1 listed as

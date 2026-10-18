@@ -49,6 +49,22 @@ def all_dependencies(scenario: Any) -> list[Any]:
     return all_deps
 
 
+def names_this_task(scenario: Any, task: Any) -> bool:
+    """True when a dependency on ``task`` holds for this task.
+
+    That is this task itself or a container it belongs to: a dependency on a
+    container holds for every task inside it. Matching the task alone left a
+    backward task inside ``p`` unbounded by a successor that depends on ``p``
+    (issuedb #32).
+    """
+    node = scenario.property
+    while node is not None:
+        if task is node:
+            return True
+        node = node.parent
+    return False
+
+
 def bounding_successors(scenario: Any) -> list[Any]:
     """The successors whose start this backward task must end by.
 
@@ -61,7 +77,7 @@ def bounding_successors(scenario: Any) -> list[Any]:
     for successor in scenario._getSuccessors():
         other = successor.data[scenario.scenarioIdx] if successor.data else None
         onstart = any(
-            isinstance(dep, dict) and dep.get("task") is scenario.property and dep.get("onstart")
+            isinstance(dep, dict) and names_this_task(scenario, dep.get("task")) and dep.get("onstart")
             for dep in (other.getAllDependencies() if other is not None else [])
         )
         if not (onstart and successor.get("forward", scenario.scenarioIdx) is False):
@@ -85,7 +101,7 @@ def latest_end_for(scenario: Any, successor: Any) -> datetime | None:
     latest = start
     for dep in other.getAllDependencies() if other is not None else []:
         task = dep.get("task") if isinstance(dep, dict) else getattr(dep, "task", dep)
-        if task is not scenario.property or not isinstance(dep, dict):
+        if not isinstance(dep, dict) or not names_this_task(scenario, task):
             continue
         if dep.get("gapduration"):
             bound = start - timedelta(seconds=scenario._calendarSeconds(dep["gapduration"]))
@@ -116,7 +132,7 @@ def successors(scenario: Any) -> list[Any]:
             else:
                 pred = dep
 
-            if pred is scenario.property:
+            if names_this_task(scenario, pred):
                 successors.append(task)
                 break
 

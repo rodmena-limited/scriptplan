@@ -4,7 +4,7 @@
 
 # ScriptPlan
 
-![Tests](https://img.shields.io/badge/tests-498_passing-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-522_passing-success?style=for-the-badge)
 ![Probes](https://img.shields.io/badge/audit_probes-85_passing-success?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)
 ![Licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey?style=for-the-badge)
@@ -132,6 +132,9 @@ audit/evaluations/run_all.sh
   end. With none of these but a successor scheduled as soon as possible that
   states no start, it is scheduled as soon as possible instead, with a warning.
 - Contention is resolved by priority, then criticalness, then declaration order.
+  Tasks are placed one at a time in that order, so a task ranked higher takes a
+  resource's daily or weekly allowance first, and a lower-ranked task that started
+  earlier can finish later. Raising its priority keeps it going.
 - The declared project period is never rewritten. A task that does not fit is
   reported, with its name and the reason. A date stated outside the period is an
   error.
@@ -160,11 +163,13 @@ audit/evaluations/run_all.sh
   rejected at parse time rather than silently producing nothing.
 - Accounts are parsed but not yet modelled, so `chargeset` and `charge` record an
   amount without posting it anywhere.
-- A task reference is first looked up from the referring task's scope, one level
-  up for each `!`. When that finds nothing but exactly one task in the project has
-  that id, the reference binds to it, so `depends !!pack` inside `delivery` finds
-  `delivery.pack`. When two tasks could be meant, the file is refused and both are
-  named.
+- A task reference is looked up from the referring task's scope, one level up for
+  each `!`. When the `!`s stop at a task, the reference must name one of its
+  children: `!x` with no sibling `x` is refused. When there are no `!`s, or they
+  reach the top level of the project and no top-level task matches, the reference
+  binds to the only task in the project with that id, so `depends !!pack` inside
+  `delivery` finds `delivery.pack`. When two tasks could be meant, the file is
+  refused and both are named.
 - `onstart` on a dependency means start-to-start for a task scheduled as soon as
   possible: it may start once the predecessor starts. For a task scheduled as
   late as possible it means the task must finish before the predecessor starts,

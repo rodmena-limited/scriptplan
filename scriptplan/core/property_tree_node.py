@@ -18,6 +18,14 @@ from scriptplan.utils.message_handler import MessageHandler
 
 
 class PropertyTreeNode(MessageHandler):
+    def __deepcopy__(self, memo: dict[int, Any]) -> PropertyTreeNode:
+        # A task, resource, account or shift is referenced, never copied: an
+        # attribute value that names one keeps naming that one when a child
+        # inherits it. A dependency with a gap is a dict holding its task, and
+        # copying the task made the child wait on a copy that is never
+        # scheduled (issuedb #32).
+        return self
+
     def __init__(
         self, property_set: PropertySet, id: str | None, name: str, parent: PropertyTreeNode | None
     ) -> None:

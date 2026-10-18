@@ -169,8 +169,8 @@ class ModelBuilder:
                 dep_task = self._resolve_task_reference(project, task, dep_ref)
                 if dep_task is None:
                     raise SemanticError(
-                        f"task '{task.fullId}' depends on '{dep_ref}', which is not a task in "
-                        f"this project. A dependency that does not resolve would silently "
+                        f"task '{task.fullId}' depends on '{dep_ref}', which names no task from "
+                        f"where it is written. A dependency that does not resolve would silently "
                         f"disappear from the schedule."
                     )
                 if dep_task:
@@ -196,19 +196,30 @@ class ModelBuilder:
     def _resolve_precedes(self, project: Project) -> None:
         """Resolve precedes relationships by adding dependencies to target tasks.
 
-        If task A precedes task B, then B depends on A.
-        This is the inverse of the 'depends' relationship.
+        If task A precedes task B, then B depends on A, with the same gap options.
+        This is the inverse of the 'depends' relationship. The options used to
+        be dropped, so `precedes b { gapduration 30min }` let b start the
+        moment A ended (issuedb #34).
         """
         for source_task, precedes_list in self._pending_precedes:
             for prec_item in precedes_list:
                 # prec_item can be a dict with 'ref' key or a string
                 prec_ref = prec_item.get("ref", "") if isinstance(prec_item, dict) else prec_item
+                options = {
+                    key: prec_item.get(key) for key in ("gapduration", "gaplength", "maxgapduration")
+                } if isinstance(prec_item, dict) else {}
+                if isinstance(prec_item, dict) and prec_item.get("onend"):
+                    raise SemanticError(
+                        f"task '{source_task.fullId}' precedes '{prec_ref}' {{ onend }}, which ties it "
+                        f"to the end of '{prec_ref}'. ScriptPlan does not support onend on precedes, "
+                        f"and refuses the file rather than drop the option."
+                    )
 
                 target_task = self._resolve_task_reference(project, source_task, prec_ref)
                 if target_task is None:
                     raise SemanticError(
-                        f"task '{source_task.fullId}' precedes '{prec_ref}', which is not a task "
-                        f"in this project."
+                        f"task '{source_task.fullId}' precedes '{prec_ref}', which names no task "
+                        f"from where it is written."
                     )
                 if target_task:
                     # Add source_task as a dependency of target_task
@@ -224,7 +235,10 @@ class ModelBuilder:
                                 already_exists = True
                                 break
                         if not already_exists:
-                            existing_deps.append(source_task)
+                            entry: Any = source_task
+                            if any(options.values()):
+                                entry = {"task": source_task, **options, "onstart": False, "onend": False}
+                            existing_deps.append(entry)
                             target_task[("depends", scIdx)] = existing_deps
 
     def _apply_project_attributes(self, project: Project, attributes: list[Any]) -> None:

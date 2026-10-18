@@ -64,9 +64,14 @@ def _check_dependencies_kept(project: Any, scenario_idx: int) -> None:
         if not isinstance(start, datetime) or not isinstance(end, datetime):
             continue
         forward = task.get("forward", scenario_idx) is not False
+        reported: set[int] = set()
         for dep in scenario.getAllDependencies():
             predecessor, options = _dependency_parts(dep)
             if predecessor is None or not predecessor.get("scheduled", scenario_idx):
+                continue
+            if id(predecessor) in reported:
+                # A child inherits its container's dependency as well as
+                # holding it through the container: one error is enough.
                 continue
             onstart = bool(options.get("onstart"))
             anchor = predecessor.get("start" if onstart else "end", scenario_idx)
@@ -77,20 +82,22 @@ def _check_dependencies_kept(project: Any, scenario_idx: int) -> None:
                 # Read for a backward task as: it must end before the predecessor starts.
                 latest = anchor - timedelta(seconds=scenario._calendarSeconds(gap)) if gap else anchor
                 if end > latest:
+                    reported.add(id(predecessor))
                     _dependency_error(project, task, predecessor, f"end by {latest}", f"ends at {end}")
                 continue
             earliest = anchor + timedelta(seconds=scenario._calendarSeconds(gap)) if gap else anchor
             if options.get("gaplength"):
                 earliest = scenario._advanceWorkingTime(anchor, scenario._workingSeconds(options["gaplength"]))
             if start < earliest:
-                declared = _states_start(task, scenario_idx)
-                _dependency_error(
-                    project,
-                    task,
-                    predecessor,
-                    f"start no earlier than {earliest}",
-                    f"starts at {start}" + (", the start the file declares for it" if declared else ""),
-                )
+                reported.add(id(predecessor))
+                declared = getattr(scenario, "declaredStart", None) if _states_start(task, scenario_idx) else None
+                if declared == start:
+                    actual = f"starts at {start}, the start the file declares for it"
+                elif declared is not None:
+                    actual = f"starts at {start}, because the file declares a start of {declared} for it"
+                else:
+                    actual = f"starts at {start}"
+                _dependency_error(project, task, predecessor, f"start no earlier than {earliest}", actual)
 
 
 def _states_start(task: Any, scenario_idx: int) -> bool:

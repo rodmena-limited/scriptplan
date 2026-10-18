@@ -101,8 +101,18 @@ def propagate_container_end_dates(self: Any, scIdx: int) -> None:
 def update_container_task_status(self: Any, scIdx: int) -> None:
     """Mark container tasks as scheduled when all their children are scheduled.
 
-    Also compute start/end dates for container tasks based on children.
+    Also compute start/end dates for container tasks based on children. The
+    pass repeats until no container changes: tasks come in declaration order,
+    outer containers first, so a single pass left a container two levels up
+    unscheduled, and a task that depended on it waited for ever (issuedb #33).
     """
+    while _mark_finished_containers(self, scIdx):
+        pass
+
+
+def _mark_finished_containers(self: Any, scIdx: int) -> bool:
+    """One pass of update_container_task_status; True if it marked a container."""
+    marked = False
     for task in self.tasks:
         if task.leaf():
             continue  # Skip leaf tasks
@@ -136,6 +146,8 @@ def update_container_task_status(self: Any, scIdx: int) -> None:
         if max_end:
             task[("end", scIdx)] = max_end
         task[("scheduled", scIdx)] = True
+        marked = True
+    return marked
 
 
 def propagate_alap_mode(self: Any, scIdx: int) -> None:

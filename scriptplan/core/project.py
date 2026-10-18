@@ -30,6 +30,7 @@ from scriptplan.core.property import (
     RealFormat,
 )
 from scriptplan.core.scenario import Scenario
+from scriptplan.core.task_placement import own_start
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.postcheck import run_post_checks
 from scriptplan.scheduler.preflight import check_no_cycles, stated_dates_inside_window
@@ -304,6 +305,10 @@ class Project(MessageHandler):
                 # Only mark as scheduled if we can set both dates
                 # Milestones with dependencies but no dates need to go through normal scheduling
                 if start and not end:
+                    if task.get("forward", scIdx) is not False and own_start(task.data[scIdx]) is None:
+                        # A start inherited from a container is an earliest
+                        # start: placed with the dependencies (issuedb #31).
+                        continue
                     task[("end", scIdx)] = start
                     task[("scheduled", scIdx)] = True
                 elif end and not start:
