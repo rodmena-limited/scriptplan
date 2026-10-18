@@ -100,7 +100,7 @@ task phase2 "Phase 2" {
 
     def test_scheduling_tutorial(self):
         """Test scheduling the tutorial project."""
-        test_data_dir = Path(__file__).parent / 'data'
+        test_data_dir = Path(__file__).parent.parent / 'examples' / 'showcase'
         tutorial_path = test_data_dir / 'tutorial.tjp'
 
         parser = ProjectFileParser()

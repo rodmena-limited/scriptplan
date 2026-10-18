@@ -96,7 +96,7 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
-# N rules ignored: codebase uses camelCase for TaskJuggler API compatibility
+# N rules ignored: codebase uses camelCase for .tjp tool API compatibility
 ignore = ["E501"]  # Line length handled separately
 
 [tool.mypy]

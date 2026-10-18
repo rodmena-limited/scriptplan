@@ -1,0 +1,12 @@
+project p "eight_efforts_fill_whole_days" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task t0 "T0" { effort 61min allocate r0 }
+task t1 "T1" { effort 129min allocate r0 }
+task t2 "T2" { effort 49min allocate r0 }
+task t3 "T3" { effort 73min allocate r0 }
+task t4 "T4" { effort 318min allocate r0 }
+task t5 "T5" { effort 163min allocate r0 }
+task t6 "T6" { effort 579min allocate r0 }
+task t7 "T7" { effort 134min allocate r0 }

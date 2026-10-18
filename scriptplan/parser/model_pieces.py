@@ -157,71 +157,59 @@ def allocation_ids(allocations: Any) -> list[str]:
 
 
 def resolve_task_reference(builder: Any, project: Project, from_task: Task, ref: str) -> Task | None:
-    """Resolve a task reference string to a Task object.
+    """Resolve a task reference string to a Task object, scoped as the .tjp format scopes it.
 
-    Reference formats:
-    - "!taskid" - sibling (same parent)
-    - "!!taskid" - uncle (parent's sibling)
-    - "taskid" - from project root
-    - "parent.child" - path from root
+    Each leading "!" moves the scope up one level from the referring task, so
+    "!x" is a sibling and "!!x" a child of the grandparent; with no "!" the
+    path starts at the project root. A path then names children level by
+    level ("parent.child").
+
+    A reference that does not resolve that way but can mean only one task in
+    the project, such as "!!pack" written for the sibling "!pack", is bound to
+    that task, as it always was. One that could mean several is an error: the
+    parser used to bind the first task with that id anywhere in the project,
+    silently, which puts a dependency on the wrong task when ids repeat
+    (issuedb #18).
     """
     if not ref:
         return None
 
-    # Count leading exclamation marks to determine scope
-    level = 0
-    while ref.startswith("!"):
-        level += 1
-        ref = ref[1:]
-
-    # Find base task to search from
-    if level > 0:
-        # Go up level times from current task's parent
-        base = from_task.parent
-        for _ in range(level - 1):
-            if base and base.parent:
-                base = base.parent
-            else:
-                base = None
-                break
+    level = len(ref) - len(ref.lstrip("!"))
+    path = ref[level:]
+    # No "!": from the project root. Otherwise up one level per "!".
+    scope: Any = from_task if level else None
+    for _ in range(level):
+        if scope is None:
+            break
+        scope = scope.parent
     else:
-        base = None  # Search from root
+        found = _walk_path(project, scope, path.split("."))
+        if found is not None:
+            return found
 
-    # Now find the task by ID
-    # Handle path references like "parent.child"
-    parts = ref.split(".")
+    candidates = [t for t in project.tasks if t.fullId == path or t.fullId.endswith("." + path)]
+    if len(candidates) > 1:
+        names = ", ".join(sorted(t.fullId for t in candidates))
+        raise SemanticError(
+            f"task '{from_task.fullId}' refers to '{ref}', which does not name a task from where it "
+            f"is written and could mean any of: {names}. Write the reference with its full path."
+        )
+    if not candidates:
+        return None
+    # The only task the reference can mean: bound as before, with no message,
+    # so the showcase projects that rely on it read exactly as they did.
+    resolved = candidates[0]
+    return resolved  # type: ignore[return-value]
 
-    if base:
-        # Search in base's children
-        current = base
-        for part in parts:
-            found = None
-            for child in current.children:
-                if child.id == part:
-                    found = child
-                    break
-            if found:
-                current = found
-            else:
-                return None
-        return current  # type: ignore[return-value]
-    else:
-        # Search from project root
-        for task in project.tasks:
-            if task.id == parts[0]:
-                if len(parts) == 1:
-                    return task  # type: ignore[return-value]
-                # Navigate path
-                current = task
-                for part in parts[1:]:
-                    found = None
-                    for child in current.children:
-                        if child.id == part:
-                            found = child
-                            break
-                    if found:
-                        current = found
-                    else:
-                        return None
-                return current  # type: ignore[return-value]
-    return None
+
+def _walk_path(project: Project, scope: Any, parts: list[str]) -> Task | None:
+    """The task at ``parts`` below ``scope``, or below the project root when ``scope`` is None."""
+    children = scope.children if scope is not None else [t for t in project.tasks if t.parent is None]
+    current: Any = None
+    for part in parts:
+        current = next((child for child in children if child.id == part), None)
+        if current is None:
+            return None
+        children = current.children
+    found: Task | None = current
+    return found

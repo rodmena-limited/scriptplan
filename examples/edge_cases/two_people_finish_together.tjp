@@ -1,0 +1,6 @@
+project p "two_people_finish_together" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource a "A" { workinghours mon - fri 9:00 - 17:00 rate 60 }
+resource b "B" { workinghours mon - fri 9:00 - 17:00 rate 60 }
+task t "T" { effort 80min allocate a, b }

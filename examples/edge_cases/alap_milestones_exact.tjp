@@ -1,0 +1,9 @@
+project p "alap_milestones_exact" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task t "T" { scheduling alap effort 60min allocate r0 end 2026-10-19-17:00 }
+task m "M" { scheduling alap precedes t }
+task d "D" { scheduling alap duration 2h precedes m }
+task t2 "T2" { scheduling alap effort 30min allocate r0 end 2026-10-19-16:30 }
+task m2 "M2" { scheduling alap precedes t2 }

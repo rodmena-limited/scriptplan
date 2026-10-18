@@ -24,7 +24,7 @@ TECHNICAL PROBLEMS:
 3. Column specification type dispatch (dict vs object vs string).
 
 SOLUTION DOMAINS:
-- Filter expressions -> TaskJuggler logical expression syntax over flags and predicates; small recursive-descent evaluator.
+- Filter expressions -> .tjp logical expression syntax over flags and predicates; small recursive-descent evaluator.
 - Column model -> one normalised ColumnSpec dataclass produced by the parser.
 
 ALTERNATIVES:

@@ -33,7 +33,7 @@ SOLUTION DOMAINS:
 - Canonical JSON hashing -> json.dumps(sort_keys=True, separators) + hashlib (stdlib).
 
 ALTERNATIVES:
-- Errors: collect-then-fail with a per-project collector [CHOSEN: TaskJuggler reports all errors in one run] vs raise on first error [REJECTED: one typo hides the rest].
+- Errors: collect-then-fail with a per-project collector [CHOSEN: the reference scheduler reports all errors in one run] vs raise on first error [REJECTED: one typo hides the rest].
 - Parser strictness: raise on unhandled attribute [CHOSEN] vs warn and continue [REJECTED: this is exactly the silent-drop defect, and a warning nobody reads is the same bug].
 - report_id: hash of canonical result JSON [CHOSEN] vs hash of input file [REJECTED: identical id for a correct and a broken schedule, and README calls it content-based].
 

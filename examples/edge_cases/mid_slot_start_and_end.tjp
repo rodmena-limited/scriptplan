@@ -1,0 +1,7 @@
+project p "mid_slot_start_and_end" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+resource r1 "Desk2" { workinghours mon - fri 9:00 - 17:00 }
+task f "F" { start 2026-10-19-09:30 effort 40min allocate r0 }
+task b "B" { end 2026-10-19-16:30 effort 40min allocate r1 scheduling alap }

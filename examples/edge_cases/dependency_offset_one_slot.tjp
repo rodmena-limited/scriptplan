@@ -1,0 +1,8 @@
+project p "dependency_offset_one_slot" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+resource b "Other" { workinghours mon - fri 9:00 - 17:00 }
+task a "A" { effort 60min allocate r0 priority 900 }
+task y "Y" { effort 50min allocate b priority 900 }
+task x "X" { depends y effort 30min allocate r0 priority 100 }

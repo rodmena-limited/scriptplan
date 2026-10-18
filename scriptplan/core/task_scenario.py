@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from scriptplan.core.allocation_plan import AllocationPlan
+from scriptplan.core.declared_dates import remember_declared
 from scriptplan.core.property import AttributeBase
 from scriptplan.core.scenario_data import ScenarioData
 from scriptplan.core.task_booking import (
@@ -18,6 +19,7 @@ from scriptplan.core.task_booking import (
 )
 from scriptplan.core.task_dependencies import (
     all_dependencies,
+    bounding_successors,
     max_gap_delayed_start,
     start_from_end,
     successor_earliest_start,
@@ -58,8 +60,8 @@ class TaskScenario(ScenarioData):
         self.hasDurationSpec: bool = False
         self.scheduled: bool = False
         self.currentSlotIdx: Optional[int] = None
-        self.doneDuration: int = 0
-        self.doneLength: int = 0
+        self.doneDuration: float = 0.0
+        self.doneLength: float = 0.0
         self.doneEffort: float = 0.0
         self.slotStartOffset: float = 0.0
         self.slotStartOffsetSlot: Optional[int] = None
@@ -67,6 +69,13 @@ class TaskScenario(ScenarioData):
         self.slotBookings: list[Any] = []
         self.firstWorkSlot: Optional[int] = None
         self.workEnd: Optional[datetime] = None
+        # The dates the file states, kept apart from the dates a run writes
+        # back into the same attributes (see declared_dates)
+        self.declaredStart: Optional[datetime] = None
+        self.declaredEnd: Optional[datetime] = None
+        self._writtenDates: dict[str, Any] = {}
+        # The moment backward placement began from, for the failure message
+        self.latestEnd: Optional[datetime] = None
         self._selectedResources: Optional[list[Any]] = None
         self._allocationPlan: Optional[AllocationPlan] = None
         self._lastBookedResource: Optional[Any] = None
@@ -136,8 +145,8 @@ class TaskScenario(ScenarioData):
         """
         self.isRunAway = False
         self.currentSlotIdx = None
-        self.doneDuration = 0
-        self.doneLength = 0
+        self.doneDuration = 0.0
+        self.doneLength = 0.0
         self.doneEffort = 0.0
         self.scheduled = False
         self._selectedResources = None  # Reset alternative resource selection
@@ -162,6 +171,7 @@ class TaskScenario(ScenarioData):
             limits.prepare(int(self.project.attributes.get("scheduleGranularity", 3600)))
 
         self._discardComputedDates()
+        remember_declared(self)
 
     # Attributes the scheduler works out for itself. A value the file provided
     # or a container passed down is kept; anything the previous run computed is
@@ -235,16 +245,15 @@ class TaskScenario(ScenarioData):
         """
         Check if task is ready for ALAP scheduling.
 
-        For ALAP, a task is ready when:
-        1. It has an explicit end date (anchor), OR
-        2. All tasks that depend on this task (successors) are scheduled
-           (so we can derive our end from their start), OR
-        3. For onstart dependencies: the predecessor must be scheduled first
-           (so we can derive our end from their start)
+        For ALAP, a task is ready when every task that bounds its end has a
+        known start: each successor that must start after it, and, for
+        onstart dependencies, the predecessor it must finish before. Its own
+        end, if it has one, is one more bound, not a reason to skip the others:
+        a task that ended at its own end regardless put its successor before
+        it (issuedb #23). A successor scheduled forwards follows this task
+        anyway, so a task with its own end does not wait for one.
         """
-        # If task has explicit end date, it's an anchor - always ready
-        if self.property.get("end", self.scenarioIdx):
-            return True
+        explicit_end = self.property.get("end", self.scenarioIdx)
 
         # Check onstart dependencies - we need predecessor scheduled to know their start
         # For ALAP with `depends X { onstart }`, this task's END depends on X's START
@@ -264,13 +273,31 @@ class TaskScenario(ScenarioData):
                 return False
 
         # Check if all successors are scheduled (for finish-to-start deps)
-        successors = self._getSuccessors()
+        successors = bounding_successors(self)
+        if explicit_end:
+            successors = [s for s in successors if s.get("forward", self.scenarioIdx) is False]
         if not successors:
             # No successors and no explicit end - use project end as default
             # (unless we have onstart deps, which we checked above)
             return True
 
-        return all(successor.get("scheduled", self.scenarioIdx) for successor in successors)
+        # A successor whose start the file states is a fixed moment to end
+        # against, even before it is scheduled; waiting for it would only
+        # deadlock a chain that has a perfectly good bound (issuedb #14).
+        return all(self.successorStart(successor) is not None for successor in successors)
+
+    def successorStart(self, successor: Any) -> Optional[datetime]:
+        """The moment a backward task must end by, as far as ``successor`` says.
+
+        Its start once it is scheduled. Before that, the start the file states
+        for it, never a start a previous run wrote back, so scheduling twice
+        gives the same answer.
+        """
+        if successor.get("scheduled", self.scenarioIdx):
+            start: Optional[datetime] = successor.get("start", self.scenarioIdx)
+            return start
+        scenario = successor.data[self.scenarioIdx] if successor.data else None
+        return getattr(scenario, "declaredStart", None)
 
     def bookResources(self) -> None:
         book_resources(self)

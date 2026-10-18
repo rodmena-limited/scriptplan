@@ -1,0 +1,8 @@
+project p "alap_bounded_by_declared_starts" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task x "X" { start 2026-10-19-14:00 effort 60min allocate r0 }
+task y "Y" { start 2026-10-19-14:30 effort 60min allocate r0 }
+task m "M" { scheduling alap precedes x }
+task n "N" { scheduling alap precedes y }

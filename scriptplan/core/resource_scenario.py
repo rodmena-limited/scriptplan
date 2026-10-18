@@ -85,12 +85,10 @@ class ResourceScenario(ScenarioData):
         # Internal effort counter
         self._effort: float = 0.0
 
-        # A slot is filled from both ends (see slot_ledger): forward work takes
-        # seconds from its start and backward work from its end.
-        # slot_idx -> seconds taken from the start / from the end
-        self.slotFrontUsed: dict[int, float] = {}
-        self.slotBackUsed: dict[int, float] = {}
-        # slot_idx -> seconds no longer free (front + back)
+        # The intervals booked inside each slot (see slot_ledger)
+        # slot_idx -> sorted [start, end, task], in seconds from the slot start
+        self.slotIntervals: dict[int, list[list[Any]]] = {}
+        # slot_idx -> seconds booked (the sum of those intervals)
         self.slotSecondsUsed: dict[int, float] = {}
         # Length of one slot, read once per run rather than once per slot
         self.slotLength: float = float(self.project.attributes.get("scheduleGranularity", 3600))
@@ -130,8 +128,7 @@ class ResourceScenario(ScenarioData):
         """
         self._effort = 0.0
         self.slotLength = float(self.project.attributes.get("scheduleGranularity", 3600))
-        self.slotFrontUsed = {}
-        self.slotBackUsed = {}
+        self.slotIntervals = {}
         self.slotSecondsUsed = {}
         self.slotTaskUsage = {}
         self.firstBookedSlot = None
@@ -175,7 +172,8 @@ class ResourceScenario(ScenarioData):
         Returns:
             True if available (fully or partially), False otherwise
         """
-        if self.scoreboard is None:
+        if self.scoreboard is None or not 0 <= sb_idx < len(self.scoreboard):
+            # Outside the project: nothing can be booked there.
             return False
 
         # Check if slot is during working hours for this resource
@@ -280,13 +278,12 @@ class ResourceScenario(ScenarioData):
             Effort gained from this booking (hours), or 0 if booking failed.
             This accounts for partial slot usage.
         """
-        booking = self.reserve(sb_idx, task, force=force, forward=forward)
-        return booking.effort if booking is not None else 0.0
+        return sum(b.effort for b in self.reserve(sb_idx, task, force=force, forward=forward))
 
     def reserve(
         self, sb_idx: int, task: "Task", force: bool = False, forward: bool = True, not_before: float = 0.0
-    ) -> Optional[SlotBooking]:
-        """Book what the slot and the limits allow, and say where it sits."""
+    ) -> list[SlotBooking]:
+        """Book what the slot and the limits allow, and say where each stretch sits."""
         return reserve(self, sb_idx, task, forward=forward, force=force, not_before=not_before)
 
     def release(self, booking: SlotBooking, keep: float) -> None:
@@ -350,10 +347,10 @@ class ResourceScenario(ScenarioData):
     def getEffectiveWork(self, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> float:
         return effective_work(self, start_idx, end_idx, task)
 
-    def getAllocatedSlots(self, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> int:
+    def getAllocatedSlots(self, start_idx: int, end_idx: int, task: Optional["Task"] = None) -> float:
         return allocated_slots(self, start_idx, end_idx, task)
 
-    def getFreeSlots(self, start_idx: int, end_idx: int) -> int:
+    def getFreeSlots(self, start_idx: int, end_idx: int) -> float:
         return free_slots(self, start_idx, end_idx)
 
     def getWorkSlots(self, start_idx: int, end_idx: int) -> int:

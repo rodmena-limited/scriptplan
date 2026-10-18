@@ -1,9 +1,7 @@
 /*
- * This file contains an example project. It is part of the
- * TaskJuggler project management tool. It uses a made up software
+ * This file contains an example project. It uses a made up software
  * development project to demonstrate some of the basic features of
- * TaskJuggler. Please see the TaskJuggler manual for a more detailed
- * description of the various syntax elements.
+ * the .tjp format.
  */
 project acso "Accounting Software"  2002-01-16 +4m {
   # Set the default time zone for the project. If not specified, UTC
@@ -186,7 +184,7 @@ task AcSo "Accounting Software" {
       effort 30d
       # This task is behind schedule, because it should have been
       # finished already. To document this, we specify that the task
-      # is 95% completed. If nothing is specified, TaskJuggler assumes
+      # is 95% completed. If nothing is specified, the scheduler assumes
       # that the task is on schedule and computes the completion rate
       # according to the current day and the plan data.
       complete 95
@@ -199,7 +197,7 @@ task AcSo "Accounting Software" {
 
     task alpha "Alpha Test" {
       # Efforts can not only be specified as man-days, but also as
-      # man-weeks, man-hours, etc. By default, TaskJuggler assumes
+      # man-weeks, man-hours, etc. By default, the scheduler assumes
       # that a man-week is 5 man-days or 40 man-hours. These values
       # can be changed, of course.
       effort 1w
@@ -291,7 +289,7 @@ task AcSo "Accounting Software" {
 }
 
 # Now the project has been specified completely. Stopping here would
-# result in a valid TaskJuggler file that could be processed and
+# result in a valid .tjp file that could be processed and
 # scheduled. But no reports would be generated to visualize the
 # results.
 

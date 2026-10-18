@@ -34,7 +34,7 @@ TECHNICAL PROBLEMS:
 9. Reports consuming a stable schedule result.
 
 SOLUTION DOMAINS:
-- Scheduling loop / effort semantics / ALAP -> TaskJuggler 3 documented semantics (clean-room; README asserts no TJ source was copied).
+- Scheduling loop / effort semantics / ALAP -> the .tjp format's documented semantics (clean-room; no reference-scheduler source was copied).
 - Minute precision with coarse slots -> interval arithmetic + per-day bitmaps (standard calendar-library technique).
 - Time model -> stdlib zoneinfo, aware UTC internally; dateutil relativedelta for months (already a dependency).
 - Error model -> collect-then-fail with a per-project message collector; exceptions already exist unused in core/exceptions.py.
@@ -44,7 +44,7 @@ ALTERNATIVES:
 - Scheduling core: new scheduler/engine package keeping the data model [CHOSEN] vs in-place rewrite of task_scenario/project [REJECTED: same work, no old-vs-new diffing while goldens are re-derived] vs incremental patching [REJECTED: cannot deliver minute precision or date-based readiness without rewriting the loop anyway].
 - Scoreboard: per-day bitmaps [CHOSEN: ~73KB/resource-year at 1min] vs flat slot list [REJECTED: 525k refs, 37-59s] vs run-length intervals [REJECTED: fragmentation under interleaved booking].
 - Compiled path: drop Cython [CHOSEN: the .pyx files accelerate the representation being retired and cause wheel-vs-source divergence] vs keep with parity gate [REJECTED: permanent parity cost].
-- Error propagation: collect-then-fail [CHOSEN] vs raise at first error [REJECTED: TaskJuggler collects all errors].
+- Error propagation: collect-then-fail [CHOSEN] vs raise at first error [REJECTED: the reference scheduler collects all errors].
 
 EVIDENCE: 56 live probes, 32 failing on source checkout and 33 on the published cp313 wheel, while all 383 tests pass on both paths.
 
@@ -105,18 +105,18 @@ Multi-year projects at minute resolution, and sustained load of any kind.
 ### What I remain unsure about
 
 **`onstart`.** ScriptPlan reads `A depends B { onstart }` as "A must finish
-before B starts". TaskJuggler reads it as start-to-start. I left ScriptPlan's
+before B starts". The reference scheduler reads it as start-to-start. I left ScriptPlan's
 reading in place and documented it, because changing it would move the README's
 own worked example and `jit_supply.tjp` depends on it, but it means files
-written for TaskJuggler will schedule differently here. This is the one
+written for the reference scheduler will schedule differently here. This is the one
 semantic decision I deferred rather than settled.
 
-**Whether the remaining fixture expectations are TaskJuggler-correct.** Several
+**Whether the remaining fixture expectations are correct by the reference scheduler.** Several
 were written from this implementation's output rather than derived
 independently. I re-derived the ones I changed, and `TestIssue41` and
 `TestIssue42` compute theirs by independent simulation, but I could not compare
-against real TaskJuggler: it is not available in this environment. Until
-someone does, "TaskJuggler-compatible" rests on reading the manual rather than
+against the reference scheduler: it was not available in this environment. Until
+someone does, ".tjp-compatible" rests on reading the manual rather than
 on running both.
 
 **The loop check.** It follows finish-to-start edges only. A project mixing

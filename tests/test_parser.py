@@ -108,9 +108,9 @@ class TestTJPParser(unittest.TestCase):
         self.assertEqual(dev2.parent, team)
 
     def test_parse_tutorial_tjp(self):
-        """Test parsing the full tutorial.tjp file from TaskJuggler."""
+        """Test parsing the full tutorial.tjp example project."""
         import os
-        test_file = os.path.join(os.path.dirname(__file__), 'data', 'tutorial.tjp')
+        test_file = os.path.join(os.path.dirname(__file__), '..', 'examples', 'showcase', 'tutorial.tjp')
         if not os.path.exists(test_file):
             self.skipTest("tutorial.tjp not found")
 

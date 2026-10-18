@@ -19,6 +19,7 @@ __all__ = [
     "has_project_contiguous_block",
     "is_resource_available",
     "resources_for_task",
+    "retreat_working_time",
     "select_best_resources",
 ]
 
@@ -280,16 +281,15 @@ def allocated_time(scenario: Any) -> float:
         if res_scenario is None or res_scenario.scoreboard is None:
             continue
 
-        # Count slots booked for this task by this resource
-        booked_slots = 0
-        for i in range(len(res_scenario.scoreboard)):
-            if res_scenario.scoreboard[i] == scenario.property:
-                booked_slots += 1
-
-        # Calculate allocated time in hours
-        granularity = scenario.project.attributes.get("scheduleGranularity", 3600)
-        allocated_hours = booked_slots * granularity / 3600.0
-        total_allocated += allocated_hours
+        # The time this resource was booked for the task, from slotTaskUsage:
+        # the scoreboard names only the last task in a shared slot (#12).
+        booked_seconds = sum(
+            held
+            for usage in res_scenario.slotTaskUsage.values()
+            for holder, held in usage
+            if holder is scenario.property
+        )
+        total_allocated += booked_seconds / 3600.0
 
     return total_allocated
 
@@ -333,3 +333,29 @@ def advance_working_time(scenario: Any, start: datetime, seconds: float) -> date
         offset = 0.0
     end_of_project: datetime = scenario.project["end"]
     return end_of_project
+
+
+def retreat_working_time(scenario: Any, end: datetime, seconds: float) -> datetime:
+    """The moment ``seconds`` of *working* time before ``end``: advance_working_time backwards."""
+    if seconds <= 0:
+        return end
+
+    slot_seconds = float(scenario.project.attributes.get("scheduleGranularity", 3600))
+    idx = scenario.project.dateToIdx(end)
+    slot_start = scenario.project.idxToDate(idx)
+    into = max(0.0, (end - slot_start).total_seconds()) if slot_start else 0.0
+    if into == 0.0:
+        idx, into = idx - 1, slot_seconds
+    lower = scenario.project.dateToIdx(scenario.project["start"])
+
+    remaining = seconds
+    while idx >= lower:
+        if scenario.isWorkingTime(idx):
+            if remaining <= into:
+                moment: datetime = scenario.project.idxToDate(idx)
+                return moment + timedelta(seconds=into - remaining)
+            remaining -= into
+        idx -= 1
+        into = slot_seconds
+    start_of_project: datetime = scenario.project["start"]
+    return start_of_project

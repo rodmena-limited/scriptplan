@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, cast
 
 __all__ = ["PREDICATES", "ExpressionError", "LogicalExpression", "parse_expression"]
 
@@ -94,7 +94,7 @@ def _has_alert(prop: Any, _scenario: int | None, level: Any = 0) -> bool:
 
 
 #: Built-in predicates, by the name written in the file. `isleaf_` is
-#: TaskJuggler's "leaf of the report tree"; ScriptPlan does not prune the tree
+#: The .tjp format's "leaf of the report tree"; ScriptPlan does not prune the tree
 #: before filtering, so it answers the same as `isleaf`.
 PREDICATES: dict[str, Callable[..., bool]] = {
     "isleaf": _is_leaf,
@@ -343,11 +343,12 @@ def parse_expression(text: str) -> LogicalExpression:
         if token is None:
             raise ExpressionError(f"filter {text!r} ends where a term was expected")
         if isinstance(token, tuple):
-            kind, payload = take()  # type: ignore[misc]
+            take()
+            kind, payload = token
             if kind == "const":
                 return Constant(bool(payload))
             if kind == "call":
-                name, arguments = payload
+                name, arguments = cast("tuple[str, list[Any]]", payload)
                 if name not in PREDICATES:
                     raise ExpressionError(
                         f"filter {text!r} calls '{name}', which is not a predicate ScriptPlan "

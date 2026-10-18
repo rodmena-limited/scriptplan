@@ -1,0 +1,7 @@
+project p "duration_length_after_mid_slot_end" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task a "A" { effort 40min allocate r0 }
+task d "D" { depends a duration 2h }
+task l "L" { depends a length 2h }

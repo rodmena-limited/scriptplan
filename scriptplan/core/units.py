@@ -1,6 +1,6 @@
 """Duration parsing: one table, used everywhere.
 
-TaskJuggler distinguishes two kinds of duration and ScriptPlan must too:
+The .tjp format distinguishes two kinds of duration, and so does ScriptPlan:
 
 * **calendar** time runs on the wall clock. ``1d`` is 24 hours whether or not
   anyone is working. ``duration`` and ``gapduration`` are calendar time.
@@ -35,14 +35,14 @@ __all__ = [
 
 DEFAULT_DAILY_WORKING_HOURS = 8.0
 # Weeks in a year, and the working days in one, kept as exact expressions
-# rather than the decimals TaskJuggler prints (52.1429 and 260.714). Those are
+# rather than the rounded decimals usually printed (52.1429 and 260.714). Those are
 # the same numbers truncated, and truncating them makes a week 39.99992 hours
 # instead of 40, which shows up as a task ending a second early.
 WEEKS_PER_YEAR = 365.0 / 7.0
 DEFAULT_YEARLY_WORKING_DAYS = WEEKS_PER_YEAR * 5.0
 
-# Calendar seconds per unit. Months and years follow TaskJuggler's
-# rule_calendarDuration: a month is 30.4167 days, a year is 365 days.
+# Calendar seconds per unit. Months and years follow the .tjp calendar rule:
+# a month is 30.4167 days, a year is 365 days.
 _CALENDAR_SECONDS = {
     "min": 60.0,
     "h": 3600.0,

@@ -15,6 +15,8 @@ from scriptplan.core.allocation_plan import AllocationPlan
 
 __all__ = [
     "all_dependencies",
+    "bounding_successors",
+    "latest_end_for",
     "max_gap_delayed_start",
     "start_from_end",
     "successor_earliest_start",
@@ -27,7 +29,7 @@ def all_dependencies(scenario: Any) -> list[Any]:
     """
     Get all dependencies including inherited ones from parent containers.
 
-    In TaskJuggler, child tasks inherit dependencies from their parent
+    In the .tjp format, child tasks inherit dependencies from their parent
     containers. For example, if a container 'software' depends on 'spec',
     all children of 'software' (database, gui, backend) also depend on 'spec'.
     """
@@ -45,6 +47,54 @@ def all_dependencies(scenario: Any) -> list[Any]:
         parent = parent.parent
 
     return all_deps
+
+
+def bounding_successors(scenario: Any) -> list[Any]:
+    """The successors whose start this backward task must end by.
+
+    A task that depends on this one finish-to-start must start after it ends,
+    so its start bounds this task. One that depends on it `{ onstart }` is,
+    for a backward task, read the other way round: it must finish before this
+    task starts, so it is bounded by this task rather than bounding it.
+    """
+    out = []
+    for successor in scenario._getSuccessors():
+        other = successor.data[scenario.scenarioIdx] if successor.data else None
+        onstart = any(
+            isinstance(dep, dict) and dep.get("task") is scenario.property and dep.get("onstart")
+            for dep in (other.getAllDependencies() if other is not None else [])
+        )
+        if not (onstart and successor.get("forward", scenario.scenarioIdx) is False):
+            out.append(successor)
+    return out
+
+
+def latest_end_for(scenario: Any, successor: Any) -> datetime | None:
+    """The latest moment this task may end, as far as ``successor`` is concerned.
+
+    The successor's start (once scheduled, or as the file states it) less the
+    gap its dependency on this task asks for. Taking the start alone let a
+    backward task end where a `gapduration 2h` successor began (issuedb #19).
+    """
+    from scriptplan.core.task_resources import retreat_working_time
+
+    start: datetime | None = scenario.successorStart(successor)
+    if start is None:
+        return None
+    other = successor.data[scenario.scenarioIdx] if successor.data else None
+    latest = start
+    for dep in other.getAllDependencies() if other is not None else []:
+        task = dep.get("task") if isinstance(dep, dict) else getattr(dep, "task", dep)
+        if task is not scenario.property or not isinstance(dep, dict):
+            continue
+        if dep.get("gapduration"):
+            bound = start - timedelta(seconds=scenario._calendarSeconds(dep["gapduration"]))
+        elif dep.get("gaplength"):
+            bound = retreat_working_time(scenario, start, scenario._workingSeconds(dep["gaplength"]))
+        else:
+            continue
+        latest = min(latest, bound)
+    return latest
 
 
 def successors(scenario: Any) -> list[Any]:

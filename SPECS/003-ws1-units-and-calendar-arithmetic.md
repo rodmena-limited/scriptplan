@@ -27,12 +27,12 @@ TECHNICAL PROBLEMS:
 3. Weekday interval rendering across a midnight boundary.
 
 SOLUTION DOMAINS:
-- Unit tables -> TaskJuggler rule_calendarDuration (confirmed from TjpSyntaxRules.rb) and rule_workingDuration.
+- Unit tables -> the .tjp format's calendar-duration and working-duration rules.
 - Period bucketing -> stdlib zoneinfo + isocalendar; calendar months via dateutil.relativedelta (already a dependency).
 - Midnight-crossing intervals -> normalise at definition time into (weekday, start, end) pairs with end<=1440, splitting the tail onto weekday+1.
 
 ALTERNATIVES:
-- Units: one core/units.py returning typed Duration(kind, seconds) [CHOSEN] vs per-call-site regexes [REJECTED: this is the current defect] vs a third-party duration parser [REJECTED: none implements TaskJuggler working-vs-calendar units].
+- Units: one core/units.py returning typed Duration(kind, seconds) [CHOSEN] vs per-call-site regexes [REJECTED: this is the current defect] vs a third-party duration parser [REJECTED: none implements .tjp working-vs-calendar units].
 - Midnight crossing: normalise at set_hours time [CHOSEN: onShift becomes a pure lookup] vs check the previous weekday at query time [REJECTED: this is the current code and it is wrong in both the Python and Cython paths].
 
 ---

@@ -1,0 +1,15 @@
+project d "alap_own_end_before_successor" 2026-11-02 +4w {
+  timingresolution 30min
+  scheduling alap
+}
+resource r1 "Analyst" {
+  workinghours mon - fri 8:30 - 17:30
+  timezone "Europe/London"
+  limits { dailymax 450min }
+}
+task g "Group" {
+  end 2026-11-06-17:30
+  task a "A" { effort 240min allocate r1 end 2026-11-06-12:00 }
+  task b "B" { effort 480min allocate r1 depends !a   }
+  task m "Milestone" { milestone depends !b  }
+}

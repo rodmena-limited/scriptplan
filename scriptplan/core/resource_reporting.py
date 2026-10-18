@@ -56,57 +56,61 @@ def effective_work(scenario: Any, start_idx: int, end_idx: int, task: Task | Non
     return tree_sum(scenario, start_idx, end_idx, task, block=calculate)
 
 
-def allocated_slots(scenario: Any, start_idx: int, end_idx: int, task: Task | None = None) -> int:
+def allocated_slots(scenario: Any, start_idx: int, end_idx: int, task: Task | None = None) -> float:
     """
-    Count booked slots in the given range.
+    Booked time in the given range, in slots.
+
+    Summed from slotTaskUsage, so a slot that several tasks share credits
+    each its own part. Counting the slot whole for whichever task booked it
+    last gave 40/13/40 minutes in one hour as 0, 0 and 1 slot (issuedb #12).
 
     Args:
         start_idx: Start scoreboard index
         end_idx: End scoreboard index
-        task: Optional task filter
+        task: Optional task filter (the task and its sub-tasks)
 
     Returns:
-        Number of allocated slots
+        Booked slots, fractional where a slot is shared or partly used
+    """
+    if scenario.scoreboard is None or start_idx >= end_idx:
+        return 0.0
+
+    wanted: list[Any] = list(task.all()) if task is not None and hasattr(task, "all") else [task]
+    seconds = 0.0
+    for idx, usage in scenario.slotTaskUsage.items():
+        if start_idx <= idx < end_idx:
+            for holder, held in usage:
+                if task is None or any(holder is t for t in wanted):
+                    seconds += held
+    allocated: float = seconds / scenario.slotLength
+    return allocated
+
+
+def free_slots(scenario: Any, start_idx: int, end_idx: int) -> float:
+    """
+    Free working time in the given range, in slots.
+
+    A working slot counts as free for the part of it nothing is booked in.
+
+    Args:
+        start_idx: Start scoreboard index
+        end_idx: End scoreboard index
+
+    Returns:
+        Free slots, fractional where a slot is partly booked
     """
     if scenario.scoreboard is None:
-        return 0
-
-    if start_idx >= end_idx:
-        return 0
+        return 0.0
 
     from scriptplan.core.task import Task
 
-    booked_slots = 0
-    task_list = task.all() if task and hasattr(task, "all") else []
-
+    free = 0.0
     actual_end = min(end_idx, len(scenario.scoreboard))
     for i in range(start_idx, actual_end):
         slot = scenario.scoreboard[i]
-        if isinstance(slot, Task) and (task is None or slot in task_list or slot == task):
-            booked_slots += 1
-
-    return booked_slots
-
-
-def free_slots(scenario: Any, start_idx: int, end_idx: int) -> int:
-    """
-    Count free slots in the given range.
-
-    Args:
-        start_idx: Start scoreboard index
-        end_idx: End scoreboard index
-
-    Returns:
-        Number of free slots
-    """
-    if scenario.scoreboard is None:
-        return 0
-
-    count = 0
-    actual_end = min(end_idx, len(scenario.scoreboard))
-    for i in range(start_idx, actual_end):
-        if scenario.scoreboard[i] is None:
-            count += 1
+        if slot is None or isinstance(slot, Task):
+            free += max(0.0, scenario.slotLength - scenario.slotSecondsUsed.get(i, 0.0))
+    count: float = free / scenario.slotLength
     return count
 
 

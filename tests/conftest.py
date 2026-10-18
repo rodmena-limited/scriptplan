@@ -22,7 +22,7 @@ def data_dir() -> Path:
 
     Resolved from this file, so the suite runs from any working directory.
     """
-    return TESTS_DIR / "data"
+    return TESTS_DIR.parent / "examples" / "showcase"
 
 
 @pytest.fixture(autouse=True)

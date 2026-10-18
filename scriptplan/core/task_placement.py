@@ -12,9 +12,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from scriptplan.core.task_dependencies import bounding_successors, latest_end_for
+from scriptplan.core.task_spans import entry_moment, finish_span, slot_share
+
 __all__ = [
     "enter_at",
     "finish_scheduling",
+    "own_start",
     "place_slot",
     "place_task",
     "propagate_date",
@@ -30,16 +34,22 @@ def place_task(scenario: Any) -> bool:
     forward = scenario.property.get("forward", scenario.scenarioIdx)
     effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
     allocations = scenario.property.get("allocate", scenario.scenarioIdx)
+    milestone = scenario.property.get("milestone", scenario.scenarioIdx)
+    duration = scenario.property.get("duration", scenario.scenarioIdx) or 0
+    length = scenario.property.get("length", scenario.scenarioIdx) or 0
+    is_milestone = milestone or (effort == 0 and duration == 0 and length == 0)
 
     if scenario.currentSlotIdx is None:
         if forward:
-            start_date = scenario.property.get("start", scenario.scenarioIdx)
+            start_date = own_start(scenario)
             if start_date:
                 scenario.currentSlotIdx = enter_at(scenario, start_date, forward=True)
             else:
                 # ASAP mode, start at project start or after dependencies
-                # Check ALL dependencies (including inherited) to find the earliest start
-                earliest_start = scenario.project["start"]
+                # Check ALL dependencies (including inherited) to find the earliest start.
+                # A start inherited from a container is an earliest start too.
+                inherited = scenario.property.get("start", scenario.scenarioIdx)
+                earliest_start = max(scenario.project["start"], inherited or scenario.project["start"])
                 for dep in scenario.getAllDependencies():
                     # dep can be a dict with 'task' key (new format with gap),
                     # or a Task object directly (old format)
@@ -89,60 +99,65 @@ def place_task(scenario: Any) -> bool:
                 # slot must not be booked: the predecessor is still running.
                 scenario.currentSlotIdx = enter_at(scenario, earliest_start, forward=True)
         else:
-            # ALAP (backward) scheduling
+            # ALAP (backward) scheduling. The end is the earliest of: its own
+            # end (or the project end), the start of each onstart predecessor,
+            # and the start of each successor that bounds it, less its gap.
             end_date = scenario.property.get("end", scenario.scenarioIdx)
 
-            if not end_date:
-                # No explicit end - derive from:
-                # 1. Predecessors with onstart deps (our END <= their START)
-                # 2. Successors (tasks depending on this - our END <= their START)
-                latest_end = scenario.project["end"]  # Default to project end
+            latest_end = end_date or scenario.project["end"]
 
-                # Check onstart dependencies - our END must be before predecessor's START
-                # with gapduration subtracted if specified
-                for dep in scenario.getAllDependencies():
-                    if isinstance(dep, dict):
-                        onstart = dep.get("onstart", False)
-                        pred = dep.get("task")
-                        gapduration = dep.get("gapduration")
-                    elif hasattr(dep, "task"):
-                        onstart = getattr(dep, "onstart", False)
-                        pred = dep.task
-                        gapduration = getattr(dep, "gapduration", None)
-                    else:
-                        onstart = False
-                        pred = dep
-                        gapduration = None
+            # Check onstart dependencies - our END must be before predecessor's START
+            # with gapduration subtracted if specified
+            for dep in scenario.getAllDependencies():
+                if isinstance(dep, dict):
+                    onstart = dep.get("onstart", False)
+                    pred = dep.get("task")
+                    gapduration = dep.get("gapduration")
+                elif hasattr(dep, "task"):
+                    onstart = getattr(dep, "onstart", False)
+                    pred = dep.task
+                    gapduration = getattr(dep, "gapduration", None)
+                else:
+                    onstart = False
+                    pred = dep
+                    gapduration = None
 
-                    if onstart and pred:
-                        pred_start = pred.get("start", scenario.scenarioIdx)
-                        if pred_start:
-                            # Apply gapduration - A must end (gapduration) before B starts
-                            if gapduration:
-                                pred_start = pred_start - timedelta(
-                                    seconds=scenario._calendarSeconds(gapduration)
-                                )
-                            if pred_start < latest_end:
-                                latest_end = pred_start
+                if onstart and pred:
+                    pred_start = pred.get("start", scenario.scenarioIdx)
+                    if pred_start:
+                        # Apply gapduration - A must end (gapduration) before B starts
+                        if gapduration:
+                            pred_start = pred_start - timedelta(
+                                seconds=scenario._calendarSeconds(gapduration)
+                            )
+                        if pred_start < latest_end:
+                            latest_end = pred_start
 
-                # Also check successors (finish-to-start deps)
-                successors = scenario._getSuccessors()
-                for successor in successors:
-                    succ_start = successor.get("start", scenario.scenarioIdx)
-                    if succ_start and succ_start < latest_end:
-                        latest_end = succ_start
+            # Also check successors (finish-to-start deps): their start
+            # once scheduled, or the start the file states for them
+            # less any gap they ask for after this task
+            successors = bounding_successors(scenario)
+            for successor in successors:
+                succ_start = latest_end_for(scenario, successor)
+                if succ_start and succ_start < latest_end:
+                    latest_end = succ_start
 
-                end_date = latest_end
+            end_date = latest_end
 
+            scenario.latestEnd = end_date
             if end_date:
                 # For ALAP, start from the slot the end date falls in, or the
                 # one before it when the end is on a slot boundary
                 scenario.currentSlotIdx = enter_at(scenario, end_date, forward=False)
                 # Find the last working slot
                 # For effort tasks with allocations, check resource availability
-                # (respects resource timezone and working hours)
+                # (respects resource timezone and working hours). A milestone
+                # is a moment, so it stays where it is, as it does forwards.
                 lowerLimit = scenario.project.dateToIdx(scenario.project["start"])
-                if effort > 0 and allocations:
+                if is_milestone or (effort == 0 and duration > 0):
+                    # A moment, or calendar time: neither waits for working time.
+                    pass
+                elif effort > 0 and allocations:
                     while scenario.currentSlotIdx > lowerLimit and not scenario._isResourceAvailable(scenario.currentSlotIdx):
                         scenario.currentSlotIdx -= 1
                 else:
@@ -163,21 +178,23 @@ def place_task(scenario: Any) -> bool:
     # For effort tasks with allocations, don't set start yet - it will be set
     # when first resource is booked. For non-effort tasks, find first working slot.
     # Exception: milestones happen at the exact dependency end time (no need for working slot)
-    milestone = scenario.property.get("milestone", scenario.scenarioIdx)
-    duration = scenario.property.get("duration", scenario.scenarioIdx) or 0
-    length = scenario.property.get("length", scenario.scenarioIdx) or 0
-    is_milestone = milestone or (effort == 0 and duration == 0 and length == 0)
     if (
         forward
-        and not scenario.property.get("start", scenario.scenarioIdx)
+        and not own_start(scenario)
         and not is_milestone
         and (effort == 0 or not allocations)
     ):
-        # Non-effort task: find first working slot and set start
+        # Non-effort task: find first working slot and set start. A duration
+        # is calendar time, so it starts at once, working time or not (#20).
         upperLimit = scenario.project.dateToIdx(scenario.project["end"])
-        while scenario.currentSlotIdx < upperLimit and not scenario.isWorkingTime(scenario.currentSlotIdx):
+        while (
+            not (effort == 0 and duration > 0)
+            and scenario.currentSlotIdx < upperLimit
+            and not scenario.isWorkingTime(scenario.currentSlotIdx)
+        ):
             scenario.currentSlotIdx += 1
-        scenario.property[("start", scenario.scenarioIdx)] = scenario.project.idxToDate(scenario.currentSlotIdx)
+        # Inside the slot when the predecessor ended there, at its top otherwise
+        scenario.property[("start", scenario.scenarioIdx)] = entry_moment(scenario, scenario.currentSlotIdx, True)
     # For effort tasks, start will be set in bookResources() on first booking
 
     # Record starting position for forward scheduling
@@ -229,6 +246,10 @@ def place_task(scenario: Any) -> bool:
         # where that task's work begins, not at the slot boundary.
         if scenario.workEnd is not None:
             actual_end = scenario.workEnd
+        if effort == 0 and not is_milestone:
+            # A duration or length is a window of time, which ends where
+            # placement began, whenever its resources happened to be free.
+            actual_end = entry_moment(scenario, start_slot_idx, False)
         # For effort-based tasks, always use the calculated end (when work actually completes)
         # even if an explicit end constraint was specified (that's just the deadline, not the actual end)
         effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
@@ -238,6 +259,23 @@ def place_task(scenario: Any) -> bool:
     scenario.scheduled = True
     scenario.property[("scheduled", scenario.scenarioIdx)] = True
     return True
+
+
+def own_start(scenario: Any) -> datetime | None:
+    """The start the file states on this task itself, not one inherited from a container.
+
+    An own start is fixed: a dependency that contradicts it is an error. An
+    inherited start only says the task may not begin earlier, so the task
+    still waits for what it depends on (issuedb #19, trace's defect 13).
+    """
+    start: datetime | None = scenario.property.get("start", scenario.scenarioIdx)
+    if start is None:
+        return None
+    try:
+        attribute = scenario.property._get_scenario_attribute("start", scenario.scenarioIdx)
+    except (ValueError, KeyError):
+        return start
+    return start if attribute.getProvided() else None
 
 
 def enter_at(scenario: Any, moment: datetime, forward: bool) -> int:
@@ -280,30 +318,28 @@ def place_slot(scenario: Any) -> bool:
 
     # A task with no effort/duration/length is a milestone (zero duration task)
     # This includes tasks that only have dependencies but no work
-    start_date = scenario.property.get("start", scenario.scenarioIdx)
+    start_date = own_start(scenario)
     end_date = scenario.property.get("end", scenario.scenarioIdx)
     is_milestone = milestone or (effort == 0 and duration == 0 and length == 0)
 
     if is_milestone:
         # Milestone: set end = start (zero duration)
+        # Without a date of its own, a milestone sits at the moment placement
+        # began: where its predecessor finished, or, scheduled backwards,
+        # where its successor starts or the project ends.
+        slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
         if forward:
             if start_date:
                 scenario.property[("end", scenario.scenarioIdx)] = start_date
             else:
-                # No start date - use current slot (set by dependency calculation),
-                # at the moment inside it where the predecessor finished
-                slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
-                date = scenario.project.idxToDate(slot_idx)
-                if slot_idx == scenario.slotStartOffsetSlot:
-                    date = date + timedelta(seconds=round(scenario.slotStartOffset))
+                date = entry_moment(scenario, slot_idx, True)
                 scenario.property[("start", scenario.scenarioIdx)] = date
                 scenario.property[("end", scenario.scenarioIdx)] = date
         else:
             if end_date:
                 scenario.property[("start", scenario.scenarioIdx)] = end_date
             else:
-                slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
-                date = scenario.project.idxToDate(slot_idx)
+                date = entry_moment(scenario, slot_idx, False)
                 scenario.property[("start", scenario.scenarioIdx)] = date
                 scenario.property[("end", scenario.scenarioIdx)] = date
         return False
@@ -328,13 +364,12 @@ def place_slot(scenario: Any) -> bool:
             return False
     elif duration > 0:
         # duration is calendar time: every slot counts towards it, whether
-        # or not anyone is working in it.
+        # or not anyone is working in it. The entry slot counts only from
+        # the entry moment, and the task ends where the count is reached.
         scenario.bookResources()
-        scenario.doneDuration += scenario._slotSeconds()
+        scenario.doneDuration += slot_share(scenario)
         if scenario.doneDuration >= duration:
-            slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
-            date = scenario.project.idxToDate(slot_idx + (1 if forward else 0))
-            assert date is not None
+            date = finish_span(scenario, scenario.doneDuration - duration, forward)
             propagate_date(scenario, date, forward)
             return False
     elif length > 0:
@@ -343,12 +378,11 @@ def place_slot(scenario: Any) -> bool:
         scenario.bookResources()
         slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
         if scenario.isWorkingTime(slot_idx):
-            scenario.doneLength += scenario._slotSeconds()
-        if scenario.doneLength >= length:
-            date = scenario.project.idxToDate(slot_idx + (1 if forward else 0))
-            assert date is not None
-            propagate_date(scenario, date, forward)
-            return False
+            scenario.doneLength += slot_share(scenario)
+            if scenario.doneLength >= length:
+                date = finish_span(scenario, scenario.doneLength - length, forward)
+                propagate_date(scenario, date, forward)
+                return False
     else:
         # startEndTask - has both start and end dates explicitly set
         scenario.bookResources()

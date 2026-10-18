@@ -3,7 +3,7 @@
 ScriptPlan CLI.
 
 This is the main command-line interface for the ScriptPlan
-application (Python implementation of TaskJuggler). It reads project files,
+application. It reads .tjp project files,
 schedules the project, and generates reports.
 
 Usage:
@@ -61,7 +61,7 @@ def create_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="scriptplan",
-        description="ScriptPlan - A Python implementation of TaskJuggler",
+        description="ScriptPlan - project scheduling for .tjp project files",
         epilog="For more information, visit: https://github.com/scriptplan/scriptplan",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -277,7 +277,7 @@ class ScriptPlan:
             with open(main_file, encoding="utf-8") as f:
                 content = f.read()
 
-            self.project = parser.parse(content)
+            self.project = parser.parse(content, schedule=False)  # schedule() schedules it, once
             if self.project:
                 self.logger.info("Project '%s' loaded successfully", self.project.name)
 

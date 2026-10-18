@@ -15,7 +15,7 @@ class TjTime:
             self.time = datetime.now(timezone.utc)
         elif isinstance(t, datetime):
             if t.tzinfo is None:
-                # Assume local? Or UTC? TaskJuggler defaults to UTC mostly or system
+                # Assume local? Or UTC? the .tjp convention defaults to UTC mostly or system
                 # Ruby Time.new creates local time.
                 # If we follow strict Ruby behavior, assumes local if no TZ.
                 # But here we try to keep things UTC aware internally.

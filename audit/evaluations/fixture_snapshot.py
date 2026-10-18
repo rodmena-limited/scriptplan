@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render every fixture in tests/data and snapshot the result.
+"""Render every fixture in examples/showcase and snapshot the result.
 
 This is the regression gate for the 24 example projects that SHOWCASE.md is
 generated from: it records what each one schedules to, so a change that moves
@@ -24,7 +24,7 @@ import sys
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURES = os.path.normpath(os.path.join(HERE, "..", "..", "tests", "data"))
+FIXTURES = os.path.normpath(os.path.join(HERE, "..", "..", "examples", "showcase"))
 
 
 def render(path: str) -> str:

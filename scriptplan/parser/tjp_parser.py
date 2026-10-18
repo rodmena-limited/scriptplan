@@ -1,7 +1,8 @@
-"""TJP Parser for TaskJuggler project files."""
+"""TJP Parser for .tjp project files."""
 
 import contextlib
 import os
+import threading
 from datetime import datetime
 from typing import Any, Optional, Union
 
@@ -379,14 +380,36 @@ class ModelBuilder:
         return resolve_task_reference(self, project, from_task, ref)
 
 
+_GRAMMAR_LOCK = threading.Lock()
+_COMPILED: Optional[tuple[str, Lark]] = None
+
+
+def _compiled_grammar() -> tuple[str, Lark]:
+    """The grammar text and its compiled LALR parser, built once per process.
+
+    Compiling takes most of a second and the result never changes, while
+    parse() keeps all of its state in a fresh transformer and model builder,
+    so every ProjectFileParser can share one (issuedb #15). The lock makes
+    the first build happen once even when threads race for it.
+    """
+    global _COMPILED
+    if _COMPILED is None:
+        with _GRAMMAR_LOCK:
+            if _COMPILED is None:
+                grammar_path = os.path.join(os.path.dirname(__file__), "tjp.lark")
+                with open(grammar_path) as f:
+                    grammar = f.read()
+                _COMPILED = (grammar, Lark(grammar, start="start", parser="lalr"))
+    return _COMPILED
+
+
 class ProjectFileParser:
     """Parser for TJP project files."""
 
     def __init__(self) -> None:
-        grammar_path: str = os.path.join(os.path.dirname(__file__), "tjp.lark")
-        with open(grammar_path) as f:
-            self.grammar: str = f.read()
-        self.parser: Lark = Lark(self.grammar, start="start", parser="lalr")
+        grammar, parser = _compiled_grammar()
+        self.grammar: str = grammar
+        self.parser: Lark = parser
 
     def parse(self, text: str, preprocess_macros: bool = True, schedule: bool = True) -> Project:
         """Parse TJP text and return a Project object.

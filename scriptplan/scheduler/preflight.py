@@ -14,7 +14,38 @@ from typing import Any
 
 from scriptplan.core.exceptions import CircularDependencyError
 
-__all__ = ["check_no_cycles", "dependency_of", "find_dependency_cycle", "iter_dependencies"]
+__all__ = [
+    "check_no_cycles",
+    "dependency_of",
+    "find_dependency_cycle",
+    "iter_dependencies",
+    "stated_dates_inside_window",
+]
+
+
+def stated_dates_inside_window(project: Any, scenario_idx: int) -> bool:
+    """Report every start or end a task states outside the project window.
+
+    Checked before scheduling: a start after the window used to crash the
+    scheduler with an index error reported as a parse error, and an end after
+    it was clamped and the milestone dated outside the project (issuedb #22).
+    Returns True when every stated date is inside.
+    """
+    window_start, window_end = project.attributes["start"], project.attributes["end"]
+    inside = True
+    for task in project.tasks:
+        scenario = task.data[scenario_idx] if task.data else None
+        for name in ("start", "end"):
+            stated = getattr(scenario, "declared" + name.capitalize(), None)
+            if stated is not None and not window_start <= stated <= window_end:
+                inside = False
+                project.error(
+                    "date_outside_window",
+                    f"Task '{task.fullId}' states {name} {stated}, outside the project window "
+                    f"({window_start} to {window_end}).",
+                    data=task.fullId,
+                )
+    return inside
 
 
 def dependency_of(dep: Any) -> Any | None:

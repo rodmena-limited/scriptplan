@@ -1,0 +1,8 @@
+project p "alap_before_declared_start" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task d "D" { scheduling alap duration 2h }
+task l "L" { scheduling alap length 2h }
+task e "E" { scheduling alap effort 30min allocate r0 }
+task x "X" { depends d, l, e start 2026-10-19-14:30 effort 60min allocate r0 }

@@ -26,6 +26,7 @@ __all__ = [
     "precise_end_time",
     "precise_end_time_and_release",
     "record_effort_start",
+    "restore_unused_locks",
 ]
 
 
@@ -44,8 +45,10 @@ def book_resources(scenario: Any) -> None:
 
     slot_idx = scenario.currentSlotIdx if scenario.currentSlotIdx is not None else 0
     effort = scenario.property.get("effort", scenario.scenarioIdx) or 0
-    # Where in this slot each booking sits, for settling a mid-slot finish.
+    # Where in this slot each booking sits, for settling a mid-slot finish,
+    # and which persistent allocations this slot locked, to undo if unused.
     scenario.slotBookings = []
+    scenario.slotLocks = []
 
     # Every mandatory allocation must be satisfiable before anything is
     # booked, so a slot is never half-committed to a task that cannot use it.
@@ -63,11 +66,15 @@ def book_resources(scenario: Any) -> None:
 
     booked_any = False
     gained_total = 0.0
-    remaining = (effort - scenario.doneEffort) if effort > 0 else None
 
+    # Everyone available books the slot, even when one person's hour would
+    # cover what is left: in the last slot they work it together and the
+    # settlement ends the task when their combined work is done, handing
+    # back what nobody needed. Stopping at the first person who covered it
+    # made the finish depend on the slot size: 60 person-minutes on three
+    # free people ended after 60 minutes at 60-minute slots and after 20 at
+    # 5-minute slots (issuedb #27).
     for allocation, resource in chosen:
-        if remaining is not None and remaining <= 0:
-            break
         gained = book_resource(scenario, resource)
         if gained <= 0:
             if allocation.mandatory:
@@ -81,9 +88,8 @@ def book_resources(scenario: Any) -> None:
             continue
         booked_any = True
         gained_total += gained
-        if remaining is not None:
-            remaining -= gained
         if allocation.persistent:
+            scenario.slotLocks.append((allocation, allocation.locked, resource))
             allocation.locked = resource
         scenario._lastBookedResource = resource
         scenario._lastBookedSlot = scenario.currentSlotIdx
@@ -167,11 +173,9 @@ def book_resource(scenario: Any, resource: Any) -> float:
         not_before = scenario.slotStartOffset
 
     forward = bool(scenario.property.get("forward", scenario.scenarioIdx))
-    booking = res_scenario.reserve(slot_idx, scenario.property, forward=forward, not_before=not_before)
-    if booking is None:
-        return 0.0
-    scenario.slotBookings.append(booking)
-    effort_gained: float = booking.effort
+    bookings = res_scenario.reserve(slot_idx, scenario.property, forward=forward, not_before=not_before)
+    scenario.slotBookings.extend(bookings)
+    effort_gained: float = sum(b.effort for b in bookings)
     return effort_gained
 
 
@@ -254,6 +258,7 @@ def precise_end_time_and_release(
     for booking in reversed(bookings):
         booking.resource.release(booking, reach_exact - booking.offset)
     reach = round(reach_exact)
+    restore_unused_locks(scenario)
 
     if getattr(scenario, "firstWorkSlot", None) == slot_idx:
         # The task started in this slot too, so its start may have been set
@@ -265,6 +270,14 @@ def precise_end_time_and_release(
 
     seconds_from_start = reach if forward else slot_seconds - reach
     return slot_start + timedelta(seconds=seconds_from_start), float(reach)
+
+
+def restore_unused_locks(scenario: Any) -> None:
+    """Undo a persistent lock this slot set on a resource the settlement released entirely."""
+    working = {id(b.resource.property) for b in getattr(scenario, "slotBookings", None) or [] if b.seconds > 0}
+    for allocation, previous, resource in reversed(getattr(scenario, "slotLocks", None) or []):
+        if allocation.locked is resource and id(resource) not in working:
+            allocation.locked = previous
 
 
 def precise_end_time(scenario: Any, required_effort: float, effort_before_slot: float, forward: bool) -> datetime:

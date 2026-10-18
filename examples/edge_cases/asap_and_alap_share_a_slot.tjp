@@ -1,0 +1,7 @@
+project p "asap_and_alap_share_a_slot" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task late "Late" { end 2026-10-19-10:00 effort 40min allocate r0 scheduling alap }
+task e1 "E1" { effort 13min allocate r0 }
+task e2 "E2" { effort 10min allocate r0 }

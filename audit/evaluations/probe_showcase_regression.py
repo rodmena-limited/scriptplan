@@ -23,7 +23,7 @@ from harness import main, probe
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "legacy_showcase.json")
-FIXTURES = os.path.normpath(os.path.join(HERE, "..", "..", "tests", "data"))
+FIXTURES = os.path.normpath(os.path.join(HERE, "..", "..", "examples", "showcase"))
 TIME_FORMAT = "%Y-%m-%d-%H:%M"
 
 #: project -> why its schedule is expected to differ.
@@ -42,7 +42,7 @@ EXPECTED_CHANGES = {
         "tasks themselves are unchanged."
     ),
     "simple.tjp": (
-        "'allocate dev1, dev2' shares the effort between two developers, as TaskJuggler "
+        "'allocate dev1, dev2' shares the effort between two developers, as the .tjp format "
         "defines effort, so the work finishes sooner. It previously took the same elapsed "
         "time as one developer while booking both."
     ),

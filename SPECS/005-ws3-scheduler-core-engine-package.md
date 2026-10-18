@@ -30,7 +30,7 @@ TECHNICAL PROBLEMS:
 5. Scheduling state that is reset deterministically per run.
 
 SOLUTION DOMAINS:
-- Loop, effort, ALAP, allocation modes -> TaskJuggler 3 documented semantics (clean-room).
+- Loop, effort, ALAP, allocation modes -> the .tjp format's documented semantics (clean-room).
 - Availability -> per-day bitmaps (day_index -> int of 86400/R bits) with popcount for limits; big-int ops are C-speed in CPython.
 - Booking ownership/cost -> per-resource run list (BookingRun with last_slot_seconds) rather than a per-slot owner array.
 - Graph -> precomputed DependencyGraph with cycle detection and criticalness.
@@ -39,7 +39,7 @@ ALTERNATIVES:
 - Architecture: new scheduler/engine package with the model kept behind a facade [CHOSEN: modules <=350 lines, old loop retained for per-fixture diffing while goldens are re-derived, engine unit-testable with dataclass fakes] vs in-place rewrite of task_scenario/project/resource_scenario [REJECTED: identical work, no diffing, refactor and semantic change entangled] vs incremental patching [REJECTED: leaves the person-hour and readiness defects].
 - Availability: per-day bitmaps [CHOSEN: ~73KB/resource-year at 1min, O(1) next-free via (m & -m).bit_length()] vs flat list of slots [REJECTED: 525k refs/resource-year, measured 37-59s] vs run-length intervals [REJECTED: interleaved booking fragments runs; split/merge bookkeeping].
 - Loop shape: event-driven cursor jumps to next availability [CHOSEN] vs visiting every slot [REJECTED: O(slots x tasks) at 1min].
-- Sub-slot precise end: keep the existing formula as a documented ScriptPlan extension [CHOSEN: the t_float 14:57:05 golden depends on it] vs end on slot boundaries as TaskJuggler does [REJECTED: loses accuracy the README advertises].
+- Sub-slot precise end: keep the existing formula as a documented ScriptPlan extension [CHOSEN: the t_float 14:57:05 golden depends on it] vs end on slot boundaries as the reference scheduler does [REJECTED: loses accuracy the README advertises].
 
 ---
 

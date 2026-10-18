@@ -2,13 +2,14 @@
 Enterprise-grade CLI for ScriptPlan project planning and reporting.
 
 This module provides the 'plan' command-line interface for generating
-reports from TaskJuggler (.tjp) project files.
+reports from .tjp project files.
 """
 
 import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -50,6 +51,15 @@ class ReportGenerationError(PlanError):
     pass
 
 
+def _as_error(text: str) -> str:
+    """Label text as an error unless the engine already said what it is."""
+    # The engine's messages arrive coloured, and "\x1b[31mError" has no word
+    # boundary before the E.
+    if re.search(r"\b(Error|Warning|Fatal)\b", re.sub(r"\x1b\[[0-9;]*m", "", text)):
+        return text
+    return f"Error: {text}"
+
+
 @click.group(invoke_without_command=True)
 @click.option("-v", "--version", is_flag=True, help="Show version and exit.")
 @click.option("--verbose", is_flag=True, help="Enable verbose output.")
@@ -59,9 +69,8 @@ def cli(ctx: click.Context, version: bool, verbose: bool, quiet: bool) -> None:
     """
     ScriptPlan - Enterprise project planning and scheduling tool.
 
-    ScriptPlan is a modern implementation of TaskJuggler's project planning
-    capabilities, providing powerful scheduling, resource management, and
-    reporting features for complex projects.
+    ScriptPlan schedules .tjp projects, providing scheduling, resource
+    management, and reporting for complex projects.
 
     \b
     Examples:
@@ -101,14 +110,14 @@ def cli(ctx: click.Context, version: bool, verbose: bool, quiet: bool) -> None:
 @click.pass_context
 def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output: Optional[str], force: bool) -> None:
     """
-    Generate reports from TaskJuggler project files.
+    Generate reports from .tjp project files.
 
     Processes a .tjp project file and generates scheduling reports in
     JSON or CSV format. Output goes to stdout by default (Unix style),
     messages go to stderr.
 
     \b
-    The TJP_FILE argument specifies the path to your TaskJuggler project file,
+    The TJP_FILE argument specifies the path to your .tjp project file,
     or '-' to read from stdin. If omitted, reads from stdin.
 
     \b
@@ -331,7 +340,7 @@ def report(ctx: click.Context, tjp_file: Optional[str], output_csv: bool, output
         sys.exit(1)
 
     except ReportGenerationError as e:
-        click.secho(f"Error: {e}", fg="red", err=True)
+        click.secho(_as_error(str(e)), fg="red", err=True)
         if verbose:
             logger.exception("Report generation failed")
 

@@ -1,5 +1,144 @@
 # Changelog
 
+## 0.10.2
+
+0.10.1 shipped two regressions. This release fixes them and the gaps 0.10.1 listed as
+not fixed. It also fixes the defects found while checking every example project
+against answers worked out without the engine, and the thirteen that Trace reported.
+Several plans that 0.10.1 scheduled silently and wrongly are now refused with an error
+that names the task and the date it cannot keep.
+
+### Regressions in 0.10.1
+
+- An alap `duration` or `length` task before a successor that starts inside a slot
+  ended after that successor started. Before a task starting at 16:20, a 1-hour
+  duration ran 16:00-17:00. It now runs 15:20-16:20. 0.10.0 put it at 15:00-16:00.
+- Time a task skipped to honour a mid-slot start or end was lost to every other task.
+  After an alap task that had to end at 14:30, a task free from 14:00 ran 15:00-16:00
+  instead of 14:30-15:30. Before a task declared to start at 09:30, a task free from
+  09:00 was pushed to 10:00 instead of using 09:00-09:30.
+
+Each booking now holds its own interval of the slot, so time a task skips stays free
+and a task that finishes early frees only what follows it.
+
+### Fixed: wrong schedules
+
+- A `duration` or `length` task after a task ending mid-slot started at the top of
+  that slot, before its predecessor finished. It now starts when the predecessor ends
+  and lasts its duration or length to the second.
+- A `duration` waited for working time. After a task ending Friday 17:00 a 2-hour
+  duration ran Monday 09:00-11:00, and it now runs Friday 17:00-19:00. An alap 2-hour
+  duration that had to end on a Sunday spanned 48 hours, and it now spans 2.
+- A task's finish depended on `timingresolution` when several people shared its last
+  slot, because only the first of them worked it. In `tutorial.tjp` the project ended
+  at 12:48, 12:00 or 11:44 depending on the slot size alone. All of them now work the
+  last slot, and the answer is the same at every resolution.
+- An alap milestone sat a slot before the moment it had to be at. Before a task
+  starting at 16:00 it was placed at 15:00. It now sits at 16:00, and one with no
+  successor sits at the project end.
+- An alap task did not keep the gap its successor asked for. With `gapduration 24h`
+  it ended where the successor began, and now it ends 24 hours earlier.
+- An alap task with an `end` of its own ignored its successors and could end after
+  one had started. It now ends by the earlier of the two.
+- An alap task whose successor states its start was moved to the project start, as
+  though nothing bounded it. It now ends as late as that start allows.
+- A `start` inherited from a container overrode the task's dependencies. It is now an
+  earliest start, and the task waits for what it depends on.
+
+### Fixed: silent wrong schedules are now errors
+
+Each of these exits non-zero with a message naming the task and both dates:
+
+- a task that would start before a task it depends on ends, including when its own
+  `start` says so, with or without a gap, and for milestones;
+- a stated `end` that a task scheduled as soon as possible, or its container, cannot
+  meet, which 0.10.1 overran by hours;
+- a stated `start` that an alap task cannot keep;
+- a stated start or end outside the project window. A start after the window used to
+  crash with "Error parsing project file: list index out of range", and an end after
+  it was clamped while the milestone was dated outside the project.
+
+An alap task that cannot fit before its deadline now names that deadline. A task
+whose successor failed is reported as blocked by it. 0.10.1 blamed the project window
+for the first, and moved the second to the start of the project, booked after the
+deadline.
+
+### Fixed: other
+
+- A reference that could mean two tasks with the same id bound whichever came first.
+  It is now an error that lists both.
+- `getAllocatedTime()` and timesheet figures credited a shared slot to the last task
+  booked in it. 40, 13 and 40 minutes in one hour read as 0, 0 and 2 hours, and now
+  read as 0.67, 0.22 and 0.67.
+- Each `ProjectFileParser()` compiled the grammar again (about 0.7 s). The grammar is
+  now compiled once per process.
+- The `plan` CLI scheduled every project twice and reported any exception raised
+  while scheduling as a parse error. It now schedules each project once and reports
+  a scheduling exception as a scheduling error.
+- Projects scheduled in parallel threads shared one message list, one error count
+  and one switch that turns error collection on. When one thread finished scheduling,
+  another thread's error could raise `TjRuntimeError` out of `schedule()` instead of
+  making it return False, and an error in one project could fail another. Each thread
+  now has its own messages, error count and switch.
+- An `effort` task with no resource allocated was reported as running outside the
+  project window because it "needs more time or more resource availability". It is now
+  reported as having effort but no resource to do it.
+- `plan report` printed every engine error as "Error: Error: …". It now prints one
+  "Error:".
+
+### Documentation
+
+- README described `onstart` as one reading for both directions. For a task scheduled
+  as soon as possible it is start-to-start. For one scheduled as late as possible it
+  means the task must finish before the predecessor starts.
+- README now says that `length` and `gaplength` count the project's working time, how
+  an alap task's end is bounded, and that unkept stated dates are errors.
+- README listed `maxgaplength` among the checked constraints. The syntax has never
+  accepted it, and the claim is removed.
+
+### Schedules that move
+
+A plan whose dates all fall on its slot grid, with no alap milestones and no
+`duration` across non-working time, schedules as it did in 0.10.1. Of the 24 example
+projects, 22 schedule identically:
+
+- `tutorial.tjp`: `spec` ends 14:20 instead of 15:00 on 24 January because three
+  developers finish it together, and every task after it moves with it. The project
+  ends on 18 April at 11:44 instead of 12:48.
+- `jit_supply.tjp`: the alap milestone `connection_setup.set_deps` sits at 2025-07-18
+  08:00, when `pack` starts, instead of 2025-07-17 16:00.
+
+### Internal API
+
+`ResourceScenario.reserve()` returns a list of `SlotBooking`, one per free stretch it
+books. The slot ledger is `slotIntervals`, and `slotFrontUsed` and `slotBackUsed` from
+0.10.1 are gone. Failure handling moved to `scriptplan.scheduler.stalls`, and stated
+dates are tracked in `scriptplan.core.declared_dates`. `slotSecondsUsed` is now
+exactly the sum of `slotTaskUsage` for every slot.
+
+### Verification
+
+The golden snapshots record what the engine produced last time. They catch a change
+but not an error, and 0.10.1 passed all of them. `examples/` now holds an answer for every
+task in the 24 showcase projects and in 24 edge cases, each derived by hand from
+the file and the documented semantics without running ScriptPlan, and compared with an
+hour-level reference scheduler wherever it accepts the file. `tests/test_examples.py`
+runs each project through the `plan` CLI and compares every task to the second. Every
+project passes on 0.10.2, and 13 of the edge cases fail on 0.10.1.
+
+`audit/evaluations/probe_placement.py` generates 300 plans that mix effort, duration,
+length and milestones in both directions. It checks that every dependency, stated date
+and span holds, that no slot is overfull, and that no task leaves free time it could
+have used. All 300 pass on 0.10.2, against 28 on 0.10.1 and 14
+on 0.10.0.
+
+`tests/test_threads.py` schedules five projects three times each in parallel threads
+and compares every date and message with the same project scheduled alone. It also
+forces one thread to leave error collection while another is still inside it. Its
+three tests fail on the 0.10.1 message handler.
+
+The full gate runs on Python 3.9 and 3.13.
+
 ## 0.10.1
 
 Tasks that shared a timing slot on one resource could be booked into time that
@@ -106,7 +245,7 @@ engine took the largest contribution in each slot rather than the sum, so the
 labour of every resource but one was booked, billed and discarded.
 
 Effort is now the amount of work to be done, and each allocated resource
-contributes its own time towards it, as TaskJuggler defines it. The same task
+contributes its own time towards it, as the .tjp format defines it. The same task
 with two resources finishes in half the time and costs what one resource's worth
 of work costs.
 

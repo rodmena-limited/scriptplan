@@ -47,7 +47,7 @@ resource r_math "The Math Hazard" {
   workinghours mon, wed, fri 08:15 - 11:45, 13:15 - 16:30
   workinghours tue, thu      09:00 - 10:30, 14:45 - 16:00
 
-  # Leave specifically during a critical Tuesday slot (30 mins)
+  # Leave specifically during a critical Tuesday slot
   vacation 2025-08-05-09:30 - 2025-08-05-10:00
 }
 
@@ -130,7 +130,7 @@ task airport_math "Complex Calculations" {
     end 2025-08-29-17:00
   }
 
-  # NOTE: Negative gapduration is not supported by TJ. Removing this test case.
+  # NOTE: Negative gapduration is not supported by the .tjp format. Removing this test case.
   # task t_pre "Lead Time Dependency" {
   #   scheduling alap
   #   effort 4h
@@ -141,20 +141,12 @@ task airport_math "Complex Calculations" {
 }
 
 # ---------------------------------------------------------------------------
-# 4. REPORT (commented out for now - formats not supported in parser)
+# 4. REPORT
 # ---------------------------------------------------------------------------
 
-# taskreport "math_dump" {
-#   formats csv
-#   columns id,
-#           name,
-#           start,
-#           end,
-#           duration,
-#           effort,
-#           cost,
-#           complete,
-#           note
-#
-#   hideresource 0
-# }
+taskreport "math_dump" {
+  formats csv
+  columns id, name, start, end, duration, effort, cost
+  hidetask ~isleaf()
+  loadunit hours
+}

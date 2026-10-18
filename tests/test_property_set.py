@@ -53,7 +53,7 @@ class TestPropertySet(unittest.TestCase):
         # is defined for @reports.
         # Is it defined for Tasks?
         # Project.rb tasks attributes: [ 'seqno', ... ] but no 'bsi'.
-        # Actually TaskJuggler usually has 'bsi' for tasks.
+        # The .tjp convention usually has 'bsi' for tasks.
         # Let's check Project.rb again for 'bsi' in tasks.
         pass
 

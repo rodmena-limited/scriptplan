@@ -1,0 +1,8 @@
+project p "skipped_time_stays_free" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task e "E" { scheduling alap effort 30min allocate r0 end 2026-10-19-14:30 priority 900 }
+task z "Z" { start 2026-10-19-14:00 effort 60min allocate r0 priority 100 }
+task f "F" { start 2026-10-20-09:30 effort 30min allocate r0 priority 900 }
+task g "G" { start 2026-10-20-09:00 effort 30min allocate r0 priority 100 }

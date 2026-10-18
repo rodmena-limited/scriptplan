@@ -1,4 +1,4 @@
-"""Golden regression gate for the example projects in tests/data.
+"""Golden regression gate for the example projects in examples/showcase.
 
 Every fixture is scheduled and its result compared against a recorded
 snapshot. This is what stops a change from quietly moving a date in one of
@@ -58,6 +58,6 @@ def test_every_fixture_has_a_golden() -> None:
     recorded = {p.name[: -len(".txt")] for p in GOLDEN_DIR.glob("*.tjp.txt")}
     present = set(fixture_names())
     assert recorded == present, (
-        f"golden snapshots out of step with tests/data: "
+        f"golden snapshots out of step with examples/showcase: "
         f"missing={sorted(present - recorded)} stale={sorted(recorded - present)}"
     )

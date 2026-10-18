@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Falsifies: "ScriptPlan converts durations the way TaskJuggler does".
+"""Falsifies: "ScriptPlan converts durations the way the .tjp format defines them".
 
 Claims under test (SPECS/003-ws1-units-and-calendar-arithmetic.md):
   - calendar durations: min=60s, h=3600s, d=86400s, w=7d, m=30.4167d, y=365d

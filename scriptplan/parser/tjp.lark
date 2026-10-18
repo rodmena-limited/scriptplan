@@ -1,5 +1,5 @@
 // TJP Grammar for Lark - Extended version
-// Supports a substantial subset of TaskJuggler syntax
+// Supports a substantial subset of the .tjp syntax
 
 start: statements
 
@@ -12,7 +12,7 @@ statement: project
          | report_definition
 
 // Project definition
-// project_name is optional in TaskJuggler syntax
+// project_name is optional in .tjp syntax
 project: "project" project_id project_name? project_timeframe "{" project_attributes "}"
 
 project_id: STRING | ID
@@ -225,7 +225,7 @@ depends_option: "gapduration" duration_value -> dep_gapduration
 DEPENDS_REF: /[!.a-zA-Z_][!.a-zA-Z0-9_]*/
 
 // An allocation names a resource, optionally with options attached to it.
-// TaskJuggler binds options to the resource they follow, so
+// The .tjp format binds options to the resource they follow, so
 //   allocate a { mandatory }, b
 // makes a mandatory and leaves b optional.
 allocate_spec: allocate_item ("," allocate_item)*

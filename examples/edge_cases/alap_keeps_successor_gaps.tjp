@@ -1,0 +1,10 @@
+project p "alap_keeps_successor_gaps" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task b "B" { start 2026-10-20-14:00 effort 1h allocate r0 }
+task a "A" { scheduling alap effort 1h allocate r0 precedes b }
+task c "C" { scheduling alap duration 1h }
+task d "D" { start 2026-10-20-15:00 depends c { gapduration 2h } effort 1h allocate r0 }
+task e "E" { scheduling alap duration 1h }
+task f "F" { start 2026-10-20-11:00 depends e { gaplength 3h } duration 1h }

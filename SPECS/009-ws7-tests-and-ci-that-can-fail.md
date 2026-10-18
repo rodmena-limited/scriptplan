@@ -28,7 +28,7 @@ SOLUTION DOMAINS:
 - pytest conftest fixtures for data paths; house CI at ci.rodmena.co.uk.
 
 ALTERNATIVES:
-- Goldens: derive expected values by an independent simulation, as TestIssue41 already does [CHOSEN] vs re-record from the implementation [REJECTED: that is the defect] vs compare against real TaskJuggler output [PREFERRED but rejected for now: no TaskJuggler available in this environment; recorded as follow-up].
+- Goldens: derive expected values by an independent simulation, as TestIssue41 already does [CHOSEN] vs re-record from the implementation [REJECTED: that is the defect] vs compare against the reference scheduler output [PREFERRED but rejected for now: no the reference scheduler available in this environment; recorded as follow-up].
 - judge_*.py scripts: fold their ground truth into tests and delete [CHOSEN: nothing runs them and one of them checks one of its four computed values] vs wire them into CI [REJECTED: duplicate mechanism for the same assertions].
 
 ---

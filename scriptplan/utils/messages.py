@@ -11,13 +11,13 @@ from scriptplan.utils.logger import ANSIColor
 
 
 class TjRuntimeError(RuntimeError):
-    """TaskJuggler runtime error exception."""
+    """Runtime error exception."""
 
     pass
 
 
 class TjException(Exception):
-    """TaskJuggler exception for controlled abort."""
+    """Exception for a controlled abort."""
 
     pass
 

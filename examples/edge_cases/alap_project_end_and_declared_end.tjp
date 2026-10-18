@@ -1,0 +1,7 @@
+project p "alap_project_end_and_declared_end" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task m "M" { scheduling alap }
+task mm "MM" { scheduling alap end 2026-10-21-11:30 }
+task d "D" { scheduling alap duration 2h end 2026-10-21-11:30 }

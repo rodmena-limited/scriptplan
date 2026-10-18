@@ -34,7 +34,7 @@ task high "High" { depends !gate effort 1d allocate r priority 900 }
 @probe("The repository's own preemption fixture keeps its shape")
 def probe_repository_preemption_fixture() -> tuple[bool, str]:
     here = os.path.dirname(os.path.abspath(__file__))
-    fixture = os.path.join(here, "..", "..", "tests", "data", "airport_ultra_math.tjp")
+    fixture = os.path.join(here, "..", "..", "examples", "showcase", "airport_ultra_math.tjp")
     if not os.path.exists(fixture):
         return True, f"fixture not present at {fixture}; nothing to guard"
     with open(fixture) as handle:

@@ -1,0 +1,8 @@
+project p "alap_spans_before_mid_slot_successor" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r1 "Bench" { workinghours mon - fri 9:00 - 17:00 }
+task t4 "T4" { scheduling alap effort 40min allocate r1 end 2026-10-19-17:00 }
+task d4 "D4" { scheduling alap duration 1h precedes t4 }
+task l4 "L4" { scheduling alap length 1h precedes t4 }
+task m4 "M4" { scheduling alap precedes t4 }

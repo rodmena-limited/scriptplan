@@ -68,7 +68,7 @@ class TestIssue39UltraMath:
         import io
 
         parser = ProjectFileParser()
-        with open(Path(__file__).parent / 'data' / 'airport_ultra_math_report.tjp') as f:
+        with open(Path(__file__).parent.parent / "examples" / "showcase" / 'airport_ultra_math_report.tjp') as f:
             content = f.read()
         project = parser.parse(content)
 
@@ -214,7 +214,7 @@ class TestIssue41MathTorture:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open(Path(__file__).parent / 'data' / 'math_torture.tjp') as f:
+        with open(Path(__file__).parent.parent / "examples" / "showcase" / 'math_torture.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -357,7 +357,7 @@ class TestIssue42AirportRetrofit:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open(Path(__file__).parent / 'data' / 'airport_retrofit.tjp') as f:
+        with open(Path(__file__).parent.parent / "examples" / "showcase" / 'airport_retrofit.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -414,10 +414,10 @@ class TestIssue40AirportStressTest:
     """
     Issue #40: Airport Stress Test
 
-    Compares our output against expected values derived from TaskJuggler.
+    Compares our output against expected values derived independently.
     """
 
-    # Expected values from TaskJuggler output
+    # Expected values derived independently of the engine
     EXPECTED: ClassVar[dict] = {
         "airport": {"start": "2025-06-02", "end": "2025-06-24"},
         "airport.t_software": {"start": "2025-06-02", "end": "2025-06-04"},
@@ -433,7 +433,7 @@ class TestIssue40AirportStressTest:
     def csv_output(self):
         """Generate our tool's output."""
         parser = ProjectFileParser()
-        with open(Path(__file__).parent / 'data' / 'airport_stress_test.tjp') as f:
+        with open(Path(__file__).parent.parent / "examples" / "showcase" / 'airport_stress_test.tjp') as f:
             content = f.read()
         project = parser.parse(content)
         project.schedule()
@@ -503,7 +503,7 @@ class TestIssue43WorkflowEngine:
     @pytest.fixture
     def project(self):
         parser = ProjectFileParser()
-        with open(Path(__file__).parent / 'data' / 'workflow_engine.tjp') as f:
+        with open(Path(__file__).parent.parent / "examples" / "showcase" / 'workflow_engine.tjp') as f:
             content = f.read()
         return parser.parse(content)
 
@@ -745,7 +745,7 @@ class TestIssue49BottleneckRelease:
        -> pushed to Tue Jun 10 -> ends Tue June 10, 13:00
     """
 
-    TJP_FILE = Path(__file__).parent / "data" / "bottleneck.tjp"
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / "bottleneck.tjp"
 
     # Ground truth from judge script
     TRUTH_CODE_END = "2025-06-03-17:00"
@@ -816,7 +816,7 @@ class TestIssue50PriorityClash:
     - low_prio (Prio 100) MUST be pushed to Aug 4 -> ends 2025-08-04-13:00
     """
 
-    TJP_FILE = Path(__file__).parent / "data" / "priority_clash.tjp"
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / "priority_clash.tjp"
 
     # Ground truth from judge script
     EXPECTED_HIGH_END = "2025-08-01-13:00"
@@ -883,7 +883,7 @@ class TestIssue51ALAPBackwardScheduling:
     it schedules Assembly Tue+Wed instead of Mon+Tue.
     """
 
-    TJP_FILE = Path(__file__).parent / "data" / "alap_backward.tjp"
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / "alap_backward.tjp"
 
     # Ground truth from judge script
     EXPECTED_PAINT_START = "2025-12-11-09:00"
@@ -1069,7 +1069,7 @@ class TestIssue54JITSupplyChain:
     - Order of A/B in slots doesn't matter, but they must be sequential
     """
 
-    TJP_FILE = Path(__file__).parent / "data" / "jit_supply.tjp"
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / "jit_supply.tjp"
 
     # Expected values from judge script
     EXP_PACK_START = "2025-07-18-08:00"
@@ -1162,7 +1162,7 @@ class TestIssue55TimeTraveler:
     - Tokyo starts Friday 09:00 JST (00:00 UTC)
     - Gap: 7 hours (Earth rotation)
     """
-    TJP_FILE = Path(__file__).parent / "data" / "time_traveler.tjp"
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / "time_traveler.tjp"
 
     # Ground truth from judge script
     EXP_TOKYO_START = "2025-06-13-00:00"
@@ -1285,7 +1285,7 @@ class TestIssue56UnionContract:
     The task MUST split across the week boundary.
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'union_contract.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'union_contract.tjp'
 
     # Ground truth from judge script
     EXP_STEP1_END = "2025-10-01-17:00"
@@ -1464,7 +1464,7 @@ class TestIssue57BlackBoxProtocol:
     4. Day-Boundary Crossovers
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'blackbox.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'blackbox.tjp'
 
     # Ground truth from judge script
     TARGET_PHASE1_END = "2025-01-06-12:00"
@@ -1576,7 +1576,7 @@ class TestIssue58BlindParadox:
     not just stacked like bricks.
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'paradox.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'paradox.tjp'
 
     # Expected results, derived by hand from the fixture: assemble_a runs one
     # working day on Kiritimati (UTC+14), and assemble_b must end 48 calendar
@@ -1678,7 +1678,7 @@ class TestIssue60EclipseProtocol:
     Jun 2 (Mon): 2h, Jun 4 (Wed): 2h, Jun 6 (Fri): 2h, Jun 9 (Mon): 1h
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'eclipse.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'eclipse.tjp'
 
     # Expected times, written out rather than encoded.
     K_START = "2025-06-02-12:00"
@@ -1777,7 +1777,7 @@ class TestIssue61SineWaveCapacity:
     - Week 3: Mon 2h (10h rem), Tue 4h (6h rem), Wed 6h (done at 15:00)
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'throughput.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'throughput.tjp'
 
     # Expected values verified by simulation
     EXPECTED_START = "2025-09-01-09:00"
@@ -1891,7 +1891,7 @@ class TestIssue62SharedQuotaProtocol:
     The TRAP: Just because a slot is free doesn't mean you can use it.
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'quota.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'quota.tjp'
 
     # Expected times, written out rather than encoded.
     K_END_AB = "2025-07-01-12:00"
@@ -2018,7 +2018,7 @@ class TestIssue63FailoverProtocol:
     Smart routing should pick Path B (finishes 2 days earlier).
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'failover.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'failover.tjp'
 
     # Expected times, written out rather than encoded.
     K_END = "2025-08-04-17:00"
@@ -2136,7 +2136,7 @@ class TestIssue64AtomicBooking:
     The shift specifies Mon-Fri, so first working day is Nov 3 (Monday).
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'atomic.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'atomic.tjp'
 
     # Correct expected values based on logic (not judge which has Nov 1 Saturday bug)
     TARGET_START = "2025-11-03-13:00"
@@ -2247,7 +2247,7 @@ class TestIssue65ThermalShock:
     - Gap: 0h <= maxgapduration (60min) -- PASS
     """
 
-    TJP_FILE = Path(__file__).parent / 'data' / 'thermal.tjp'
+    TJP_FILE = Path(__file__).parent.parent / "examples" / "showcase" / 'thermal.tjp'
 
     @pytest.fixture
     def csv_dataframe(self):

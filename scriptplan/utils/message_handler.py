@@ -4,6 +4,11 @@ The handler is a process-wide singleton, which is why it can collect errors
 rather than raise them only where a caller has said so: see ``collecting``.
 A library never terminates its host process, so an error raises or is recorded;
 it never exits.
+
+What one run produces (the messages, the error count and whether errors are
+being collected) is kept per thread, so projects scheduled in parallel threads
+neither see nor switch off each other's errors (issuedb #28). The output
+settings are shared.
 """
 
 from __future__ import annotations
@@ -36,6 +41,15 @@ __all__ = [
 ]
 
 
+class _RunState(threading.local):
+    """The part of the handler that belongs to one thread's run."""
+
+    def __init__(self) -> None:
+        self.collect_errors = False
+        self.errors = 0
+        self.messages: list[Message] = []
+
+
 class MessageHandlerInstance:
     """Singleton class for managing messages and logging.
 
@@ -63,11 +77,9 @@ class MessageHandlerInstance:
     _hide_scenario: bool
     _app_name: str
     _abort_on_warning: bool
-    _collect_errors: bool
+    _run: _RunState
     _baseline_sfi: dict[int, SourceFileInfo]
     _trap_setup: dict[int, bool]
-    _errors: int
-    _messages: list[Message]
 
     def __new__(cls) -> MessageHandlerInstance:
         if cls._instance is None:
@@ -81,6 +93,7 @@ class MessageHandlerInstance:
         if self._initialized:
             return
         self._initialized = True
+        self._run = _RunState()
         self.reset()
 
     def reset(self) -> None:
@@ -91,7 +104,7 @@ class MessageHandlerInstance:
         self._hide_scenario = True
         self._app_name = "unknown"
         self._abort_on_warning = False
-        self._collect_errors = False
+        self._run.collect_errors = False
         self._baseline_sfi = {}
         self._trap_setup = {}
 
@@ -99,11 +112,13 @@ class MessageHandlerInstance:
 
     @property
     def messages(self) -> list[Message]:
-        return self._messages
+        """The messages this thread has recorded since it last cleared them."""
+        return self._run.messages
 
     @property
     def errors(self) -> int:
-        return self._errors
+        """The errors this thread has recorded since it last cleared them."""
+        return self._run.errors
 
     @property
     def logFile(self) -> str | None:
@@ -127,23 +142,24 @@ class MessageHandlerInstance:
 
         Applications that want to report every problem in one run (the CLIs, and
         the scheduler's own pre-flight checks) turn this on for the duration of
-        the run and inspect ``messages`` afterwards.
+        the run and inspect ``messages`` afterwards. It applies to the calling
+        thread only.
         """
-        return self._collect_errors
+        return self._run.collect_errors
 
     @collectErrors.setter
     def collectErrors(self, value: bool) -> None:
-        self._collect_errors = bool(value)
+        self._run.collect_errors = bool(value)
 
     @contextlib.contextmanager
     def collecting(self) -> Iterator[MessageHandlerInstance]:
-        """Collect errors for the duration of the block, then restore."""
-        previous = self._collect_errors
-        self._collect_errors = True
+        """Collect this thread's errors for the duration of the block, then restore."""
+        previous = self._run.collect_errors
+        self._run.collect_errors = True
         try:
             yield self
         finally:
-            self._collect_errors = previous
+            self._run.collect_errors = previous
 
     @property
     def abortOnWarning(self) -> bool:
@@ -180,9 +196,9 @@ class MessageHandlerInstance:
             self._trap_setup[thread_id] = value
 
     def clear(self) -> None:
-        """Clear all stored messages and reset error count."""
-        self._errors = 0
-        self._messages = []
+        """Clear this thread's stored messages and reset its error count."""
+        self._run.errors = 0
+        self._run.messages = []
 
     @property
     def outputLevel(self) -> int:
@@ -267,7 +283,7 @@ class MessageHandlerInstance:
         msg = Message(
             display_type, msg_id, message, source_file_info, line, data, None if self._hide_scenario else scenario
         )
-        self._messages.append(msg)
+        self._run.messages.append(msg)
 
         # Log if level is appropriate
         if self._log_level >= self.LOG_LEVELS.get(msg_type, 0):
@@ -282,13 +298,13 @@ class MessageHandlerInstance:
             if self._abort_on_warning:
                 raise TjException("")
         elif msg_type == MessageType.CRITICAL:
-            self._errors += 1
+            self._run.errors += 1
         elif msg_type == MessageType.ERROR:
-            self._errors += 1
+            self._run.errors += 1
             # A library never terminates its host process. An error is raised so
             # the caller can collect it, or handled by an application that has
             # opted into collecting rather than raising.
-            if not self._collect_errors:
+            if not self._run.collect_errors:
                 raise TjRuntimeError(str(msg))
         elif msg_type == MessageType.FATAL:
             raise RuntimeError(message)
@@ -371,7 +387,7 @@ class MessageHandlerInstance:
 
     def __str__(self) -> str:
         """Return all messages as a single string."""
-        return "".join(str(msg) for msg in self._messages)
+        return "".join(str(msg) for msg in self._run.messages)
 
 
 # Singleton accessor

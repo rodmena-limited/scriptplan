@@ -25,6 +25,7 @@ path and which accelerated modules are active.
 | `probe_limits.py` | every quota blocks **and** releases | `SPECS/003` |
 | `probe_effort_semantics.py` | effort is person-time; cost charged once | `SPECS/005` |
 | `probe_slot_sharing.py` | tasks sharing a slot share its time; nothing overbooked, lost or invented | `SPECS/011` |
+| `probe_placement.py` | every dependency, stated date and span holds; no task leaves usable time idle | `SPECS/013`, `SPECS/014`, `SPECS/017` |
 | `probe_alap.py` | backward scheduling; declared project end | `SPECS/005` |
 | `probe_idempotency.py` | scheduling twice gives the same answer | `SPECS/005` |
 | `probe_priority.py` | regression guard: priority contention already works | `SPECS/005` |

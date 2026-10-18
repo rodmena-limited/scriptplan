@@ -29,9 +29,9 @@ def register(cli: click.Group) -> None:
     ScriptPlan - Enterprise Project Planning Tool
 
     DESCRIPTION:
-        ScriptPlan is a modern, Python-based implementation of TaskJuggler's
-        project planning capabilities. It provides powerful scheduling, resource
-        management, and reporting features for managing complex projects.
+        ScriptPlan schedules projects written in the .tjp format. It provides
+        scheduling, resource management, and reporting for managing complex
+        projects.
 
     USAGE:
         plan [OPTIONS] COMMAND [ARGS]...
@@ -49,8 +49,8 @@ def register(cli: click.Group) -> None:
     REPORT COMMAND:
         plan report [OPTIONS] <tjp-file>
 
-        Generate scheduling reports in JSON or CSV format from TaskJuggler
-        project files (.tjp).
+        Generate scheduling reports in JSON or CSV format from .tjp project
+        files.
 
         Options:
             --csv               Generate CSV output (default: JSON)

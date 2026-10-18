@@ -1,0 +1,7 @@
+project p "daily_cap_counts_worked_time" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 limits { dailymax 60min } }
+task t0 "T0" { effort 40min allocate r0 }
+task t1 "T1" { effort 13min allocate r0 }
+task t2 "T2" { effort 40min allocate r0 }

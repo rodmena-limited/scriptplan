@@ -1,0 +1,7 @@
+project p "shared_slot_backward" 2026-10-19 +2w {
+  timingresolution 60min
+}
+resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 }
+task t0 "T0" { effort 40min allocate r0 scheduling alap end 2026-10-19-17:00 }
+task t1 "T1" { effort 13min allocate r0 scheduling alap end 2026-10-19-17:00 }
+task t2 "T2" { effort 40min allocate r0 scheduling alap end 2026-10-19-17:00 }

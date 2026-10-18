@@ -4,12 +4,12 @@
 
 # ScriptPlan
 
-![Tests](https://img.shields.io/badge/tests-411_passing-success?style=for-the-badge)
-![Probes](https://img.shields.io/badge/audit_probes-67_passing-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-496_passing-success?style=for-the-badge)
+![Probes](https://img.shields.io/badge/audit_probes-85_passing-success?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)
 ![Licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey?style=for-the-badge)
 
-A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management. The syntax is compatible with TaskJuggler (.tjp files).
+A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management. It reads projects written in the .tjp format.
 
 ## Installation
 
@@ -86,6 +86,10 @@ for task in project.tasks:
         print(f"{task.id}: {start} -> {end}")
 ```
 
+Projects can be parsed and scheduled in parallel threads. Messages and the error
+count belong to the thread that produced them, so read
+`get_message_handler_instance().messages` in the thread that called `schedule()`.
+
 ## What is verified
 
 Each behaviour below has a probe in `audit/evaluations/` that drives ScriptPlan
@@ -123,12 +127,22 @@ audit/evaluations/run_all.sh
 **Scheduling**
 
 - ASAP and ALAP, including chains that mix the two.
+- A task scheduled as late as possible ends by the earliest of its own `end`, the
+  start of each successor (less any gap that successor asks for) and the project
+  end. With none of these but a successor scheduled as soon as possible that
+  states no start, it is scheduled as soon as possible instead, with a warning.
 - Contention is resolved by priority, then criticalness, then declaration order.
 - The declared project period is never rewritten. A task that does not fit is
-  reported, with its name and the reason.
+  reported, with its name and the reason. A date stated outside the period is an
+  error.
 - Scheduling the same project twice produces the same dates and the same bookings.
-- `maxgapduration`, `maxgaplength`, `maxstart`, `minstart`, `maxend` and `minend`
-  are checked once the schedule is complete, and a violation is an error.
+- A stated `start` or `end` that the schedule cannot keep, and a task that would
+  start before something it depends on finishes, are errors.
+- `length` and `gaplength` count the project's working time, not a resource's:
+  a resource on longer hours does not shorten the gap.
+- `maxgapduration`, `maxstart`, `minstart`, `maxend` and `minend` are checked
+  once the schedule is complete, and a violation is an error. (`maxgaplength` is
+  not part of the syntax and is refused when parsed.)
 
 **Honesty**
 
@@ -146,9 +160,15 @@ audit/evaluations/run_all.sh
   rejected at parse time rather than silently producing nothing.
 - Accounts are parsed but not yet modelled, so `chargeset` and `charge` record an
   amount without posting it anywhere.
-- `onstart` dependencies are read as "the dependent task must finish before the
-  predecessor starts", which is ScriptPlan's own reading rather than
-  TaskJuggler's start-to-start one.
+- A task reference is first looked up from the referring task's scope, one level
+  up for each `!`. When that finds nothing but exactly one task in the project has
+  that id, the reference binds to it, so `depends !!pack` inside `delivery` finds
+  `delivery.pack`. When two tasks could be meant, the file is refused and both are
+  named.
+- `onstart` on a dependency means start-to-start for a task scheduled as soon as
+  possible: it may start once the predecessor starts. For a task scheduled as
+  late as possible it means the task must finish before the predecessor starts,
+  which is ScriptPlan's own reading.
 
 ## Example Project
 
@@ -221,17 +241,12 @@ Apache-2.0
 
 ## Acknowledgments
 
-ScriptPlan references [TaskJuggler](https://taskjuggler.org/) solely for **file format compatibility**. We have not used, modified, or copied any TaskJuggler source code. ScriptPlan is an independent, clean-room implementation.
-
-- The `.tjp` file format is documented publicly and widely used in the project management community
-- All scheduling algorithms, parser, and report generation in ScriptPlan are original implementations
-- TaskJuggler is mentioned only to indicate that ScriptPlan can read the same project file format
-
-If you're looking for the original TaskJuggler with its full feature set including interactive HTML reports and GUI tools, please visit [taskjuggler.org](https://taskjuggler.org/).
+ScriptPlan reads the .tjp project file format. It contains no code from any other
+scheduler: the parser, the scheduling algorithms and the reports are its own.
 
 ## Why ScriptPlan?
 
-This scheduler is part of Highway Workflow Engine's worker capacity management system. I decided to open-source it for the community to benefit from its precise scheduling capabilities. Thanks to TaskJuggler's established syntax, users can easily adopt ScriptPlan without learning a new format.
+This scheduler is part of Highway Workflow Engine's worker capacity management system. I decided to open-source it for the community to benefit from its precise scheduling capabilities. Because it reads the established .tjp syntax, users can adopt ScriptPlan without learning a new format.
 
 Yours,
 Farshid.
