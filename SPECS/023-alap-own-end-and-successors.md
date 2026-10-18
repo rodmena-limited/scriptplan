@@ -1,7 +1,7 @@
 # An ALAP task with its own end ignores its successors (trace #9)
 
 **Ticket**: issuedb #23  
-**Status**: open  
+**Status**: closed (released in 0.10.2)  
 **Priority**: critical  
 **Release**: 0.10.2
 
@@ -16,3 +16,9 @@ Reported by trace-thinkpad-83589d over AgentBus (thread 01M563GAHKNN9CHN418PR07Y
 ---
 
 DONE: backward tasks bound by min(own end or project end, onstart predecessors' starts, bounding successors' starts less gaps); task_dependencies.bounding_successors excludes successors that depend on this task onstart while scheduled backwards (read the other way round, README); readiness waits for backward bounding successors even with an own end. d09 now schedules: a Thu 13:00-17:00, b Thu 17:00-Fri 17:30 (hand-derived; edge case alap_own_end_before_successor, fails on 0.10.1). jit_supply unchanged except set_deps (pending Farshid).
+
+---
+
+VERIFIED on 0.10.2 from PyPI (3.13.7): d09 schedules a Thu 13:00-17:00, b Thu 17:00-Fri 17:30; edge case alap_own_end_before_successor passes (fails on 0.10.1).
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

@@ -1,7 +1,7 @@
 # A task reference that misses its scope binds the first task with that id, silently
 
 **Ticket**: issuedb #18  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: high  
 **Release**: 0.10.2
 
@@ -25,3 +25,13 @@ SYNTHESIS (localised): domain = the reference scheduler's reference scoping (its
 ---
 
 SPEC CHANGE (golden snapshots are not to be changed, Farshid 2026-10-17): R2 now binds the only task a mis-scoped reference can mean WITHOUT a warning, because fixture_snapshot.render records warnings and three showcase snapshots (jit_supply, paradox, time_traveler) would gain a line. The safety goal holds: an ambiguous reference (two tasks with the id) is now an error listing the candidates (verified: 'deliveries.x depends beta' with test.beta and deliveries.beta -> SemanticError naming both; 0.10.1 silently bound one). Strict scoping is applied first; for the 24 showcase projects the only references that need the fallback are the three !! ones, each unique.
+
+---
+
+VERIFIED: ambiguous reference refused with both candidates named (test in the gate); the three unique out-of-scope references in jit_supply, paradox and time_traveler bind as before, golden snapshots unchanged for paradox and time_traveler. README Known limits now documents the lenient binding.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.
+
+---
+
+CORRECTION to the closing comment: when it was written, no test in the gate covered the ambiguous reference (it had been verified by hand only). Added tests/test_reference_and_duration.py::test_a_reference_that_could_mean_two_tasks_is_refused, through the plan CLI: 'deliveries.x depends beta' with test.beta and deliveries.beta exits non-zero naming both. It fails on v0.10.1 (exit 0, binds test.beta) and passes on 0.10.2. Test-only change; the released package is unaffected.

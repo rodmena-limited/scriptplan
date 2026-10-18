@@ -1,7 +1,7 @@
 # A declared end on an ASAP task, or its parent, is exceeded silently (trace #3)
 
 **Ticket**: issuedb #21  
-**Status**: open  
+**Status**: closed (released in 0.10.2)  
 **Priority**: critical  
 **Release**: 0.10.2
 
@@ -16,3 +16,9 @@ Reported by trace-thinkpad-83589d over AgentBus (thread 01M563GAHKNN9CHN418PR07Y
 ---
 
 DONE: core/declared_dates.py keeps stated start/end apart from written values; postcheck _check_stated_dates raises end_violated. d03 (task end) and the parent-end variant now exit 2: "Task 'g.b' must end by 2026-11-03 10:00:00, the end the file states for it, but its work ends at 2026-11-03 13:00:00." Feasible variant (end 17:30) schedules. tests/test_stated_dates.py.
+
+---
+
+VERIFIED on 0.10.2 from PyPI (3.13.7): trace d03 exits 2 'Task g.b must end by 2026-11-03 10:00:00 ... its work ends at 2026-11-03 13:00:00'; feasible variant kept (tests/test_stated_dates.py).
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

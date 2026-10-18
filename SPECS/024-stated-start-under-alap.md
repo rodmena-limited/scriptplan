@@ -1,7 +1,7 @@
 # A stated start is ignored under ALAP (trace #10)
 
 **Ticket**: issuedb #24  
-**Status**: open  
+**Status**: closed (released in 0.10.2)  
 **Priority**: critical  
 **Release**: 0.10.2
 
@@ -16,3 +16,9 @@ Reported by trace-thinkpad-83589d over AgentBus (thread 01M563GAHKNN9CHN418PR07Y
 ---
 
 DONE: postcheck raises start_violated when a task starts before its stated start. d10 exits 2: "Task 'g.a' may not start before 2026-11-06 08:30:00 ... would have to start at 2026-11-05 13:00:00". Feasible variant (start Wed 08:30) schedules a Thu 13:00-17:00.
+
+---
+
+VERIFIED on 0.10.2 from PyPI (3.13.7): d10 exits 2 'may not start before 2026-11-06 08:30:00'; the feasible variant schedules (tests/test_stated_dates.py).
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

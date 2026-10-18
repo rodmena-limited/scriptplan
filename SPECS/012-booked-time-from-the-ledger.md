@@ -1,7 +1,7 @@
 # Allocated time and timesheet planned work credit a shared slot to its last task
 
 **Ticket**: issuedb #12  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: medium  
 **Release**: 0.10.2
 
@@ -30,3 +30,9 @@ SYNTHESIS (localised): domain = the slot ledger; concept = slotTaskUsage is the 
 ---
 
 DONE in code: allocated_slots/free_slots count booked seconds from slotTaskUsage (fractional slots); allocated_time sums slotTaskUsage. 40/13/40 at R=60: getAllocatedTime 0.6667, 0.2167, 0.6667 h (was 0, 0, 2); getAllocatedSlots matches; free Monday 6.45 slots.
+
+---
+
+VERIFIED: R1/R2 as in the DONE comment (40/13/40 at R=60 read 0.6667, 0.2167, 0.6667 h); R3: 22 of 24 golden snapshots unchanged, the two that move are explained by #27 and #14.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

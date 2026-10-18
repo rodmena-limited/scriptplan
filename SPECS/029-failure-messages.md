@@ -1,7 +1,7 @@
 # Failure messages: doubled 'Error:' prefix, and no-resource effort blamed on the window
 
 **Ticket**: issuedb #29  
-**Status**: open  
+**Status**: closed (released in 0.10.2)  
 **Priority**: medium  
 **Release**: 0.10.2
 
@@ -25,3 +25,9 @@ SYNTHESIS (localised): domain = the CLI's error presentation (cli/plan.py) and t
 ---
 
 DONE: cli/plan.py _as_error() strips ANSI codes and adds 'Error: ' only when no severity word is present; stalls._runaway_detail names a missing resource first. tests/test_failure_messages.py: test_effort_with_no_resource_says_so fails with both fixes reverted (doubled prefix and window message) and passes with them; test_effort_that_does_not_fit_names_the_window (allocation inherited from the parent) passes in both, so the new message is not over-broad.
+
+---
+
+VERIFIED: tests/test_failure_messages.py 2/2 in both gates; the first fails with the fixes reverted. All seventeen trace TJPs on 0.10.2 from PyPI print a single 'Error:'.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

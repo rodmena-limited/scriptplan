@@ -1,7 +1,7 @@
 # ALAP milestones land a slot early, and ALAP tasks before a declared start are degraded
 
 **Ticket**: issuedb #14  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: high  
 **Release**: 0.10.2
 
@@ -31,3 +31,9 @@ ALTERNATIVES: milestone at the entry moment computed by enter_at [CHOSEN: exact,
 ---
 
 DONE in code: alap milestones placed at entry_moment (exact latest moment), not moved back over non-working time (R4 confirmed by the reference scheduler on jit_supply: set_deps 2025-07-18 08:00); readiness counts a successor's STATED start (TaskScenario.successorStart / declaredStart, kept apart from the start a run writes back, so scheduling twice agrees: alap_ms three runs identical). Edge cases alap_milestones_exact, alap_project_end_and_declared_end, alap_before_declared_start, alap_bounded_by_declared_starts pass now, fail on 0.10.1. Pending: Farshid's yes/no on updating the jit_supply golden (16:00 -> 08:00).
+
+---
+
+VERIFIED: edge cases alap_milestones_exact, alap_project_end_and_declared_end, alap_before_declared_start, alap_bounded_by_declared_starts pass. jit_supply golden updated with Farshid's go-ahead (2026-10-18, 'do the release'): only connection_setup and set_deps move, 2025-07-17 16:00 -> 2025-07-18 08:00, which the hand derivation and the reference scheduler both give.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

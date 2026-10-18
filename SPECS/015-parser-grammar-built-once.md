@@ -1,7 +1,7 @@
 # Every ProjectFileParser compiles the grammar again (about 0.7 s)
 
 **Ticket**: issuedb #15  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: medium  
 **Release**: 0.10.2
 
@@ -20,3 +20,9 @@ SYNTHESIS (localised): domain = memoisation of an immutable compiled artefact. C
 ---
 
 DONE: _compiled_grammar() builds the LALR parser once per process under a lock. Measured: first ProjectFileParser() 353 ms, later median 0.001 ms (max 0.003) over 20; parse after a failing parse unaffected; 8 threads x 15 files identical to sequential.
+
+---
+
+VERIFIED: as measured in the DONE comment (first ProjectFileParser() 353 ms, later 0.001 ms median); tests/test_threads.py parses and schedules 15 projects in parallel threads with results identical to sequential.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

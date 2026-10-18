@@ -1,7 +1,7 @@
 # Projects scheduled in parallel threads share one error flag and count
 
 **Ticket**: issuedb #28  
-**Status**: open  
+**Status**: closed (released in 0.10.2)  
 **Priority**: high  
 **Release**: 0.10.2
 
@@ -27,3 +27,9 @@ SYNTHESIS (localised): domain = per-thread diagnostic context (the pattern of de
 ---
 
 DONE: utils/message_handler.py keeps collect flag, error count and message list in a threading.local (_RunState); output settings stay shared. tests/test_threads.py: (1) one thread leaves collecting() while another is inside it, events force the order: the second thread's error is recorded, errors == 1, not raised; (2) an error recorded in another thread leaves this thread's errors and messages unchanged, and this thread still raises when not collecting; (3) 5 projects (4 showcase + 1 failing on maxend) x 3 copies in 15 threads match the same projects scheduled alone in result, every task's dates and every message. All three fail on the 0.10.1 handler (raised=True; (1,1) != (0,0); 4 mismatched runs) and pass on the fix. Stress (scratchpad conc/race.py): 80 failing schedules overlapping 89 valid ones, 0 mismatches on 0.10.2; the same run on 0.10.1 from PyPI raised TjRuntimeError once.
+
+---
+
+VERIFIED: tests/test_threads.py 3/3 against the built wheel and in both gates; all 3 fail on the 0.10.1 handler. R4: golden snapshots, CLI tests and probes unchanged in the gate.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

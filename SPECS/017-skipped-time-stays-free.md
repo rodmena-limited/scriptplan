@@ -1,7 +1,7 @@
 # Time skipped at a mid-slot bound is lost to every other task (0.10.1 regression)
 
 **Ticket**: issuedb #17  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: critical  
 **Release**: 0.10.2
 
@@ -27,3 +27,9 @@ SYNTHESIS CHANGE (supersedes the slot-occupancy choice in SPECS/011): per-slot s
 ---
 
 DONE in code: slot_ledger.py rewritten around per-slot occupied intervals (rs.slotIntervals: sorted [start, end, task]); reserve() returns one SlotBooking per free stretch taken; release() shrinks only the booking's own interval (the RuntimeError guard of 0.10.1 is gone because no release can touch another booking). slotSecondsUsed is the sum of booked intervals, so R2 holds exactly. Verified: passover.tjp z 14:30-15:30, g Tue 09:00-09:30; edge case skipped_time_stays_free fails on 0.10.1, passes now; unit tests for two-sided free time.
+
+---
+
+VERIFIED: edge case skipped_time_stays_free passes (fails on 0.10.1); tests/test_slot_ledger.py 15 tests; probe_slot_sharing 9/9; probe_placement idle-time check 300/300.
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

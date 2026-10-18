@@ -1,7 +1,7 @@
 # Duration and length tasks after a mid-slot end start before their predecessor finishes
 
 **Ticket**: issuedb #13  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: critical  
 **Release**: 0.10.2
 
@@ -39,3 +39,9 @@ ALTERNATIVES: count the entry slot as (slot - offset) and finish at slot edge mi
 ---
 
 DONE in code: task_spans.py (entry_moment, slot_share, finish_span) counts duration/length from the entry moment and finishes inside the slot, trimming resource bookings to the window; backward non-effort window ends at the entry moment. 0.10.1 regression fixed: d4/l4 15:20-16:20. Edge cases duration_length_after_mid_slot_end and alap_spans_before_mid_slot_successor fail on 0.10.0/0.10.1, pass now.
+
+---
+
+VERIFIED: edge cases duration_length_after_mid_slot_end and alap_spans_before_mid_slot_successor pass on 0.10.2 through the wheel's CLI and fail on 0.10.0/0.10.1; probe_placement 300/300 plans (28 on 0.10.1).
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

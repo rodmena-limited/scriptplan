@@ -1,7 +1,7 @@
 # A declared start that conflicts with a dependency is scheduled anyway, silently
 
 **Ticket**: issuedb #19  
-**Status**: in-progress  
+**Status**: closed (released in 0.10.2)  
 **Priority**: high  
 **Release**: 0.10.2
 
@@ -28,3 +28,9 @@ SCOPE ADDED: the new dependency check exposed that a backward task bounded by a 
 ---
 
 EXTENDED (trace defect 13, message 01M567JDJQ4N4RR0GN1ZW07VSN): an OWN start that contradicts a dependency is refused (main, gapduration and milestone variants all exit 2, as the hour-level reference scheduler does: 'must start after end ... could not be met'). A start INHERITED from a container is an earliest start: task_placement.own_start() returns only a start provided on the task; an inherited one enters the earliest-start computation as a lower bound with the dependencies. Verified against the reference scheduler: parent-start variant g Mon 10:00-Tue 10:00, a Mon 10:00-Tue 09:00, b Tue 09:00-10:00, identical. Edge case inherited_start_waits_for_dependency (fails on 0.10.1); tests for the milestone and gap variants.
+
+---
+
+VERIFIED: tests/test_dependency_check.py (conflict, feasible, milestone and gap variants) in the gate; trace d13 v_main/v_gap/v_milestone exit 2 and v_parent schedules b Tue 09:00-10:00 on 0.10.2 installed from PyPI (Python 3.13.7).
+
+RELEASED in scriptplan 0.10.2: commit b1dbe19, tag v0.10.2, PyPI wheel sha256 afaa4535...4da69 and sdist aeb73459...73b5c, both downloaded back from PyPI and byte-identical to the tested files. Final gate (scripts/ci.sh) passed every step on Python 3.9.25 and 3.13.7: ruff, mypy, file-size cap, 496 tests, showcase current, 85 probes. The built wheel in a clean 3.9 venv passed 85 probes, 49 example checks (24 showcase + 24 edge cases + coverage) and 3 thread tests.

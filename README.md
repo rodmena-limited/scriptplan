@@ -4,7 +4,7 @@
 
 # ScriptPlan
 
-![Tests](https://img.shields.io/badge/tests-496_passing-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-498_passing-success?style=for-the-badge)
 ![Probes](https://img.shields.io/badge/audit_probes-85_passing-success?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)
 ![Licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey?style=for-the-badge)
