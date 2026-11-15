@@ -6,6 +6,7 @@ from typing import Any
 
 from lark import Token  # type: ignore[import-untyped,unused-ignore]
 
+from scriptplan.core.exceptions import SemanticError
 from scriptplan.core.units import Duration
 
 
@@ -285,7 +286,10 @@ class TaskRules:
         return {"select": self._get_value(items[0])}
 
     def alloc_limits(self, items: list[Any]) -> dict[str, Any]:
-        return {"limits": items[0] if items else []}
+        raise SemanticError(
+            "allocate { limits { ... } } is not supported: a limit inside an allocation was read and never applied. "
+            "Put the limits block on the task, with { resources <id> } to hold it to one resource."
+        )
 
     def account(self, items: list[Any]) -> dict[str, Any]:
         a_id = self._get_value(items[0])

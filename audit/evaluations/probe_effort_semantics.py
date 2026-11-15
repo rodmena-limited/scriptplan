@@ -98,8 +98,9 @@ task c "C" { depends !a effort 70min allocate r }
     over = {f"{project.idxToDate(i):%H:%M}": s for i, s in per_slot.items() if s > 3600 + 1e-6}
     booked = sum(per_slot.values()) / 60.0
     windows = {name: tuple(f"{d:%H:%M}" for d in window(project, name)) for name in ("a", "b", "c")}
-    # a, then b where a stopped; c may follow a but the desk is busy with b.
-    expected = {"a": ("09:00", "10:40"), "b": ("10:40", "11:30"), "c": ("11:30", "12:40")}
+    # a first: it carries c behind it, the most contended path. Then c, which
+    # asks more of the desk than b, and b where c stopped.
+    expected = {"a": ("09:00", "10:40"), "b": ("11:50", "12:40"), "c": ("10:40", "11:50")}
     ok = not over and abs(booked - 220) < 1e-6 and windows == expected
     return ok, f"windows {windows} expected {expected}; booked {booked:.0f} of 220 min; overfull slots {over}"
 

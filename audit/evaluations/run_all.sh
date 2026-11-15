@@ -21,6 +21,7 @@ export PYTHONPATH="$here:${PYTHONPATH:-}"
 probes=(
   probe_error_propagation.py
   probe_parser_strictness.py
+  probe_directive_effect.py
   probe_units.py
   probe_calendar.py
   probe_precision.py

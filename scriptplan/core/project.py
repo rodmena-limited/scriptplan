@@ -1,5 +1,7 @@
 from typing import Any, Optional, Union
 
+from scriptplan.core.criticalness import compute_criticalness
+from scriptplan.core.dated_tasks import hold_stated_period, settle_dated_tasks
 from scriptplan.core.journal import Journal
 from scriptplan.core.project_attributes import (
     define_account_attributes,
@@ -30,7 +32,6 @@ from scriptplan.core.property import (
     RealFormat,
 )
 from scriptplan.core.scenario import Scenario
-from scriptplan.core.task_placement import own_start
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.postcheck import run_post_checks
 from scriptplan.scheduler.preflight import check_no_cycles, stated_dates_inside_window
@@ -283,40 +284,7 @@ class Project(MessageHandler):
     def scheduleScenario(self, scIdx: int) -> bool:
         all_tasks: list[Any] = list(self.tasks)
 
-        # First, handle milestones - they just need end=start (or start=end)
-        # A milestone is either:
-        # 1. Explicitly marked with milestone attribute, or
-        # 2. Has start or end set, but no effort/duration/length (implicit milestone)
-        for task in all_tasks:
-            if not task.leaf():
-                continue
-
-            is_explicit_milestone = task.get("milestone", scIdx)
-            effort = task.get("effort", scIdx) or 0
-            duration = task.get("duration", scIdx) or 0
-            length = task.get("length", scIdx) or 0
-            start = task.get("start", scIdx)
-            end = task.get("end", scIdx)
-
-            # Implicit milestone: has start/end but no duration metrics
-            is_implicit_milestone = (start or end) and effort == 0 and duration == 0 and length == 0
-
-            if is_explicit_milestone or is_implicit_milestone:
-                # Only mark as scheduled if we can set both dates
-                # Milestones with dependencies but no dates need to go through normal scheduling
-                if start and not end:
-                    if task.get("forward", scIdx) is not False and own_start(task.data[scIdx]) is None:
-                        # A start inherited from a container is an earliest
-                        # start: placed with the dependencies (issuedb #31).
-                        continue
-                    task[("end", scIdx)] = start
-                    task[("scheduled", scIdx)] = True
-                elif end and not start:
-                    task[("start", scIdx)] = end
-                    task[("scheduled", scIdx)] = True
-                elif start and end:
-                    task[("scheduled", scIdx)] = True
-                # else: milestone with no dates - let it be scheduled by the main loop
+        settle_dated_tasks(self, scIdx)
 
         # Propagate ALAP mode through dependency chains
         # If task B depends on task A, and B is ALAP with fixed end,
@@ -325,6 +293,8 @@ class Project(MessageHandler):
 
         # Only care about leaf tasks that aren't scheduled already
         tasks: list[Any] = [t for t in all_tasks if t.leaf() and not t.get("scheduled", scIdx)]
+
+        compute_criticalness(self, scIdx)
 
         # Sorting
         # Primary: priority (desc), Secondary: pathcriticalness (desc), Tertiary: seqno (asc)
@@ -342,6 +312,10 @@ class Project(MessageHandler):
         while tasks:
             taskToRemove: Optional[Any] = None
             for task in tasks:
+                if hold_stated_period(task, scIdx):
+                    taskToRemove = task
+                    break
+
                 # Task not ready? Ignore it.
                 if not task.readyForScheduling(scIdx):
                     continue

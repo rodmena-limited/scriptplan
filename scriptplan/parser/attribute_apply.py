@@ -172,13 +172,11 @@ def _append_leave(obj: Any, interval: Any, type_idx: int) -> None:
     interval.end = to_utc(interval.end, zone)
     leave = Leave(interval, type_idx)
     for scenario_idx in range(obj.project.scenarioCount()):
-        existing = obj.get("leaves", scenario_idx) or []
-        if not isinstance(existing, list):
-            existing = [existing]
-        # A fresh list per scenario: appending to the value returned by get()
-        # would mutate the attribute in place and, with list attributes that
-        # extend rather than replace, double it.
-        obj[("leaves", scenario_idx)] = [*existing, leave]
+        # `leaves` is a list attribute, and setting one adds to it. Handing
+        # back the existing entries with the new one stored every earlier
+        # leave again: N lines kept 2^N - 1 entries, and every availability
+        # check walked them all (issuedb #40).
+        obj[("leaves", scenario_idx)] = [leave]
 
 
 def _whole_day(start: Any, end: Any) -> Any:
@@ -292,8 +290,19 @@ def apply_property_attributes(
             # A nested property: a sub-task, or a resource inside a resource.
             builder._create_property(obj, attr)
             continue
-        if not isinstance(attr, tuple) or len(attr) != 2:
+        if getattr(attr, "data", None) == "extended_attr":
+            # The value of a custom attribute declared with `extend`: text
+            # for reports, which ScriptPlan does not keep (README, known limits).
             continue
+        if not isinstance(attr, tuple) or len(attr) != 2:
+            # Every rule hands over (name, value). Anything else is a rule
+            # that lost what it read, which used to be skipped in silence:
+            # a shift's leaves arrived here as the bare word "holiday".
+            name = getattr(obj, "fullId", None) or getattr(obj, "id", "?")
+            raise InvalidAttributeError(
+                f"{prop_type} '{name}' has an attribute ScriptPlan read and cannot apply: {attr!r}",
+                context={"attribute": repr(attr)},
+            )
         key, value = attr
         handler = HANDLERS.get(key)
         if handler is not None:

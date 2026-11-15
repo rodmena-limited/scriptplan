@@ -2,8 +2,75 @@
 
 ## 0.10.3
 
-Fixes four defects Trace reported against 0.10.2, and three found while fixing them.
-Two are regressions: one in 0.10.2 and one in 0.10.0.
+Fixes the defects Trace and Siambr reported against 0.10.2, and those found while fixing
+them. Two are regressions, one in 0.10.2 and one in 0.10.0. Three of the fixes can move
+the dates of a project that already scheduled, and they are listed first.
+
+### Fixes that can move an existing schedule
+
+- Tasks of equal priority were placed in declaration order. The README has always said
+  they are placed by criticalness, which no code computed until this release. A
+  resource's criticalness is the effort asked of it divided by the time it has. A task's
+  is its effort times the mean criticalness of the resources it may use, and its path
+  criticalness adds the heaviest chain of tasks that follow it. In practice the larger
+  effort is placed first. Tasks of 4 h, 1 h and 4 h on one desk used to run t0, t1, t2
+  and now run t0, t2, t1, which is the reference scheduler's order forwards, backwards
+  and under a daily cap. Give a task a `priority` to fix its place.
+- A task with a stated `start` and `end` and no effort booked none of the resources it
+  allocates. With `a` at priority 600 from 18:00 to 20:00 on a resource and `w` needing
+  an hour of the same resource from 18:00, 0.10.2 placed `w` at 18:00, inside `a`. `a`
+  now holds the resource and `w` runs 20:00-21:00. Where two such tasks overlap on one
+  resource, the one placed first holds the shared hours. The other keeps its dates and
+  books what is left, and neither is an error.
+- A project's `workinghours`, a global `leaves` and a shift's `leaves` now take effect
+  (next section). A project that sets any of them gets different dates, and they are
+  the dates it asked for.
+
+### Calendar
+
+Siambr reported the first three.
+
+- A project's `workinghours` was parsed and never applied. `length`, `gaplength` and a
+  resource with no hours of its own used Monday to Friday 09:00-17:00 whatever the
+  project said. With `workinghours mon - sat 09:00 - 17:00`, three days from Thursday
+  3 December ended on Monday the 7th. They now end on Saturday the 5th.
+- A global `leaves` did not close the calendar that `length` and `gaplength` count in,
+  although a global `vacation` did. `length 3d` from 24 December with
+  `leaves holiday "Christmas" 2026-12-25` ended on the 28th. It now ends on the 29th,
+  for any leave type and for a leave of part of a day.
+- A shift's `leaves` was dropped when the file was read, because the parser kept the
+  word `holiday` and lost the date. A resource on the shift now takes the shift's leave
+  with its hours.
+- A global `vacation` in the first week of a project in UTC was repeated every week for
+  a resource on the default hours. Ten days of effort from Monday 7 December with a
+  vacation on the 8th ended on the 23rd. They now end on the 21st.
+- Because each `leaves`, `vacation` or `booking` line on a resource stored the earlier
+  ones again, N lines kept 2^N - 1 entries and an availability check walked them all.
+  The dates were right, but the time doubled with each line, and Siambr measured 58
+  seconds for 20 leave days. Twenty lines now store twenty entries and schedule in
+  half a second.
+- A day that no `workinghours` line of a block names is not worked, for a project as
+  for a shift or a resource. This is unchanged and is now written down, because other
+  schedulers of this format keep the inherited hours on such a day.
+
+### Accepted and ignored
+
+`audit/evaluations/probe_directive_effect.py` now checks every directive the grammar
+accepts. It found these, beyond the calendar ones above.
+
+- Allocating a resource that has members failed with "could not be scheduled". It now
+  allocates every member, and 16 hours on a group of two takes one day.
+- `allocate r { limits { ... } }` was parsed and never applied. It is now refused, and
+  the error says to put the limits on the task.
+- `dailymin`, `weeklymin`, `monthlymin` and `minimum` were counted and never reported.
+  A period in which a resource or task was booked for less than its minimum now draws
+  a warning. The schedule and the exit code are unchanged.
+- `plan report` now prints warnings to stderr when the run succeeds. It used to discard
+  them, including the one that says a task asked to be scheduled as late as possible
+  and was scheduled as soon as possible because nothing fixed when it must end.
+- An attribute the reader could not turn into a name and a value was skipped. It is an
+  error now. The one case left on purpose is the value of a custom attribute declared
+  with `extend`, which ScriptPlan does not keep (README, known limits).
 
 ### Regressions
 
@@ -67,7 +134,25 @@ Two are regressions: one in 0.10.2 and one in 0.10.0.
 three for the defects fail on 0.10.2, and the three that check what must not change pass
 on both versions. `tests/test_container_dependencies.py` runs 18 plans with container
 dependencies and `precedes`, checked against the reference scheduler where it accepts
-the plan and worked out by hand where it does not, and all 18 fail on 0.10.2. No golden snapshot or example answer changes.
+the plan and worked out by hand where it does not, and all 18 fail on 0.10.2.
+
+`tests/test_project_calendar.py` and `tests/test_contention_and_bookings.py` run 33
+plans for the calendar, booking and ordering fixes. Their expected dates are the
+reference scheduler's, apart from the one test of the unnamed-days rule. 28 of them
+fail on 0.10.2 and the 5 that check what must not change pass on both.
+`probe_directive_effect.py` holds a pair of projects for each of 52 directives and
+fails on 0.10.2 for nine of them. 150 random projects with contended resources give the
+reference scheduler's dates exactly. Before the ordering fix, 8 of 80 did not.
+
+No golden snapshot changes, but five example answers in `examples/edge_cases` do,
+because they assumed declaration order between tasks of equal priority:
+`shared_slot_forward_5min`, `shared_slot_forward_60min`, `shared_slot_backward`,
+`daily_cap_counts_worked_time` and `eight_efforts_fill_whole_days`. Four probes that
+assumed the same are updated. Trace's 16 project files give the same result as on
+0.10.2, apart from the two this release was meant to fix.
+
+Free-threaded Python builds were not exercised, nor Python 3.10 to 3.12 for the full
+suite.
 
 ## 0.10.2
 

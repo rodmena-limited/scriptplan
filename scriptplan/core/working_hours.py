@@ -132,9 +132,11 @@ class WorkingHours:
         Returns:
             True if the slot is within working hours
         """
-        # If no custom hours set, fall back to project default
+        # If no custom hours set, fall back to the project's week
         if not self._custom_hours_set:
-            return self.project.isWorkingTime(slot_idx)
+            from scriptplan.core.project_calendar import in_week
+
+            return in_week(self.project, slot_idx)
 
         if not timezone or is_utc(timezone):
             # Slots are UTC and evenly spaced, so which weekday and which
@@ -160,6 +162,10 @@ class WorkingHours:
         weekday = dt.weekday()
 
         return self._within_hours(weekday, dt.hour * 60 + dt.minute)
+
+    def covers(self, local: datetime) -> bool:
+        """Whether a moment, already in the zone the hours are meant in, is worked."""
+        return self._within_hours(local.weekday(), local.hour * 60 + local.minute)
 
     def _within_hours(self, weekday: int, slot_minutes: int) -> bool:
         """Whether a minute of a weekday falls in a working interval.

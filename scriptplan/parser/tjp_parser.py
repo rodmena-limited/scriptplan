@@ -7,11 +7,14 @@ from datetime import datetime
 from typing import Any, Optional, Union
 
 from lark import Lark, Transformer  # type: ignore[import-untyped,unused-ignore]
+from lark.exceptions import VisitError  # type: ignore[import-untyped,unused-ignore]
 
 from scriptplan.core.exceptions import (
+    ParsingError,
     SemanticError,
 )
 from scriptplan.core.project import Project
+from scriptplan.core.project_calendar import add_project_hours
 from scriptplan.core.resolution import derive_resolution
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
@@ -252,6 +255,8 @@ class ModelBuilder:
                     self._create_scenario(project, value)
                 elif key == "extend":
                     pass  # Handle extensions later
+                elif key == "workinghours":
+                    add_project_hours(project, value)
                 else:
                     with contextlib.suppress(ValueError, KeyError):
                         project[key] = value
@@ -441,7 +446,14 @@ class ProjectFileParser:
             text = preprocess_tjp(text)
 
         tree = self.parser.parse(text)
-        data = TJPTransformer().transform(tree)
+        try:
+            data = TJPTransformer().transform(tree)
+        except VisitError as wrapped:
+            # A rule that refuses what it read says so itself; lark's wrapper
+            # would bury that under the name of a grammar rule.
+            if isinstance(wrapped.orig_exc, ParsingError):
+                raise wrapped.orig_exc from None
+            raise
         builder = ModelBuilder()
         project = builder.build(data)
 

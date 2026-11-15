@@ -158,15 +158,13 @@ class PropertyTreeNode(MessageHandler):
                     # Only inherit if not already provided explicitly
                     if not my_attr.provided:
                         my_attr.inherit(parent_attr.get())
-            elif attrDef.inheritedFromProject:
-                # Check project
-                if aId in self.project.attributes:
-                    val = self.project[aId]
-                    if val is not None:
-                        my_attr = self._get_attribute(aId)
-                        # Only inherit if not already provided explicitly
-                        if not my_attr.provided:
-                            my_attr.inherit(val)
+            elif attrDef.inheritedFromProject and aId in self.project.attributes:
+                val = self.project[aId]
+                if val is not None:
+                    my_attr = self._get_attribute(aId)
+                    # Only inherit if not already provided explicitly
+                    if not my_attr.provided:
+                        my_attr.inherit(val)
 
         # Inherit scenario-specific values
         for attrDef in self.propertySet.attributes:

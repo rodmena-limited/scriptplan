@@ -19,7 +19,6 @@ from typing import Optional
 import click
 
 from scriptplan import __version__
-from scriptplan.cli.main import run_scriptplan
 from scriptplan.cli.plan_files import (
     InputFileError,
     create_auto_report_file,
@@ -28,6 +27,7 @@ from scriptplan.cli.plan_files import (
     validate_tjp_file,
 )
 from scriptplan.cli.plan_help import register as register_help_commands
+from scriptplan.cli.programmatic import run_scriptplan
 
 # Configure logging
 logger = logging.getLogger(__name__)

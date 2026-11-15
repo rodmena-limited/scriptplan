@@ -196,7 +196,8 @@ class Limit:
         """Periods that did not reach a lower limit, as (period, seconds)."""
         if self.upper:
             return []
-        return [(key, self.value - used) for key, used in sorted(self._counters.items()) if used < self.value]
+        # A period booked and then handed back counts as never touched.
+        return [(key, self.value - used) for key, used in sorted(self._counters.items()) if 0 < used < self.value]
 
 
 def _period_kind_for_seconds(period: int | float) -> str:

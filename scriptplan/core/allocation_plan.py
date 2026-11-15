@@ -58,6 +58,14 @@ class Allocation:
         return f"Allocation({self.resource_id}{marks})"
 
 
+def _members(resource: Any) -> list[Any]:
+    """The people a resource stands for: itself, or every leaf of a group."""
+    children = getattr(resource, "children", None)
+    if not children:
+        return [resource]
+    return [leaf for child in children for leaf in _members(child)]
+
+
 class AllocationPlan:
     """Every allocation on one task, in declaration order."""
 
@@ -108,16 +116,21 @@ class AllocationPlan:
             resource_id = entry.get("resource")
             if resource_id is None:
                 continue
-            allocations.append(
-                Allocation(
-                    resource_id=str(resource_id),
-                    resource=resolve(resource_id),
-                    mandatory=bool(entry.get("mandatory")),
-                    persistent=bool(entry.get("persistent")),
-                    alternatives=[resolve(name) for name in entry.get("alternative", [])],
-                    select=entry.get("select"),
+            alternatives = [
+                member for name in entry.get("alternative", []) for member in _members(resolve(name))
+            ]
+            # Allocating a group allocates everyone in it.
+            for member in _members(resolve(resource_id)):
+                allocations.append(
+                    Allocation(
+                        resource_id=str(getattr(member, "id", resource_id)),
+                        resource=member,
+                        mandatory=bool(entry.get("mandatory")),
+                        persistent=bool(entry.get("persistent")),
+                        alternatives=alternatives,
+                        select=entry.get("select"),
+                    )
                 )
-            )
         return cls(allocations)
 
     @staticmethod

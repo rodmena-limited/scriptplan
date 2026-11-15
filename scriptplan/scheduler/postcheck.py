@@ -41,6 +41,7 @@ def run_post_checks(project: Any, scenario_idx: int) -> None:
     _check_max_gaps(project, scenario_idx)
     _check_date_limits(project, scenario_idx)
     _check_stated_dates(project, scenario_idx)
+    _check_lower_limits(project, scenario_idx)
     for task in project.tasks:
         scenario = task.data[scenario_idx] if task.data else None
         if scenario is not None:
@@ -181,6 +182,32 @@ def _check_date_limits(project: Any, scenario_idx: int) -> None:
                     f"Task '{task.fullId}' was required to {phrase} {limit}, "
                     f"but it {actual_name}s at {actual}.",
                     data=task.fullId,
+                )
+
+
+def _check_lower_limits(project: Any, scenario_idx: int) -> None:
+    """A minimum is a target, which placing tasks cannot guarantee.
+
+    It is checked here, over the periods in which the holder was booked at
+    all, and a miss is a warning: the schedule stands.
+    """
+    for kind, holders in (("Resource", project.resources), ("Task", project.tasks)):
+        for holder in holders:
+            try:
+                limits = holder.get("limits", scenario_idx)
+            except (ValueError, KeyError, AttributeError):
+                continue
+            if limits is None or not hasattr(limits, "lowerLimitShortfalls"):
+                continue
+            short: dict[str, list[float]] = {}
+            for name, _period, missing in limits.lowerLimitShortfalls():
+                short.setdefault(name, []).append(missing)
+            for name, misses in short.items():
+                periods = "1 period" if len(misses) == 1 else f"{len(misses)} periods"
+                project.warning(
+                    "limit_minimum",
+                    f"{kind} '{holder.fullId}' was booked for less than its {name} in {periods}; "
+                    f"the largest shortfall is {max(misses) / 3600.0:.2f} hours.",
                 )
 
 

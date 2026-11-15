@@ -121,7 +121,8 @@ THREE = (
 
 @probe("40/13/40 minutes on one desk run back to back at every resolution (CLI)")
 def probe_three_tasks_forward() -> tuple[bool, str]:
-    expected = dict(zip(("t0", "t1", "t2"), sequential([40, 13, 40])))
+    # Equal priority: the larger effort is placed first, ties as declared.
+    expected = dict(zip(("t0", "t2", "t1"), sequential([40, 40, 13])))
     lines, ok = [], True
     for resolution in RESOLUTIONS:
         got = hhmm(report(plan(resolution, THREE)))
@@ -136,8 +137,8 @@ def probe_three_tasks_forward() -> tuple[bool, str]:
 @probe("The same three tasks scheduled alap end back to back at 17:00 (CLI)")
 def probe_three_tasks_backward() -> tuple[bool, str]:
     body = THREE.replace("allocate r0 }", f"allocate r0 scheduling alap end {DAY}-17:00 }}")
-    # Placed in declaration order from the end: t0 last, then t1, then t2.
-    expected = {"t0": "16:20-17:00", "t1": "16:07-16:20", "t2": "15:27-16:07"}
+    # Placed larger effort first from the end: t0 last, then t2, then t1.
+    expected = {"t0": "16:20-17:00", "t1": "15:27-15:40", "t2": "15:40-16:20"}
     lines, ok = [], True
     for resolution in RESOLUTIONS:
         got = hhmm(report(plan(resolution, body)))
@@ -219,8 +220,8 @@ def probe_cap_counts_released_time() -> tuple[bool, str]:
     capped = 'resource r0 "Desk" { workinghours mon - fri 9:00 - 17:00 limits { dailymax 60min } }\n'
     rows = report(plan(60, THREE, capped), fmt="%a %H:%M")
     got = {tid: f"{row['Start']}-{row['End']}" for tid, row in rows.items()}
-    # 60 minutes on Monday: 40 + 13 + 7 of t2; the other 33 on Tuesday.
-    expected = {"t0": "Mon 09:00-Mon 09:40", "t1": "Mon 09:40-Mon 09:53", "t2": "Mon 09:53-Tue 09:33"}
+    # 60 minutes on Monday: t0's 40 + 20 of t2; t2's other 20 on Tuesday, then t1.
+    expected = {"t0": "Mon 09:00-Mon 09:40", "t1": "Tue 09:20-Tue 09:33", "t2": "Mon 09:40-Tue 09:20"}
     return got == expected, f"{got} expected {expected}"
 
 

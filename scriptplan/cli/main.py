@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from scriptplan import __version__
+from scriptplan.cli.programmatic import run_scriptplan  # noqa: F401  (moved; still importable from here)
 
 
 def setup_logging(debug_level: int = 0, debug_modules: Optional[list[str]] = None) -> None:
@@ -470,52 +471,6 @@ class ScriptPlan:
             print(f"Error generating reports: {e}", file=sys.stderr)
             self.errors += 1
             return False
-
-
-def run_scriptplan(tjp_file: str, output_dir: Optional[str] = None) -> tuple[bool, Optional[str]]:
-    """
-    Run ScriptPlan report generation on a .tjp file.
-
-    This is a simplified interface for programmatic use.
-
-    Args:
-        tjp_file: Path to the .tjp file
-        output_dir: Optional output directory for reports (default: current directory)
-
-    Returns:
-        Tuple of (success, error_message)
-    """
-    import contextlib
-    import io
-
-    # Capture stderr to get error messages
-    stderr_capture = io.StringIO()
-
-    try:
-        with contextlib.redirect_stderr(stderr_capture):
-            # Create minimal args
-            parser = create_parser()
-            args_list = [tjp_file]
-            if output_dir:
-                args_list.extend(["--output-dir", output_dir])
-            args = parser.parse_args(args_list)
-
-            # Suppress logging for programmatic use
-            logging.getLogger().setLevel(logging.ERROR)
-
-            # Run the application
-            app = ScriptPlan(args)
-            exit_code = app.run()
-
-            if exit_code == 0:
-                return (True, None)
-            else:
-                error_output = stderr_capture.getvalue()
-                return (False, error_output or "Report generation failed")
-
-    except Exception as e:
-        error_output = stderr_capture.getvalue()
-        return (False, error_output or str(e))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from scriptplan.core.project_calendar import global_closures, in_week
 from scriptplan.core.timezones import is_utc
 from scriptplan.scheduler.scoreboard import Scoreboard
 
@@ -48,21 +49,19 @@ def init_scoreboard(scenario: Any) -> None:
 
     mark_shift_pattern(scenario, size, int(granularity))
 
-    # Apply global leaves
-    leaves = scenario.project.attributes.get("leaves", [])
-    if leaves:
-        for leave in leaves:
-            if hasattr(leave, "interval"):
-                start_idx = scenario.project.dateToIdx(leave.interval.start)
-                end_idx = scenario.project.dateToIdx(leave.interval.end)
-                for i in range(start_idx, min(end_idx, size)):
-                    sb = scenario.scoreboard[i]
-                    val = 0 if sb is None else (sb & 2)
-                    leave_type = leave.type_idx if hasattr(leave, "type_idx") else 0
-                    scenario.scoreboard[i] = val | (leave_type << 2)
+    # Apply global vacations and leaves: they close the calendar for everyone.
+    for leave in global_closures(scenario.project):
+        if hasattr(leave, "interval"):
+            start_idx = max(0, scenario.project.dateToIdx(leave.interval.start))
+            end_idx = scenario.project.dateToIdx(leave.interval.end)
+            for i in range(start_idx, min(end_idx, size)):
+                sb = scenario.scoreboard[i]
+                val = 0 if sb is None else (sb & 2)
+                leave_type = (leave.type_idx if hasattr(leave, "type_idx") else 0) or 1
+                scenario.scoreboard[i] = val | (leave_type << 2)
 
-    # Apply resource-specific leaves
-    res_leaves = scenario.property.get("leaves", scenario.scenarioIdx)
+    # Apply the resource's own leaves, and those of the shift it works
+    res_leaves = scenario._leaves
     if res_leaves:
         for leave in res_leaves:
             if hasattr(leave, "interval"):
@@ -127,13 +126,15 @@ def cache_shift_inputs(scenario: Any) -> None:
     calls for a project of any size -- and none of what it consults changes
     while a run is in progress.
     """
-    scenario._vacations = scenario.project.attributes.get("vacations", []) or []
-    scenario._leaves = scenario.property.get("leaves", scenario.scenarioIdx) or []
+    scenario._vacations = global_closures(scenario.project)
+    scenario._leaves = list(scenario.property.get("leaves", scenario.scenarioIdx) or [])
     scenario._timezone = scenario.property.get("timezone", scenario.scenarioIdx)
 
     working_hours = None
     shift = scenario.property.get("shifts", scenario.scenarioIdx)
     if shift is not None:
+        # A resource on a shift takes the shift's leave with its hours.
+        scenario._leaves += shift.get("leaves", scenario.scenarioIdx) or []
         candidate = shift.get("workinghours", scenario.scenarioIdx)
         if candidate is not None and hasattr(candidate, "onShift"):
             working_hours = candidate
@@ -159,7 +160,7 @@ def on_shift(scenario: Any, sb_idx: int) -> bool:
 
     if scenario._vacations or scenario._leaves:
         date = scenario.project.idxToDate(sb_idx)
-        # Global vacations override everything, then the resource's own leave.
+        # Global vacations and leaves override everything, then the resource's own leave.
         for away in (*scenario._vacations, *scenario._leaves):
             interval = getattr(away, "interval", None)
             if interval and interval.start <= date < interval.end:
@@ -182,6 +183,6 @@ def on_shift_ignoring_leave(scenario: Any, sb_idx: int) -> bool:
         on_shift: bool = scenario._workingHours.onShift(sb_idx, timezone=scenario._timezone)
         return on_shift
 
-    # Default: use the project's working time
-    working: bool = scenario.project.isWorkingTime(sb_idx)
-    return working
+    # Default: the project's week. Its global leave is applied with the
+    # resource's own, so that a holiday is not tiled into every week.
+    return in_week(scenario.project, sb_idx)

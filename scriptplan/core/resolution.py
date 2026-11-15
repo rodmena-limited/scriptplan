@@ -46,6 +46,10 @@ def _task_offsets(project: Any) -> Iterator[int]:
 
 
 def _working_hour_offsets(project: Any) -> Iterator[int]:
+    for intervals in getattr(project.attributes.get("workinghours"), "_hours", {}).values():
+        for (start_h, start_m), (end_h, end_m) in intervals:
+            yield start_h * 60 + start_m
+            yield end_h * 60 + end_m
     for holder in list(project.resources) + list(project.shifts):
         for name in ("workinghours", "shifts"):
             try:
@@ -66,9 +70,10 @@ def _working_hour_offsets(project: Any) -> Iterator[int]:
 
 
 def _leave_offsets(project: Any) -> Iterator[int]:
-    for holder in list(project.resources):
+    everyone = [*(project.attributes.get("vacations") or ()), *(project.attributes.get("leaves") or ())]
+    for holder in [None, *project.resources]:
         try:
-            leaves = holder.get("leaves", 0) or []
+            leaves = everyone if holder is None else holder.get("leaves", 0) or []
         except (ValueError, KeyError, AttributeError):
             continue
         for leave in leaves:

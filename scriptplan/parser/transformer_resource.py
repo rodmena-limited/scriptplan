@@ -108,6 +108,10 @@ class ResourceRules:
         end_date: Any = items[2] if len(items) > 2 else start_date
         return ("leaves", {"type": leave_type, "start": start_date, "end": end_date})
 
+    def shift_leaves(self, items: list[Any]) -> tuple[str, dict[str, Any]]:
+        """A shift's leave applies to every resource that takes the shift's hours."""
+        return self.resource_leaves(items)
+
     def resource_flags(self, items: list[Any]) -> tuple[str, list[str]]:
         return ("flags", [self._get_value(i) for i in items])
 
