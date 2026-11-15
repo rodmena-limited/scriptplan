@@ -73,18 +73,25 @@ done
 ### Python API
 
 ```python
+from scriptplan.core.timezones import from_utc
 from scriptplan.parser.tjp_parser import ProjectFileParser
 
 parser = ProjectFileParser()
 project = parser.parse(open('project.tjp').read())
+zone = project['timezone']
 
 # Access scheduled tasks
 for task in project.tasks:
     if task.leaf():
-        start = task.get('start', 0)
-        end = task.get('end', 0)
+        start = from_utc(task.get('start', 0), zone)
+        end = from_utc(task.get('end', 0), zone)
         print(f"{task.id}: {start} -> {end}")
 ```
+
+`task.get('start', 0)` and `task.get('end', 0)` return naive datetimes in UTC,
+whatever the project's timezone. A task that starts at 00:00 in London in June
+reads 23:00 the day before. `from_utc` gives the time in the project's zone, which
+is what the reports print.
 
 Projects can be parsed and scheduled in parallel threads. Messages and the error
 count belong to the thread that produced them, so read
