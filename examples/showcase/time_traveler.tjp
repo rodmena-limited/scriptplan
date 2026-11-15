@@ -52,7 +52,7 @@ task launch "Global Launch" {
   task design "Blueprint" {
     effort 9h
     allocate des_london
-    depends !!impl { onstart }
+    precedes !!impl
   }
 }
 

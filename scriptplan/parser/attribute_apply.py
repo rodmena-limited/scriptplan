@@ -241,17 +241,70 @@ def _handle_limits(_b: Any, obj: Any, value: Any, _pt: str) -> None:
         obj[("limits", scenario_idx)] = limits.copy()
 
 
-def _handle_workinghours(_b: Any, obj: Any, value: Any, _pt: str) -> None:
-    from scriptplan.core.working_hours import WorkingHours
+def _inherited_week(obj: Any, prop_type: str) -> Any:
+    """The week a block starts from, before its own lines.
 
-    existing = obj.get("workinghours", 0)
-    hours = existing if existing is not None and hasattr(existing, "set_hours") else WorkingHours(obj.project)
+    A resource starts from its parent's week, a top-level resource and a
+    shift from the project's. The copy is taken now, so a line the parent or
+    the project gains later in the file does not reach back into this block.
+    """
+    from scriptplan.core.project_calendar import project_week
+
+    parent = getattr(obj, "parent", None) if prop_type == "resource" else None
+    while parent is not None:
+        hours = parent.get("workinghours", 0)
+        if hours is not None and hasattr(hours, "copy"):
+            return hours.copy()
+        parent = getattr(parent, "parent", None)
+    return project_week(obj.project)
+
+
+def snapshot_parent_week(resource: Any) -> None:
+    """Give a new sub-resource the week its parent has at this point in the file."""
+    parent = getattr(resource, "parent", None)
+    while parent is not None:
+        hours = parent.get("workinghours", 0)
+        if hours is not None and hasattr(hours, "copy"):
+            set_all_scenarios(resource, "workinghours", hours.copy())
+            return
+        parent = getattr(parent, "parent", None)
+
+
+def _pin_earlier_children(obj: Any, prop_type: str) -> None:
+    """Keep sub-resources declared above this line on the week they started with.
+
+    A sub-resource takes its parent's week as it stands where the sub-resource
+    is declared. One declared before the parent's first workinghours line took
+    the inherited week, and must not pick the parent's new hours up later.
+    """
+    if prop_type != "resource" or obj.get("workinghours", 0) is not None:
+        return
+    pending = list(getattr(obj, "children", None) or [])
+    while pending:
+        child = pending.pop()
+        if child.get("workinghours", 0) is None:
+            set_all_scenarios(child, "workinghours", _inherited_week(obj, prop_type))
+            pending.extend(getattr(child, "children", None) or [])
+
+
+def _handle_workinghours(_b: Any, obj: Any, value: Any, prop_type: str) -> None:
+    _pin_earlier_children(obj, prop_type)
+    hours = obj.get("workinghours", 0)
+    if hours is None or not hasattr(hours, "set_hours"):
+        hours = _inherited_week(obj, prop_type)
     if isinstance(value, dict):
         hours.set_hours(value.get("days", []), value.get("ranges", []))
     set_all_scenarios(obj, "workinghours", hours)
 
 
-def _handle_workinghours_shift(_b: Any, obj: Any, value: Any, _pt: str) -> None:
+def _handle_workinghours_shift(_b: Any, obj: Any, value: Any, prop_type: str) -> None:
+    """`workinghours <shift id>`: the resource's week becomes the shift's.
+
+    The shift is kept too, for its leave. A later workinghours line on the
+    resource replaces the days it names, as it would after any other line.
+    """
+    from scriptplan.core.project_calendar import project_week
+
     shift = obj.project.shifts[value] if hasattr(obj.project, "shifts") else None
     if shift is None:
         name = getattr(obj, "fullId", None) or getattr(obj, "id", "?")
@@ -259,7 +312,11 @@ def _handle_workinghours_shift(_b: Any, obj: Any, value: Any, _pt: str) -> None:
             f"resource '{name}' uses working hours of shift '{value}', which is not defined",
             context={"attribute": "workinghours", "shift": value},
         )
+    _pin_earlier_children(obj, prop_type)
     set_all_scenarios(obj, "shifts", shift)
+    shift_hours = shift.get("workinghours", 0)
+    week = shift_hours.copy() if hasattr(shift_hours, "copy") else project_week(obj.project)
+    set_all_scenarios(obj, "workinghours", week)
 
 
 HANDLERS: dict[str, Callable[[Any, Any, Any, str], None]] = {

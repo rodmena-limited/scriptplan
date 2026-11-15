@@ -99,43 +99,15 @@ def place_task(scenario: Any) -> bool:
                 # slot must not be booked: the predecessor is still running.
                 scenario.currentSlotIdx = enter_at(scenario, earliest_start, forward=True)
         else:
-            # ALAP (backward) scheduling. The end is the earliest of: its own
-            # end (or the project end), the start of each onstart predecessor,
-            # and the start of each successor that bounds it, less its gap.
+            # ALAP (backward) scheduling. The end is the earliest of its own
+            # end (or the project end) and the start of each successor that
+            # bounds it, less its gap.
             end_date = scenario.property.get("end", scenario.scenarioIdx)
 
             latest_end = end_date or scenario.project["end"]
 
-            # Check onstart dependencies - our END must be before predecessor's START
-            # with gapduration subtracted if specified
-            for dep in scenario.getAllDependencies():
-                if isinstance(dep, dict):
-                    onstart = dep.get("onstart", False)
-                    pred = dep.get("task")
-                    gapduration = dep.get("gapduration")
-                elif hasattr(dep, "task"):
-                    onstart = getattr(dep, "onstart", False)
-                    pred = dep.task
-                    gapduration = getattr(dep, "gapduration", None)
-                else:
-                    onstart = False
-                    pred = dep
-                    gapduration = None
-
-                if onstart and pred:
-                    pred_start = pred.get("start", scenario.scenarioIdx)
-                    if pred_start:
-                        # Apply gapduration - A must end (gapduration) before B starts
-                        if gapduration:
-                            pred_start = pred_start - timedelta(
-                                seconds=scenario._calendarSeconds(gapduration)
-                            )
-                        if pred_start < latest_end:
-                            latest_end = pred_start
-
-            # Also check successors (finish-to-start deps): their start
-            # once scheduled, or the start the file states for them
-            # less any gap they ask for after this task
+            # Successors (finish-to-start): their start once scheduled, or
+            # the start the file states for them, less any gap they ask for.
             successors = bounding_successors(scenario)
             for successor in successors:
                 succ_start = latest_end_for(scenario, successor)

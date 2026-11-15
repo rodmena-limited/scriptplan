@@ -1,4 +1,4 @@
-project d "alap_onstart_reading" 2026-11-02 +4w {
+project d "alap_precedes_finishes_before" 2026-11-02 +4w {
   timingresolution 30min
   scheduling alap
 }
@@ -10,6 +10,6 @@ resource r1 "Analyst" {
 task g "Group" {
   end 2026-11-06-17:30
   task a "A" { effort 240min allocate r1  }
-  task b "B" { effort 480min allocate r1 depends !a { onstart }  }
+  task b "B" { effort 480min allocate r1 precedes !a  }
   task m "Milestone" { milestone depends !b  }
 }

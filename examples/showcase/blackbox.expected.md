@@ -49,15 +49,14 @@ Arithmetic check: `out/walk6.py` (stdlib only, zoneinfo for the zones; no script
    booked minute, 2025-01-01 08:00 (the reference scheduler reports this too, see below).
    Alternative: the declared start, 2025-01-01 00:00 (and then `operations` would also
    start 00:00).
-2. **AMBIGUOUS: what `workinghours <days> <hours>` does to the days it does not list.**
-   The brief says workinghours on a resource or shift "replace the default for it". Chosen:
-   the whole week is replaced, so alpha has no Thu-Sun hours and beta no Mon-Wed hours
-   (this is also what the file's "disjoint calendars" comment intends). Alternative
-   (the reference scheduler's behaviour, measured below): only the listed weekdays are replaced and
-   the unlisted Mon-Fri keep the 09:00-17:00 default. Under that reading:
-   phase_1 2025-01-01 08:00 -> 2025-01-02 11:00 (default read in Athens) or -> 13:00
-   (default read in UTC); phase_2 2025-01-03 02:00 -> 04:00; operations ends 2025-01-03
-   04:00.
+2. **Decided in 0.11.0: what `workinghours <days> <hours>` does to the days it does not
+   list.** They keep the hours they inherit, as in the reference scheduler (measured
+   below). Until 0.11.0 ScriptPlan left them unworked, and this file relied on that for its
+   "disjoint calendars". It now states `workinghours thu, fri off` on alpha_shift and
+   `workinghours mon - wed off` on beta_shift, so alpha still has no Thu-Sun hours and beta
+   no Mon-Wed hours, and the dates did not change. Without those lines the unlisted
+   Mon-Fri keep the 09:00-17:00 default, read in each agent's zone: phase_1 would end
+   2025-01-02 11:00 and phase_2 would run 2025-01-03 02:00 -> 04:00.
 
 ## the reference scheduler cross-check
 
@@ -75,8 +74,7 @@ no `timezone` on a resource). Variants in a translated copy (not kept):
   start despite the declared 00:00 start.
 - `blackbox_utc` differs only because the reference scheduler's `workinghours mon - wed ...` leaves Thu/Fri at
   its default (a probe, a translated copy (not kept), shows unlisted weekdays get
-  09:00-17:00 in the reference scheduler 3.8.4), so agent_a also works Thu 2 Jan. Explained by default working
-  hours (the AMBIGUOUS point 2 above). Note: the brief says the reference scheduler's default day is 09:00-12:00 +
+  09:00-17:00 in the reference scheduler 3.8.4), so agent_a also works Thu 2 Jan (point 2 above). Note: the brief says the reference scheduler's default day is 09:00-12:00 +
   13:00-18:00, but a translated copy (not kept) (hourly booking dump) shows the reference scheduler 3.8.4 here
   booking a resource with no `workinghours` 09:00-17:00 straight through, the same as
   ScriptPlan's default.

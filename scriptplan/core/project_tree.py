@@ -22,6 +22,16 @@ __all__ = [
 ]
 
 
+def iter_own_and_inherited(task: Any, scIdx: int) -> list[Any]:
+    """The dependency entries of a task and of every container it is inside."""
+    entries: list[Any] = []
+    node: Any | None = task
+    while node is not None:
+        entries.extend(node.get("depends", scIdx) or [])
+        node = node.parent
+    return entries
+
+
 def propagate_container_end_dates(self: Any, scIdx: int) -> None:
     """
     Propagate container task end dates to their leaf children as constraints.
@@ -30,23 +40,15 @@ def propagate_container_end_dates(self: Any, scIdx: int) -> None:
     (those with no successors within the container) should get the end constraint.
     Other tasks will get their end constraints from their successors.
 
-    Special handling for `onstart` dependencies in ALAP mode:
-    - `A depends B { onstart }` means A.start >= B.start
-    - In ALAP, this translates to: A must END before B can START
-    - So B is the anchor (terminal), not A
-    - A derives its end from B's start
+    A task is terminal when nothing waits for it to end. A task that depends
+    on it `{ onstart }` waits for its start, so it does not count.
     """
-    # First, identify which tasks have successors via normal (finish-to-start) dependencies
-    # For onstart dependencies in ALAP, the dependent task (A) derives its END from
-    # predecessor's START, so the predecessor (B) is the terminal task
-    has_fs_successor: set[Any] = set()  # Tasks that are predecessors in finish-to-start deps
-    has_onstart_dep: set[Any] = set()  # Tasks that have onstart dependencies (not terminal)
+    has_fs_successor: set[Any] = set()  # predecessors in finish-to-start dependencies
 
     for task in self.tasks:
         if not task.leaf():
             continue
-        deps = task.get("depends", scIdx) or []
-        for dep in deps:
+        for dep in task.get("depends", scIdx) or []:
             if isinstance(dep, dict):
                 pred = dep.get("task")
                 onstart = dep.get("onstart", False)
@@ -57,14 +59,8 @@ def propagate_container_end_dates(self: Any, scIdx: int) -> None:
                 pred = dep
                 onstart = False
 
-            if pred and hasattr(pred, "fullId"):
-                if onstart:
-                    # For onstart deps in ALAP: the dependent task (this task)
-                    # derives END from predecessor's START, so this task is NOT terminal
-                    has_onstart_dep.add(task.fullId if hasattr(task, "fullId") else None)
-                else:
-                    # Normal finish-to-start: predecessor has a successor
-                    has_fs_successor.add(pred.fullId)
+            if pred and hasattr(pred, "fullId") and not onstart:
+                has_fs_successor.add(pred.fullId)
 
     def propagate_end_to_children(task: Any, container_end: Any | None) -> None:
         """Recursively propagate end constraint down the task tree."""
@@ -78,10 +74,7 @@ def propagate_container_end_dates(self: Any, scIdx: int) -> None:
             forward = task.get("forward", scIdx)
             task_id = task.fullId if hasattr(task, "fullId") else None
 
-            # A task is terminal if:
-            # 1. No finish-to-start successors (nothing depends on its END), AND
-            # 2. No onstart dependencies (doesn't derive END from another task's START)
-            is_terminal = (task_id not in has_fs_successor) and (task_id not in has_onstart_dep)
+            is_terminal = task_id not in has_fs_successor
 
             if forward is False and not task_end and container_end and is_terminal:
                 task[("end", scIdx)] = container_end
@@ -249,6 +242,11 @@ def mark_task_alap(self: Any, task: Any, scIdx: int, processed: set[Any], revers
     start = task.get("start", scIdx)
     if forward is True and start:
         # Explicitly ASAP with start date - don't change
+        return
+
+    # A task that starts when another starts is placed forwards from that
+    # start. Turning it backward would leave its onstart dependency unheld.
+    if any(isinstance(dep, dict) and dep.get("onstart") for dep in iter_own_and_inherited(task, scIdx)):
         return
 
     # Mark as ALAP (forward=False)

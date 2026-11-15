@@ -14,10 +14,11 @@ unless marked JST/BST. All on whole hours, so slots are 60 min.
 
 ## Readings used
 
-- `design depends !!impl { onstart }`: the README's "Known limits" says ScriptPlan reads
-  `A depends B { onstart }` as "A must finish before B starts". So **design.end <=
-  impl.start**, which is what the file's own comment says ("Design must finish before Tokyo
-  starts").
+- `design precedes !!impl`: **design.end <= impl.start**, which is what the file's own
+  comment says ("Design must finish before Tokyo starts"). Until 0.11.0 the file said
+  `depends !!impl { onstart }`, which ScriptPlan read the same way on a task scheduled as
+  late as possible. 0.11.0 refuses `onstart` there, so the file says it with `precedes`.
+  The dates did not change.
 - `!!impl` from `launch.design` is taken as the sibling `launch.impl`, the only task called
   `impl`. The README's own example uses `!!pack` for a sibling in the same way. (Under
   the reference scheduler's strict rule `!!` goes one level higher, to a top-level `impl` that does not exist.)
@@ -53,10 +54,9 @@ unless marked JST/BST. All on whole hours, so slots are 60 min.
 
 ## Notes on readings (decided by the README, not AMBIGUOUS)
 
-- Under the reference scheduler's start-to-start reading of `onstart` (design.start >= impl.start = Fri
-  00:00 UTC), design would have to run 540 min of London time between Fri 08:00 and the
-  container end at 09:00. Only 60 min exist there, so it would not fit. The README states
-  ScriptPlan's reading explicitly, so I used that.
+- Start-to-start (design.start >= impl.start = Fri 00:00 UTC) was never what the file meant:
+  design would have to run 540 min of London time between Fri 08:00 and the container end
+  at 09:00, and only 60 min exist there.
 
 ## the reference scheduler cross-check
 
@@ -67,9 +67,9 @@ unless marked JST/BST. All on whole hours, so slots are 60 min.
   So the zoned-shift translations a translated copy (not kept) and
   a translated copy (not kept) give hours that are not converted, and I do not use them.
 - a translated copy (not kept) (hours converted to UTC by hand, and
-  ScriptPlan's onstart reading written as `design precedes !impl`): launch 06-12 08:00 ->
+  the edge written `design precedes !impl`, as the file has it now): launch 06-12 08:00 ->
   06-13 09:00, design 06-12 08:00-17:00, impl 06-13 00:00-09:00. **Agrees** exactly.
-- a translated copy (not kept) (the reference scheduler's own `depends !impl { onstart }`):
-  impl 06-13 00:00-09:00, design 06-13 08:00-17:00, and the reference scheduler lets launch run on to 17:00,
-  past its stated end. The difference is expected: it is the documented onstart divergence
-  (README "Known limits"), not rounding.
+- a translated copy (not kept) (the edge as the file had it until 0.11.0,
+  `depends !impl { onstart }`): impl 06-13 00:00-09:00, design 06-13 08:00-17:00, and
+  the reference scheduler lets launch run on to 17:00, past its stated end. That is start-to-start on a
+  task it has turned back to as soon as possible, which is why the file no longer says it.

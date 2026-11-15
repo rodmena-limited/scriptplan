@@ -1,5 +1,120 @@
 # Changelog
 
+## 0.11.0
+
+Three readings change in this release. In two of them ScriptPlan read a file differently
+from the reference scheduler, and in the third it had copied a fault of it. Farshid
+decided all three on 2026-11-15. Two defects found on the way are fixed as well, and one
+of them is a regression in 0.10.3.
+
+Each item in the first section can move the dates of a project that already scheduled.
+Each says what to write to keep the old meaning.
+
+### Changes that can move an existing schedule
+
+- **A `workinghours` line replaces the days it names, and the other days keep their
+  hours.** Until now the lines of a block stated its whole week, and a day no line named
+  was not worked. A shift with `workinghours mon, wed, fri 09:00 - 17:00` used to work
+  three days a week. It now also works Tuesday and Thursday 09:00-17:00, which it
+  inherits from the project. Add `workinghours tue, thu off` to keep them closed. `off`
+  is new.
+- **Two lines for the same day no longer add up.** The later line replaces the earlier.
+  `workinghours mon - fri 09:00 - 12:00` followed by `workinghours mon - fri 13:00 -
+  17:00` gave seven hours a day and now gives four, from 13:00. Write both intervals on
+  one line, `workinghours mon - fri 09:00 - 12:00, 13:00 - 17:00`.
+- **What a block starts from.** The project starts from Monday to Friday 09:00-17:00. A
+  shift starts from the project's week. A resource starts from its parent resource's
+  week as it stands where the sub-resource is declared, or from the project's when it
+  has no parent.
+- **`workinghours <shift id>` sets the resource's week to the shift's.** A workinghours
+  line after it replaces the days it names. A resource on a shift used to ignore its own
+  lines wherever they stood.
+- **A night shift belongs to the day it starts on.** `workinghours sun 22:00 - 06:00`
+  and `workinghours mon 09:00 - 17:00` give Monday 00:00-06:00 and 09:00-17:00 in either
+  order.
+- **`depends X { onstart }` on a task scheduled as late as possible is refused.**
+  ScriptPlan read it as "finish before X starts". The reference scheduler refuses it,
+  and so does ScriptPlan now, for a dependency the task states and for one it inherits
+  from a container. Write `precedes X` in its place and keep the gap options as they are. On
+  a task scheduled as soon as possible `onstart` is unchanged, and the task may start
+  once X has started.
+- **A task that two others lead into counts for both.** A task's path criticalness is
+  its own plus the heaviest chain of tasks waiting for it. Where `a` and `b` both lead
+  into `c`, 0.10.3 counted `c` for whichever of the two the file declared first, as the
+  reference scheduler does. That scheduler's own notes describe counting it for both,
+  and the order of declaration should not decide who goes first. With `a` of 2 h and
+  `b` of 3 h on one desk, 0.10.3 placed `a` first when it was declared first. `b` now
+  goes first in either order. Give a task a `priority` to fix its place.
+- **A resource's hours are read in the project's timezone when the resource states
+  none.** They were read as UTC. In a project in `Europe/London`, a resource with
+  `workinghours mon - fri 09:00 - 17:00` worked 10:00-18:00 in June. It now works
+  09:00-17:00, as a resource with no hours of its own already did. A project in UTC is
+  not affected.
+- **A resource with a `timezone` and no hours of its own works the project's week in
+  its own zone.** It used to work it in the project's zone, which left the directive without
+  effect for such a resource.
+
+### Regression in 0.10.3
+
+- A chain of about a thousand tasks, each depending on the one before, stopped with
+  "maximum recursion depth exceeded". The criticalness added in 0.10.3 followed the
+  chain by recursion. It now uses an explicit stack, and a chain of 3,000 tasks
+  schedules. 0.10.2 was not affected.
+
+### Documentation
+
+- The example project in the README has not run since 0.10.3. It wrote
+  `depends !delivery.assemble_a` from inside another container, which 0.10.3 began to
+  refuse, and no test read the README. The example is corrected and
+  `tests/test_readme_examples.py` now runs the README's project, its Python example and
+  its command lines as they are written.
+- The README's Python example printed UTC as if it were project time. `task.get('start',
+  0)` returns a naive datetime in UTC, as Siambr reported, and the example now converts
+  it with `from_utc`.
+- The README is rewritten in plainer language. It has a new section on where ScriptPlan
+  differs from other schedulers of this format.
+- With a stated `timingresolution`, a slot that starts in working time counts as worked.
+  Hours of `09:00 - 23:59` at 30-minute slots are 15 hours a day, which is also the
+  reference scheduler's answer. This is unchanged and is now written down.
+
+### Example projects
+
+Five showcase projects relied on the old readings. Their input changed and no expected
+date did.
+
+- `eclipse` gains `workinghours tue, thu off`, and `blackbox` gains `workinghours thu,
+  fri off` and `workinghours mon - wed off`. The reference scheduler gives the expected
+  dates with these lines and different dates without them.
+- `jit_supply`, `paradox` and `time_traveler` say `precedes` where they said `depends
+  ... { onstart }`. The reference scheduler gives the expected dates for the `precedes`
+  form of each.
+- `examples/edge_cases/alap_onstart_reading` is renamed `alap_precedes_finishes_before`
+  and uses `precedes`.
+
+### Verification
+
+`tests/test_working_week.py`, `tests/test_onstart_direction.py`,
+`tests/test_readme_examples.py` and three new tests in
+`tests/test_contention_and_bookings.py` run 26 plans through the `plan` command. 20 of
+them fail on 0.10.3, and the 6 that check what must not change pass on both. Expected
+dates are the reference scheduler's wherever it accepts the file. Where only ScriptPlan
+accepts or decides something (a resource timezone, a night shift, `workinghours <shift
+id>`, the count of a shared follower), they are worked out by hand. Of six new probes,
+five fail on 0.10.3.
+
+The comparison on 150 random projects with contended resources was run twice. With
+only the 0.10.3 criticalness routine put back, this release gives the reference
+scheduler's dates for all 150, which shows that the calendar and `onstart` changes cost
+no agreement. With the new count it agrees on 132, and all 18 that differ contain a task
+with two or more predecessors.
+
+No file in `tests/golden` and no `expected.csv` in `examples/showcase` changes.
+
+Time for the slowest example, `math_torture`, is 105% of 0.10.3, and `tutorial` and
+`airport_stress_test` are within 1%. A year-long project in `Europe/London` with 20
+resources on their own hours takes 114%, because their hours now need the conversion
+that 0.10.3 skipped. Python 3.13, three interleaved runs each, median.
+
 ## 0.10.3
 
 Fixes the defects Trace and Siambr reported against 0.10.2, and those found while fixing

@@ -32,3 +32,10 @@ ALTERNATIVES:
 - Path sum: plain heaviest-path [REJECTED: 72 of 80 random contended projects matched the reference] vs the reference's walk, in which a follower reached a second time counts without its own criticalness [CHOSEN: 80 of 80 in-process, then 150 of 150 through the CLI]. The order is a tie-break with no single right answer, so the same file giving the same plan decided it. Put to Farshid as overrulable.
 
 VERIFICATION (2026-11-15): C4, C5, E1, K1-K4 give the reference's dates. 150 of 150 random projects (one resource per allocation, scratch generator seeds 1-150) match the reference on every end date and every start except those of length tasks, which the two schedulers report differently by design (README, known limits). No golden changed. Five examples/edge_cases answers and four probes that assumed declaration order were updated after the reference confirmed the new order forwards, backwards and under a daily cap.
+
+---
+
+0.11.0 (2026-11-15): path criticalness counts a task that two others lead into for both
+of them, where 0.10.3 counted it for the first declared, and the walk no longer
+recurses. See SPECS/044 and SPECS/046. Agreement with the reference scheduler on the 150
+random projects went from 150 to 132.

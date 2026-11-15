@@ -1,6 +1,6 @@
 # tutorial.tjp - independent derivation, scenario `plan`
 
-Source: `src/tutorial.tjp` (the the reference scheduler tutorial). Scenario derived: `plan`, the first one.
+Source: `src/tutorial.tjp` (the reference scheduler tutorial). Scenario derived: `plan`, the first one.
 `delayed:` attributes (`delayed:start 2002-01-20`, `delayed:effort 40d`) are ignored.
 Output: `tutorial.expected.csv`, 15 rows (4 containers, 7 effort leaves, 4 milestones), times in
 the project timezone **Europe/Paris**, wall clock.
@@ -11,11 +11,11 @@ Tools (stdlib Python, none imports scriptplan), all in `tutorial_work/`:
   asserts that no resource is booked twice at once, every limit is respected, and every task's
   bookings add up to its effort.
 - `daily_table.py` prints the per-day bookings in the appendix.
-- `tj_custom.py` runs the reference scheduler with a custom report; `probe_*.tjp` are the the reference scheduler probes cited below.
+- `tj_custom.py` runs the reference scheduler with a custom report; `probe_*.tjp` are the reference scheduler probes cited below.
 
 Every number in the walk-through below was first worked by hand. The simulator then reproduced
 all of them. It also reproduces the reference scheduler's output exactly (15/15 rows) once the reference scheduler's own
-slot rule is switched on (see the the reference scheduler section), so the simulator's calendars, leaves, limits and
+slot rule is switched on (see the reference scheduler section), so the simulator's calendars, leaves, limits and
 placement order are checked against an independent implementation.
 
 ## Inputs

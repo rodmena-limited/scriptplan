@@ -1,21 +1,21 @@
 """When a resource is available, and laying that out across the project.
 
-A resource is on shift when its own working hours say so, or the project's
-default calendar if it declares none, and not on leave. Setting a scoreboard up
+A resource is on shift when its week says so and it is not on leave. Its week
+is the one it inherited with its own lines applied, read in its own timezone,
+or in the project's when it states none. Setting a scoreboard up
 asks that question once per slot per resource -- half a million times each for
 a year at minute resolution -- so the answer is derived arithmetically where it
 can be, and a week of it is computed and tiled where the pattern repeats.
 
 It repeats only where no daylight-saving change can move it, which depends on
-the resource's zone when it has hours of its own and the project's when it
-falls back to the default calendar.
+the zone the resource's hours are read in and on the project's.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from scriptplan.core.project_calendar import global_closures, in_week
+from scriptplan.core.project_calendar import global_closures, in_week, project_week
 from scriptplan.core.timezones import is_utc
 from scriptplan.scheduler.scoreboard import Scoreboard
 
@@ -128,20 +128,26 @@ def cache_shift_inputs(scenario: Any) -> None:
     """
     scenario._vacations = global_closures(scenario.project)
     scenario._leaves = list(scenario.property.get("leaves", scenario.scenarioIdx) or [])
-    scenario._timezone = scenario.property.get("timezone", scenario.scenarioIdx)
+    # A resource's hours are meant in its own zone, or in the project's when
+    # it states none. Read as UTC, a London resource on nine to five worked
+    # ten to six all summer (issuedb #42).
+    own_zone = scenario.property.get("timezone", scenario.scenarioIdx)
+    scenario._timezone = own_zone or scenario.project.attributes.get("timezone")
 
-    working_hours = None
     shift = scenario.property.get("shifts", scenario.scenarioIdx)
     if shift is not None:
         # A resource on a shift takes the shift's leave with its hours.
         scenario._leaves += shift.get("leaves", scenario.scenarioIdx) or []
-        candidate = shift.get("workinghours", scenario.scenarioIdx)
-        if candidate is not None and hasattr(candidate, "onShift"):
-            working_hours = candidate
-    if working_hours is None:
-        candidate = scenario.property.get("workinghours", scenario.scenarioIdx)
-        if candidate is not None and hasattr(candidate, "onShift"):
-            working_hours = candidate
+
+    # The resource's week: what it inherited, with its own lines applied.
+    # None means it never departed from the project's.
+    working_hours = scenario.property.get("workinghours", scenario.scenarioIdx)
+    if working_hours is None or not hasattr(working_hours, "onShift"):
+        working_hours = None
+        project_zone = scenario.project.attributes.get("timezone")
+        if own_zone and str(own_zone) != str(project_zone) and not (is_utc(own_zone) and is_utc(project_zone)):
+            # The project's week, worked in the resource's own zone.
+            working_hours = project_week(scenario.project)
     scenario._workingHours = working_hours
 
 

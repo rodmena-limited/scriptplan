@@ -14,6 +14,7 @@ project "Eclipse_Protocol" 2025-06-01 +1m {
 
 shift s_odd "Odd" {
   workinghours mon, wed, fri 09:00 - 17:00
+  workinghours tue, thu off
 }
 
 shift s_mid "Mid" {

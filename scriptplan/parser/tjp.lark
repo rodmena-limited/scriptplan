@@ -78,7 +78,7 @@ yearlyworkingdays: "yearlyworkingdays" NUMBER
 weekstartsmonday: "weekstartsmonday"
 timingresolution: "timingresolution" duration_value
 workinghours: "workinghours" workinghours_spec
-workinghours_spec: day_list duration_range ("," duration_range)*
+workinghours_spec: day_list (duration_range ("," duration_range)* | "off")
 day_list: day_spec ("," day_spec)*
 day_spec: DAY_NAME ("-" DAY_NAME)?  // Single day or day range like "mon - fri"
 DAY_NAME.2: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"

@@ -1,7 +1,7 @@
 # ScriptPlan example projects
 
-**ScriptPlan**: 0.10.3  
-**Generated**: 2026-11-15 06:04:51 UTC  
+**ScriptPlan**: 0.11.0  
+**Generated**: 2026-11-15 15:38:20 UTC  
 **Command**: `plan report --csv <project>`
 
 Every project in `examples/showcase`, with the schedule ScriptPlan produces for it.
@@ -753,10 +753,12 @@ project "Black_Box_Protocol" 2025-01-01 +1m {
 
 shift alpha_shift {
   workinghours mon - wed 10:00 - 14:00
+  workinghours thu, fri off
 }
 
 shift beta_shift {
   workinghours thu - sun 18:00 - 22:00
+  workinghours mon - wed off
 }
 
 resource agent_a "Alpha" {
@@ -899,6 +901,7 @@ project "Eclipse_Protocol" 2025-06-01 +1m {
 
 shift s_odd "Odd" {
   workinghours mon, wed, fri 09:00 - 17:00
+  workinghours tue, thu off
 }
 
 shift s_mid "Mid" {
@@ -1003,7 +1006,7 @@ compute,2025-08-01-09:00,2025-08-04-17:00,-
  * Original specification requires:
  * - Project-level scheduling alap
  * - End date on parent task
- * - Complex dependencies with onstart
+ * - A task that must finish before another starts (precedes)
  */
 
 project "Just_In_Time" 2025-07-01 +1m {
@@ -1033,7 +1036,7 @@ task delivery "Product Launch" {
   task assemble_b "Body Assembly" {
     effort 16h
     allocate machine
-    depends !!pack { onstart }
+    precedes !!pack
   }
 
   task assemble_a "Engine Assembly" {
@@ -4657,7 +4660,7 @@ task sequence "Event" {
   task a "Alpha" {
     effort 12h
     allocate n
-    depends !!b { gapduration 48h onstart }
+    precedes !!b { gapduration 48h }
   }
 }
 
@@ -5132,7 +5135,7 @@ task launch "Global Launch" {
   task design "Blueprint" {
     effort 9h
     allocate des_london
-    depends !!impl { onstart }
+    precedes !!impl
   }
 }
 

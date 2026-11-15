@@ -7,7 +7,7 @@ for project files written in the .tjp project definition language.
 
 # The single source of truth for the version; pyproject reads it from here.
 # 0.10.2: every stated date and dependency is kept or refused, never overridden.
-__version__ = "0.10.3"
+__version__ = "0.11.0"
 __author__ = "ScriptPlan Team"
 
 from scriptplan.core.project import Project

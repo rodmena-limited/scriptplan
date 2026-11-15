@@ -7,6 +7,10 @@ Claims under test (SPECS/003-ws1-units-and-calendar-arithmetic.md):
   - a single-day vacation or leave blocks the whole day
   - resource limits count periods in the resource's local calendar
   - a resource's shift follows its own timezone across DST in both directions
+  - a shift starts from the project's week and a sub-resource from its
+    parent's, with each line replacing the days it names (issuedb #42)
+  - a resource with no timezone of its own works its hours in the project's
+  - with a stated timingresolution, a slot that starts in working time counts
 """
 
 from __future__ import annotations
@@ -131,6 +135,53 @@ task a "A" { start 2025-10-24 effort 10h allocate r }
         f"Friday first slot={friday[0] if friday else None} (09:00 BST = 08:00 UTC); "
         f"Monday first slot={monday[0] if monday else None} (09:00 GMT = 09:00 UTC)"
     )
+
+
+WEEK_HDR = 'project p "P" 2025-06-02 +2m {{ timezone "Etc/UTC" now 2025-06-02 {project} }}\n'
+
+
+@probe("A shift starts from the project's week and a sub-resource from its parent's")
+def probe_weeks_are_inherited() -> tuple[bool, str]:
+    # Expected ends are the reference scheduler's, to the hour.
+    on_shift = parse(WEEK_HDR.format(project="workinghours mon - fri 07:00 - 11:00") + """
+shift s "S" { workinghours wed 10:00 - 12:00 }
+resource r "R" { workinghours s }
+task a "A" { effort 20h allocate r }
+""")
+    sub = parse(WEEK_HDR.format(project="") + """
+resource g "G" { workinghours mon - fri 06:00 - 10:00
+  resource r "R" { workinghours wed 10:00 - 12:00 } }
+task a "A" { effort 20h allocate r }
+""")
+    ends = window(on_shift, "a")[1], window(sub, "a")[1]
+    ok = ends == (datetime(2025, 6, 9, 9, 0), datetime(2025, 6, 9, 8, 0))
+    return ok, f"on the shift ends {ends[0]} (expected 2025-06-09 09:00); sub-resource ends {ends[1]} (expected 2025-06-09 08:00)"
+
+
+@probe("A resource with no timezone of its own works its hours in the project's")
+def probe_hours_in_project_zone() -> tuple[bool, str]:
+    project = parse("""project p "P" 2025-06-02 +2m { timezone "Europe/London" now 2025-06-02 }
+resource r "R" { workinghours mon - fri 09:00 - 17:00 }
+task a "A" { effort 8h allocate r }
+""")
+    start, end = window(project, "a")
+    # 09:00 in London in June is 08:00 UTC, which is how the model holds it.
+    ok = start == datetime(2025, 6, 2, 8, 0) and end == datetime(2025, 6, 2, 16, 0)
+    return ok, f"start={start} end={end} UTC (expected 08:00 -> 16:00 UTC, which is 09:00 -> 17:00 in London)"
+
+
+@probe("With a stated timingresolution, a slot that starts in working time counts as worked")
+def probe_stated_resolution_rounds_to_the_slot() -> tuple[bool, str]:
+    text = """project p "P" 2025-06-02 +2m {{ timezone "Etc/UTC" now 2025-06-02 {resolution} }}
+resource r "R" {{ workinghours mon - fri 09:00 - 23:59 }}
+task a "A" {{ effort 15h allocate r }}
+"""
+    stated = window(parse(text.format(resolution="timingresolution 30min")), "a")[1]
+    derived = window(parse(text.format(resolution="")), "a")[1]
+    # Half-hour slots: 23:30 starts in working time, so Monday gives 15 h (the
+    # reference scheduler's answer). Derived slots are a minute: Monday gives 14h59.
+    ok = stated == datetime(2025, 6, 3, 0, 0) and derived == datetime(2025, 6, 3, 9, 1)
+    return ok, f"stated 30min ends {stated} (expected 2025-06-03 00:00); derived ends {derived} (expected 2025-06-03 09:01)"
 
 
 if __name__ == "__main__":

@@ -5,8 +5,8 @@ the scoreboard, and deciding whether a slot is inside the default working day,
 are all questions about the axis rather than about scheduling, so they live
 here.
 
-The calendar is the week the project's ``workinghours`` lines state, or weekdays
-nine to five when it states none. It is read in the project's own timezone:
+The calendar is weekdays nine to five, with the hours of whichever days the
+project's ``workinghours`` lines name replaced. It is read in the project's own timezone:
 comparing the hour of a UTC slot against 9 to 17 puts a New York project's
 working day five hours out. A global ``vacation`` or ``leaves`` closes it for
 everyone, whatever the leave is called.
@@ -36,24 +36,35 @@ __all__ = [
     "init_scoreboards",
     "is_default_working_time",
     "is_working_time",
+    "project_week",
     "scoreboard_size",
 ]
 
 
 def add_project_hours(project: Any, spec: Any) -> None:
-    """Record one ``workinghours`` line of the project block.
+    """Apply one ``workinghours`` line of the project block.
 
-    The lines together state the project's whole week, as they do for a shift
-    or a resource: a day no line names is not worked.
+    The project's week starts as weekdays nine to five, and the line replaces
+    the hours of the days it names.
     """
     from scriptplan.core.working_hours import WorkingHours
 
     hours = project.attributes.get("workinghours")
     if not isinstance(hours, WorkingHours):
-        hours = WorkingHours(project)
+        hours = WorkingHours.default_week(project)
         project.attributes["workinghours"] = hours
     if isinstance(spec, dict):
         hours.set_hours(spec.get("days", []), spec.get("ranges", []))
+
+
+def project_week(project: Any) -> Any:
+    """A copy of the project's week, for a shift or a resource to start from."""
+    from scriptplan.core.working_hours import WorkingHours
+
+    hours = project.attributes.get("workinghours")
+    if isinstance(hours, WorkingHours):
+        return hours.copy()
+    return WorkingHours.default_week(project)
 
 
 def global_closures(project: Any) -> list[Any]:

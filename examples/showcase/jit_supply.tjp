@@ -5,7 +5,7 @@
  * Original specification requires:
  * - Project-level scheduling alap
  * - End date on parent task
- * - Complex dependencies with onstart
+ * - A task that must finish before another starts (precedes)
  */
 
 project "Just_In_Time" 2025-07-01 +1m {
@@ -35,7 +35,7 @@ task delivery "Product Launch" {
   task assemble_b "Body Assembly" {
     effort 16h
     allocate machine
-    depends !!pack { onstart }
+    precedes !!pack
   }
 
   task assemble_a "Engine Assembly" {

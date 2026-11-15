@@ -245,32 +245,14 @@ class TaskScenario(ScenarioData):
         """
         Check if task is ready for ALAP scheduling.
 
-        For ALAP, a task is ready when every task that bounds its end has a
-        known start: each successor that must start after it, and, for
-        onstart dependencies, the predecessor it must finish before. Its own
-        end, if it has one, is one more bound, not a reason to skip the others:
-        a task that ended at its own end regardless put its successor before
-        it (issuedb #23). A successor scheduled forwards follows this task
-        anyway, so a task with its own end does not wait for one.
+        For ALAP, a task is ready when every successor that must start after
+        it has a known start. Its own end, if it has one, is one more bound,
+        not a reason to skip the others: a task that ended at its own end
+        regardless put its successor before it (issuedb #23). A successor
+        scheduled forwards follows this task anyway, so a task with its own
+        end does not wait for one.
         """
         explicit_end = self.property.get("end", self.scenarioIdx)
-
-        # Check onstart dependencies - we need predecessor scheduled to know their start
-        # For ALAP with `depends X { onstart }`, this task's END depends on X's START
-        for dep in self.getAllDependencies():
-            if isinstance(dep, dict):
-                onstart = dep.get("onstart", False)
-                pred = dep.get("task")
-            elif hasattr(dep, "task"):
-                onstart = getattr(dep, "onstart", False)
-                pred = dep.task
-            else:
-                onstart = False
-                pred = dep
-
-            if onstart and pred and not pred.get("scheduled", self.scenarioIdx):
-                # Predecessor not scheduled yet - we can't derive our end
-                return False
 
         # Check if all successors are scheduled (for finish-to-start deps)
         successors = bounding_successors(self)
@@ -278,7 +260,6 @@ class TaskScenario(ScenarioData):
             successors = [s for s in successors if s.get("forward", self.scenarioIdx) is False]
         if not successors:
             # No successors and no explicit end - use project end as default
-            # (unless we have onstart deps, which we checked above)
             return True
 
         # A successor whose start the file states is a fixed moment to end

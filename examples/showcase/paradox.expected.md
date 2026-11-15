@@ -20,8 +20,8 @@ the reference scheduler variants in a translated copy (not kept).
 
 | edge in the file | read as |
 |---|---|
-| `sequence { end 2025-12-31-23:00 }` | Container end as stated. It is passed down to ALAP children without their own end, as in jit_supply, the README example and the the reference scheduler manual. |
-| `a depends !!b { gapduration 48h onstart }` | `!!b` resolves to `sequence.b` (P2). The README onstart reading applies, "the dependent task must finish before the predecessor starts": a must finish, then at least 48 h of calendar time pass (gapduration is calendar, 48h = 2880 min), then b starts. So **a.end + 48h <= b.start** (P1). |
+| `sequence { end 2025-12-31-23:00 }` | Container end as stated. It is passed down to ALAP children without their own end, as in jit_supply, the README example and the reference scheduler manual. |
+| `a precedes !!b { gapduration 48h }` | `!!b` resolves to `sequence.b` (P2). a must finish, then at least 48 h of calendar time pass (gapduration is calendar, 48h = 2880 min), then b starts. So **a.end + 48h <= b.start** (P1). |
 
 Backward order: b has no successor, so its bound is the inherited end and it goes first. a goes once b is scheduled.
 
@@ -52,16 +52,10 @@ Backward order: b has no successor, so its bound is the inherited end and it goe
 
 ## AMBIGUOUS
 
-**P1. `onstart` with a gap.**
-- Chosen: the README reading, a.end + 48h <= b.start. Result as above.
-- Alternative: the brief's ASAP line and the reference scheduler, start-to-start with gap: a.start >= b.start + 48h. Then a is b's successor. Depending on how the engine bounds b, there are three outcomes:
-  - **B.** a is placed first from the inherited end: a = 2025-12-30 23:00 to 2025-12-31 23:00.
-    - b must then start no later than a.start - 48h = 2025-12-28 23:00.
-    - If the engine bounds b's *end* by that moment (the brief's literal "successor's start" minus the gap): b = 2025-12-27 23:00 to 2025-12-28 23:00.
-    - If only b's *start* is bounded: b = 2025-12-28 23:00 to 2025-12-29 23:00.
-    - sequence starts at b.start.
-  - **B'.** What the reference scheduler does: b is ALAP from the inherited end, 2025-12-30 23:00 to 2025-12-31 23:00, and a is pushed to b.start + 48h, giving 2026-01-01 23:00 to 2026-01-02 23:00.
-    - That is past sequence's stated end. Under "a task that does not fit is UNSCHEDULABLE", a would be **UNSCHEDULABLE**.
+**P1. The edge from a to b.**
+- The file writes it `a precedes !!b { gapduration 48h }`: a.end + 48h <= b.start. Result as above.
+- Until 0.11.0 the file said `depends !!b { gapduration 48h onstart }`, and ScriptPlan read that on a task scheduled as late as possible as "finish 48 h before b starts". 0.11.0 refuses `onstart` on such a task, as the reference scheduler does when the task is stated to be scheduled as late as possible. The file now says the same thing with `precedes`, and the dates did not change.
+- Start-to-start with the gap (a.start >= b.start + 48h) would put a after the container's end: b runs 2025-12-30 23:00 to 2025-12-31 23:00 and a would start 2026-01-01 23:00.
 
 **P2. Reference `!!b`.**
 - From `sequence.a`, the reference scheduler resolves `!!` to the root, where there is no top-level `b`.
@@ -84,6 +78,6 @@ Backward order: b has no successor, so its bound is the inherited end and it goe
 - the reference scheduler: a 2025-12-27 23:00 to 2025-12-28 23:00, b 2025-12-30 23:00 to 2025-12-31 23:00, sequence 2025-12-27 23:00 to 2025-12-31 23:00.
 - **Exact agreement** with the table above.
 
-**a translated copy (not kept).** The same, with `onstart` kept.
-- the reference scheduler: b 2025-12-30 23:00 to 2025-12-31 23:00, a 2026-01-01 23:00 to 2026-01-02 23:00, after the container's end. the reference scheduler does not complain.
-- This is reading B' of P1, an expected difference from the README reading.
+**a translated copy (not kept).** The same, with the edge as the file had it until 0.11.0, `depends !b { gapduration 48h onstart }`.
+- the reference scheduler: b 2025-12-30 23:00 to 2025-12-31 23:00, a 2026-01-01 23:00 to 2026-01-02 23:00, after the container's end. the reference scheduler does not complain, because there a `depends` written after `scheduling alap` turns the task back to as soon as possible.
+- This is the start-to-start reading of P1.

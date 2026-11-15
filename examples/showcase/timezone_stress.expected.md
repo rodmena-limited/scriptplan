@@ -49,7 +49,7 @@ DST changes").
 - a translated copy (not kept) (zoned shifts) gave step1 09:00-18:00 UTC and step2
   Fri 09:00-13:00. the reference scheduler 3.8.4 does not apply a shift's `timezone` to its working hours (probe
   a translated copy (not kept)), so that run uses unconverted hours and says
-  nothing about this file. It is a limit of the the reference scheduler translation, not a scheduling
+  nothing about this file. It is a limit of the reference scheduler translation, not a scheduling
   disagreement.
 - a translated copy (not kept) (hours converted by hand: Tokyo 00:00-09:00 UTC,
   NY 13:00-22:00 UTC) gives follow_sun 05-01 00:00-17:00, step1 00:00-09:00, step2

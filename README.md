@@ -4,12 +4,14 @@
 
 # ScriptPlan
 
-![Tests](https://img.shields.io/badge/tests-556_passing-success?style=for-the-badge)
-![Probes](https://img.shields.io/badge/audit_probes-139_passing-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-581_passing-success?style=for-the-badge)
+![Probes](https://img.shields.io/badge/audit_probes-145_passing-success?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)
 ![Licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey?style=for-the-badge)
 
-A precise project scheduling engine with minute-level accuracy for resource allocation and dependency management. It reads projects written in the .tjp format.
+ScriptPlan is a project scheduler. It reads a project written in the .tjp format, works
+out when each task runs and who does it, and prints the result as JSON or CSV. Times are
+kept to the minute.
 
 ## Installation
 
@@ -17,36 +19,27 @@ A precise project scheduling engine with minute-level accuracy for resource allo
 pip install scriptplan
 ```
 
-## Quick Start
+It needs Python 3.9 or later.
 
-### Report Generation (Unix-style)
+## Command line
+
+`plan report` reads a project file and writes the report to standard output.
 
 ```bash
-# Generate JSON report to stdout
-plan report project.tjp
+plan report project.tjp               # JSON
+plan report --csv project.tjp         # CSV
+plan report - < project.tjp           # read the project from standard input
+cat project.tjp | plan report         # the same, from a pipe
+plan report project.tjp > plan.json   # keep the result
 
-# Generate CSV report
-plan report --csv project.tjp
-
-# Save to file
-plan report project.tjp > output.json
-plan report --csv project.tjp > output.csv
-
-# Read from stdin
-cat project.tjp | plan report
-plan report - < project.tjp
-
-# Pipe to other tools
-plan report project.tjp | jq '.data[0]'
-plan report --csv project.tjp | csvkit
-
-# Process multiple files
+# one id per project in a directory
 for f in projects/*.tjp; do
   plan report "$f" | jq -r '.report_id'
 done
 ```
 
-**Output Format** (JSON):
+The JSON looks like this:
+
 ```json
 {
   "data": [
@@ -61,16 +54,21 @@ done
 }
 ```
 
-**Features**:
-- Output to stdout (Unix philosophy)
-- Messages to stderr
-- SHA256 `report_id` over the rendered result, so it changes when the schedule does
-- Lowercase column names
-- No HTML metadata
-- No file pollution (uses temp directories)
-- Separate processes do not collide: temporary files and directories are unique per run
+The columns come from the `taskreport` in the project file. A file with no report gets
+the id, start and end of each task.
 
-### Python API
+Progress messages, warnings and errors go to standard error. The report on standard
+output can be piped into `jq` or saved to a file as it is, and its column names are
+lowercase in the JSON. A project that cannot be scheduled exits with a non-zero status
+and says why.
+
+`report_id` is a SHA-256 of the rendered result. The same schedule gives the same id,
+and a different schedule gives a different one.
+
+`plan report` writes nothing to the working directory. Several runs can work at once
+because each uses a temporary directory of its own.
+
+## Python API
 
 ```python
 from scriptplan.core.timezones import from_utc
@@ -94,129 +92,146 @@ reads 23:00 the day before. `from_utc` gives the time in the project's zone, whi
 is what the reports print.
 
 Projects can be parsed and scheduled in parallel threads. Messages and the error
-count belong to the thread that produced them, so read
+count belong to the thread that produced them. Read
 `get_message_handler_instance().messages` in the thread that called `schedule()`.
 
-## What is verified
+## What it does
 
-Each behaviour below has a probe in `audit/evaluations/` that drives ScriptPlan
-through its own API or CLI and asserts the result. They run as part of the test
-suite, and can be run on their own against an installed release:
+Each statement in this section is checked by a probe in `audit/evaluations/`. A probe
+runs ScriptPlan through its API or command line and compares what comes back with the
+expected result. The probes run with the test suite, and you can run them against an
+installed release:
 
 ```bash
 audit/evaluations/run_all.sh
 ```
 
-**Time**
+### Time
 
-- Dates are read in the project's timezone and scheduled in UTC; reports convert back.
-- Resource shifts follow their own timezone across daylight-saving changes in both directions.
-- A working-hours interval that crosses midnight applies to the following day.
-- The project's `workinghours` is the calendar that `length`, `gaplength` and a
-  resource with no hours of its own use. Without one it is Monday to Friday,
-  09:00-17:00, in the project's timezone.
-- A global `leaves` or `vacation` closes that calendar for everyone, whatever the
-  leave is called, for whole days or part of one. A shift's `leaves` holds for
-  every resource on the shift.
-- Slot size is derived from the times a project uses, so `start 09:30` is honoured
-  exactly and a shift of `08:13 - 11:59, 13:07 - 17:47` yields its true 8h26m a day.
-  `timingresolution` overrides this.
+- Dates in the file are in the project's timezone. Scheduling is done in UTC and the
+  reports convert back.
+- A project's working week is Monday to Friday, 09:00 to 17:00, in the project's
+  timezone. `length`, `gaplength` and a resource that states no hours use it.
+- A `workinghours` line replaces the hours of the days it names. The other days stay as
+  they were, and `workinghours fri off` closes a day. A shift starts from the project's
+  week. A resource starts from its parent resource's week, or from the project's when it
+  has no parent.
+- `workinghours <shift id>` puts a resource on a shift. Its week becomes the shift's, and
+  the shift's `leaves` apply to it.
+- A resource's hours are read in its own `timezone` when it has one and in the project's
+  when it does not. They stay at the same local time when the clocks change, in spring
+  and in autumn.
+- An interval that ends at or before its start runs past midnight. `fri 22:00 - 06:00` is
+  Friday evening and Saturday morning, and both halves belong to Friday's line.
+- A global `leaves` or `vacation` closes the calendar for everyone, for whole days or for
+  part of one, whatever kind of leave it is.
+- ScriptPlan picks the slot size from the times the project uses. `start 09:30` is kept
+  exactly, and a shift of `08:13 - 11:59, 13:07 - 17:47` gives its true 8h26m a day.
+  `timingresolution` sets the slot size outright, and a slot then counts as worked when
+  it starts in working time.
 
-**Units**
+### Units
 
-- Calendar time (`duration`, `gapduration`) and working time (`effort`, `length`,
-  `gaplength`) are distinguished, with working time derived from
-  `dailyworkinghours` and `yearlyworkingdays`. `m` means months; `min` means minutes.
+- `duration` and `gapduration` are calendar time. `effort`, `length` and `gaplength` are
+  working time, in which a day is `dailyworkinghours` long and a year has
+  `yearlyworkingdays` days. `m` is months and `min` is minutes.
 
-**Resources**
+### Resources
 
-- `effort` is person-time: two resources available in a slot contribute two
-  slots of it. `mandatory` requires a resource for the task to progress at all;
-  `persistent` keeps the one first chosen; `alternative` falls back.
-- Allocating a resource that has members allocates every member.
-- A task with a `duration`, or with a stated `start` and `end`, books the
-  resources it allocates for the hours they are on shift and free. It keeps its
-  dates when they are not.
-- `dailymax`, `weeklymax`, `monthlymax` and `maximum` block at the cap **and**
-  release in the next period. Periods are counted in the resource's own calendar,
-  a week runs Monday to Sunday, and a cap smaller than one slot is honoured
-  exactly.
-- `dailymin`, `weeklymin`, `monthlymin` and `minimum` are targets, which placing
-  tasks cannot guarantee. A period in which the resource or task was booked for
-  less draws a warning once the schedule is complete.
+- `effort` is person-time. Two resources working the same hour deliver two hours of it.
+- A task makes progress only while a `mandatory` resource is available. `persistent`
+  keeps the resource that was chosen first, and `alternative` names one to fall back on.
+- Allocating a resource that has members allocates each member.
+- A task with a `duration`, or with a stated `start` and `end`, books the resources it
+  allocates for the hours they are on shift and free. Its dates stay as stated when they
+  are not free.
+- `dailymax`, `weeklymax`, `monthlymax` and `maximum` stop bookings at the cap, and
+  booking resumes in the next period. Periods are counted in the resource's own calendar
+  and a week runs Monday to Sunday. A cap smaller than one slot is kept exactly.
+- `dailymin`, `weeklymin`, `monthlymin` and `minimum` are targets, which placing tasks
+  cannot guarantee. A period in which the resource or task was booked for less draws a
+  warning once the schedule is complete.
 
-**Scheduling**
+### Scheduling
 
-- ASAP and ALAP, including chains that mix the two.
-- A task scheduled as late as possible ends by the earliest of its own `end`, the
-  start of each successor (less any gap that successor asks for) and the project
-  end. With none of these but a successor scheduled as soon as possible that
-  states no start, it is scheduled as soon as possible instead, with a warning.
-- Contention is resolved by priority, then criticalness, then declaration order.
-  A task's criticalness is its effort times how much is asked of the resources it
-  may use, plus that of the heaviest chain of tasks that follow it, so at equal
-  priority the larger effort is placed first. Tasks are placed one at a time in
-  that order, so a task ranked higher takes a resource's daily or weekly allowance
-  first, and a lower-ranked task that started earlier can finish later. Raising
-  its priority keeps it going.
-- The declared project period is never rewritten. A task that does not fit is
-  reported, with its name and the reason. A date stated outside the period is an
-  error.
-- Scheduling the same project twice produces the same dates and the same bookings.
-- A stated `start` or `end` that the schedule cannot keep, and a task that would
-  start before something it depends on finishes, are errors.
-- `length` and `gaplength` count the project's working time, not a resource's:
-  a resource on longer hours does not shorten the gap.
-- `maxgapduration`, `maxstart`, `minstart`, `maxend` and `minend` are checked
-  once the schedule is complete, and a violation is an error. (`maxgaplength` is
-  not part of the syntax and is refused when parsed.)
+- A task is scheduled as soon as possible unless `scheduling alap` on the task, on a
+  container or on the project says as late as possible. One chain can mix the two.
+- A task scheduled as late as possible ends by the earliest of its own `end`, the start
+  of each task that follows it (less any gap that task asks for) and the project end.
+  With none of these but a follower scheduled as soon as possible that states no start,
+  it is scheduled as soon as possible as well, and a warning says so.
+- `depends X { onstart }` lets a task start once X has started. It needs a task scheduled
+  as soon as possible, and the file is refused when the task is scheduled as late as
+  possible. `precedes X` is how such a task says it must finish before X starts.
+- When tasks compete for a resource, the higher `priority` is placed first, then the
+  higher criticalness, then the task declared first. A task's criticalness is its effort
+  times how much is asked of the resources it may use, plus that of the heaviest chain
+  of tasks waiting for it. At equal priority this places the larger effort first.
+- Tasks are placed one at a time in that order. A task ranked higher takes a resource's
+  daily or weekly allowance first, and a lower-ranked task that started earlier can
+  finish later. Raising its priority keeps it going.
+- The declared project period is never rewritten. A task that does not fit is reported
+  with its name and the reason, and a date stated outside the period is an error.
+- Scheduling the same project twice gives the same dates and the same bookings.
+- A stated `start` or `end` that the schedule cannot keep is an error. So is a task that
+  would start before something it depends on finishes.
+- `length` and `gaplength` count the project's working time. A resource on longer hours
+  does not shorten the gap.
+- `maxgapduration`, `maxstart`, `minstart`, `maxend` and `minend` are checked once the
+  schedule is complete, and a violation is an error. `maxgaplength` is not part of the
+  syntax and is refused when the file is read.
 
-**Honesty**
+### Errors and warnings
 
-- A project that cannot be scheduled exits non-zero and says why. A dependency
-  cycle is rejected before scheduling, naming the cycle.
-- An attribute or reference the parser cannot place is an error, never a silent
-  drop. Each directive the grammar accepts has a probe showing that it changes a
-  schedule, is refused or draws a warning, and the few that do none of these are
-  listed in `audit/evaluations/probe_directive_effect.py` with the reason.
-- Warnings are printed to stderr by `plan report` as well as by `scriptplan`.
-- `report_id` is a SHA-256 of the rendered result, so it differs when the
-  schedule differs.
+- A dependency cycle is rejected before scheduling, and the message names the cycle.
+- An attribute or reference the parser cannot place is an error. Each directive the
+  grammar accepts has a probe showing that it changes a schedule, is refused or draws a
+  warning. The few that do none of these are listed, each with the reason, in
+  `audit/evaluations/probe_directive_effect.py`.
+- Warnings are printed to standard error by `plan report` and by `scriptplan`.
+
+## Differences from other schedulers of this format
+
+A file written for another scheduler may behave differently in these places.
+
+- **Direction.** A task's direction comes from `scheduling`. A `depends` written after
+  `scheduling alap` does not turn the task back to as soon as possible.
+- **Placement order.** Where two tasks lead into the same task, ScriptPlan counts that
+  task towards the criticalness of both. Another scheduler of this format counts it
+  towards the one declared first. The two can then place tasks of equal priority in a
+  different order. Of 150 random projects with contended resources, 132 came out the
+  same in both. Give a task a `priority` to fix its place.
+- **Start of a `length` task.** A `length` task with no start of its own is reported as
+  starting at the first working moment it can. Other schedulers report the moment it was
+  released, which may be midnight. The end is the same.
+- **Task references.** A reference is looked up from the referring task's scope, one
+  level up for each `!`. When the `!`s stop at a task, the reference must name one of its
+  children, and `!x` with no sibling `x` is refused. When there are no `!`s, or they
+  reach the top level and no top-level task matches, the reference binds to the only
+  task in the project with that id. `depends !!pack` inside `delivery` finds
+  `delivery.pack` this way. When two tasks could be meant, the file is refused and both
+  are named.
+- **Additions.** `scheduling` in the project block, `workinghours <shift id>` on a
+  resource, `timezone` on a resource and intervals that run past midnight are
+  ScriptPlan's own.
 
 ## Known limits
 
 - `include`, `supplement`, `leaveallowance` and `statussheet` are not implemented.
-- Output formats are JSON and CSV. `ical`, `tjp`, `niku` and MS Project XML are
-  rejected at parse time rather than silently producing nothing.
-- Accounts are parsed but not yet modelled, so `chargeset` and `charge` record an
-  amount without posting it anywhere.
-- The value a task or resource gives to a custom attribute declared with `extend`
-  is read and not kept.
-- `limits` inside an `allocate` option block is refused. Put the limits on the
-  task, with `{ resources <id> }` to hold them to one resource.
-- The `workinghours` lines of one block (project, shift or resource) state its
-  whole week: a day no line names is not worked, and two lines naming the same
-  day add up. Other schedulers of this format keep the inherited hours on a day
-  a line does not name. Name every day you mean.
-- A `length` task with no start of its own is reported as starting at the first
-  working moment it can, where other schedulers report the moment it was
-  released, which may be midnight. The end is the same.
-- Each resource holds one entry per slot for the whole project, so memory grows
-  with resources times the project's length divided by the slot size. Times off
-  the hour make the slots smaller; `timingresolution` sets the size outright.
-- A task reference is looked up from the referring task's scope, one level up for
-  each `!`. When the `!`s stop at a task, the reference must name one of its
-  children: `!x` with no sibling `x` is refused. When there are no `!`s, or they
-  reach the top level of the project and no top-level task matches, the reference
-  binds to the only task in the project with that id, so `depends !!pack` inside
-  `delivery` finds `delivery.pack`. When two tasks could be meant, the file is
-  refused and both are named.
-- `onstart` on a dependency means start-to-start for a task scheduled as soon as
-  possible: it may start once the predecessor starts. For a task scheduled as
-  late as possible it means the task must finish before the predecessor starts,
-  which is ScriptPlan's own reading.
+- Output formats are JSON and CSV. `ical`, `tjp`, `niku` and MS Project XML are refused
+  when the file is read.
+- Accounts are parsed and not yet modelled. `chargeset` and `charge` record an amount
+  without posting it anywhere.
+- The value a task or resource gives to a custom attribute declared with `extend` is
+  read and not kept.
+- `limits` inside an `allocate` option block is refused. Put the limits on the task, and
+  add `{ resources <id> }` to hold them to one resource.
+- `onend` on `precedes` is refused.
+- Memory grows with the number of resources times the project's length divided by the
+  slot size, because a resource holds one entry per slot for the whole project. Times
+  off the hour make the slots smaller.
 
-## Example Project
+## Example project
 
 ```
 project "Manufacturing" 2025-07-01 +1m {
@@ -244,7 +259,7 @@ task delivery "Product Launch" {
   task assemble_b "Body Assembly" {
     effort 16h
     allocate machine
-    depends !!pack { onstart }
+    precedes !!pack
   }
 
   task assemble_a "Engine Assembly" {
@@ -255,8 +270,8 @@ task delivery "Product Launch" {
 
 task connection_setup "Logic" {
   task set_deps "Apply" {
-    depends !delivery.assemble_a, !delivery.assemble_b
-    precedes !delivery.pack
+    depends !!delivery.assemble_a, !!delivery.assemble_b
+    precedes !!delivery.pack
   }
 }
 
@@ -267,14 +282,10 @@ taskreport output "output" {
 }
 ```
 
-This project schedules backward from the delivery deadline (ALAP mode). The scheduler:
+The project is scheduled backward from the delivery deadline. Packaging ends at 16:00
+on 18 July. Both assemblies have to finish before packaging starts. With one machine
+they run one after the other, on the four working days before it.
 
-1. Anchors packaging to end at 16:00 on July 18
-2. Schedules both assembly tasks to complete before packaging starts
-3. Resolves resource contention (single machine) by sequencing assemblies back-to-back
-4. Respects weekend boundaries (Mon-Fri working hours)
-
-Result:
 ```
 delivery.pack:       2025-07-18-08:00 -> 2025-07-18-16:00
 delivery.assemble_a: 2025-07-14-08:00 -> 2025-07-15-16:00
@@ -287,8 +298,8 @@ Apache-2.0
 
 ## Acknowledgments
 
-ScriptPlan reads the .tjp project file format. It contains no code from any other
-scheduler: the parser, the scheduling algorithms and the reports are its own.
+ScriptPlan reads the .tjp project file format. Its parser, its scheduling algorithms and
+its reports were written for it, and it contains no code from any other scheduler.
 
 ## Why ScriptPlan?
 

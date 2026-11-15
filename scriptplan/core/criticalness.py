@@ -10,13 +10,13 @@ before work that could go anywhere:
   resources it may use. A task with no effort, or no one allocated, has none.
   A milestone gets a small one that follows its priority;
 - a task's path criticalness is its own plus the heaviest path among the tasks
-  that follow it or follow a container it is inside.
+  that wait for it, or for a container it is inside. A container's path is
+  its heaviest child's.
 
-Tasks are walked in declaration order, and a follower that was already walked
-counts for what follows it, without its own criticalness. So where two tasks
-lead into the same one, the first declared carries it and the second does not.
-Schedules in this format have always been ordered that way, and a plan depends
-on the order, so it is kept: the same file gives the same plan.
+Where two tasks lead into the same one, it counts in full for both, so the
+result does not depend on the order the file declares them in. (0.10.3
+counted it for the first declared only, as another scheduler of this format
+does. That scheduler's own notes describe the full count.)
 
 Computed once per scheduling run, before the first task is placed.
 """
@@ -70,55 +70,68 @@ def compute_criticalness(project: Any, scIdx: int) -> None:
             value = 0.0
         task[("criticalness", scIdx)] = value
 
-    followers = _followers(project, scIdx)
-    paths: dict[int, float] = {}
+    paths = _path_criticalness(project, scIdx, _followers(project, scIdx))
     for task in project.tasks:
-        _path(task, scIdx, followers, paths)
         task[("pathcriticalness", scIdx)] = paths[id(task)]
 
 
 def _followers(project: Any, scIdx: int) -> dict[int, list[Any]]:
-    """Predecessor -> the tasks that wait for it to end."""
+    """Predecessor -> the tasks that wait for it, to end or `{ onstart }` to start."""
     index: dict[int, list[Any]] = {}
     for task in project.tasks:
         for dep in task.get("depends", scIdx) or []:
-            if isinstance(dep, dict):
-                if dep.get("onstart"):
-                    continue
-                predecessor = dep.get("task")
-            else:
-                predecessor = getattr(dep, "task", dep)
+            predecessor = dep.get("task") if isinstance(dep, dict) else getattr(dep, "task", dep)
             waiting = index.setdefault(id(predecessor), [])
             if task not in waiting:
                 waiting.append(task)
     return index
 
 
-def _path(task: Any, scIdx: int, followers: dict[int, list[Any]], paths: dict[int, float]) -> float:
-    """What a path entering this task is worth to whoever leads into it.
-
-    The first walk settles the task's path criticalness and returns it. A
-    later walk returns it without the task's own criticalness.
-    """
-    own: float = task.get("criticalness", scIdx) or 0.0
-    known = paths.get(id(task))
-    if known is not None:
-        return known - own
-    # Settled before walking on, so a dependency loop, which is refused
-    # elsewhere, cannot recurse here.
-    paths[id(task)] = own
-
-    heaviest = 0.0
-    if task.leaf():
-        holder = task
-        while holder is not None:
-            for follower in followers.get(id(holder), []):
-                heaviest = max(heaviest, _path(follower, scIdx, followers, paths))
-            holder = holder.parent
-    else:
+def _onward(task: Any, followers: dict[int, list[Any]]) -> list[Any]:
+    """Where a path goes after this task."""
+    if not task.leaf():
         # A container's path runs through its children.
-        for child in task.children:
-            heaviest = max(heaviest, _path(child, scIdx, followers, paths))
+        return list(task.children)
+    onward: list[Any] = []
+    holder = task
+    while holder is not None:
+        onward.extend(followers.get(id(holder), []))
+        holder = holder.parent
+    return onward
 
-    paths[id(task)] = heaviest + own
-    return heaviest + own
+
+def _path_criticalness(project: Any, scIdx: int, followers: dict[int, list[Any]]) -> dict[int, float]:
+    """Each task's own criticalness plus the heaviest path that leaves it.
+
+    A depth-first walk on an explicit stack. Recursing instead ran out of
+    stack on a chain of a thousand tasks (issuedb #46).
+    """
+    paths: dict[int, float] = {}
+    heaviest: dict[int, float] = {}
+    for root in project.tasks:
+        if id(root) in heaviest:
+            continue
+        heaviest[id(root)] = 0.0
+        stack: list[tuple[Any, Any]] = [(root, iter(_onward(root, followers)))]
+        while stack:
+            task, pending = stack[-1]
+            entered = False
+            for following in pending:
+                if id(following) in paths:
+                    heaviest[id(task)] = max(heaviest[id(task)], paths[id(following)])
+                elif id(following) not in heaviest:
+                    heaviest[id(following)] = 0.0
+                    stack.append((following, iter(_onward(following, followers))))
+                    entered = True
+                    break
+                # Otherwise it is still open below us: a dependency loop,
+                # which is refused elsewhere and adds nothing here.
+            if entered:
+                continue
+            stack.pop()
+            own: float = task.get("criticalness", scIdx) or 0.0
+            paths[id(task)] = heaviest[id(task)] + own
+            if stack:
+                above = stack[-1][0]
+                heaviest[id(above)] = max(heaviest[id(above)], paths[id(task)])
+    return paths

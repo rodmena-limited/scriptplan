@@ -161,7 +161,8 @@ class ResourceRules:
     def workinghours_spec(self, items: list[Any]) -> dict[str, Any]:
         """Parse workinghours specification: mon, tue, ... 08:00 - 17:00, 13:00 - 14:00.
 
-        Returns a dict mapping day names to list of (start_time, end_time) tuples.
+        Returns the days named and the (start_time, end_time) ranges they get.
+        `off` leaves the ranges empty: the days are not worked.
         """
         # items[0] is day_list (list of days)
         # items[1:] are duration_range tuples

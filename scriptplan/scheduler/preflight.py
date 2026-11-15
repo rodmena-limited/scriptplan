@@ -19,6 +19,7 @@ __all__ = [
     "dependency_of",
     "find_dependency_cycle",
     "iter_dependencies",
+    "onstart_only_on_forward_tasks",
     "stated_dates_inside_window",
 ]
 
@@ -46,6 +47,43 @@ def stated_dates_inside_window(project: Any, scenario_idx: int) -> bool:
                     data=task.fullId,
                 )
     return inside
+
+
+def onstart_only_on_forward_tasks(project: Any, scenario_idx: int) -> bool:
+    """Refuse `depends X { onstart }` on a task scheduled as late as possible.
+
+    `onstart` lets a task start once its predecessor has started. A task
+    placed backwards from its end has no start to hold to that, so the file
+    is refused, as it is by other schedulers of this format. ScriptPlan read
+    it as "finish before X starts" until 0.11.0; `precedes X` says that
+    (issuedb #43). Returns True when no task is refused.
+    """
+    fine = True
+    for task in project.tasks:
+        if not task.leaf() or task.get("forward", scenario_idx) is not False:
+            continue
+        # A child holds its container's dependency itself as well as through
+        # the container: one error per predecessor is enough.
+        named: set[int] = set()
+        node: Any | None = task
+        while node is not None:
+            for dep in node.get("depends", scenario_idx) or []:
+                predecessor = dependency_of(dep)
+                if predecessor is None or not _is_onstart(dep) or id(predecessor) in named:
+                    continue
+                named.add(id(predecessor))
+                fine = False
+                name = getattr(predecessor, "fullId", predecessor)
+                project.error(
+                    "onstart_on_backward_task",
+                    f"Task '{task.fullId}' is scheduled as late as possible and depends on '{name}' "
+                    "{ onstart }. An onstart dependency needs a task scheduled as soon as possible. "
+                    f"To finish before '{name}' starts, give this task `precedes` in place of "
+                    "`depends ... { onstart }`.",
+                    data=task.fullId,
+                )
+            node = node.parent
+    return fine
 
 
 def dependency_of(dep: Any) -> Any | None:

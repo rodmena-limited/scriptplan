@@ -119,14 +119,6 @@ def test_a_shift_leave_holds_for_a_resource_on_the_shift(tmp_path: Path) -> None
     assert "t,2026-12-19-09:00,2026-12-25-17:00" in output
 
 
-def test_a_day_no_workinghours_line_names_is_not_worked(tmp_path: Path) -> None:
-    # ScriptPlan's rule, the same for a project as for a shift or a resource.
-    text = DECEMBER.format(hours="workinghours mon, wed, fri 09:00 - 17:00") + 'task t "T" { length 3d start 2026-12-02-09:00 }\n'
-    code, output = plan(tmp_path, text)
-    assert code == 0, output
-    assert "t,2026-12-02-09:00,2026-12-07-17:00" in output
-
-
 @pytest.mark.parametrize("line", ["leaves holiday", "leaves annual", "vacation"])
 def test_each_leave_line_is_stored_once(line: str) -> None:
     # 0.10.2 stored every earlier leave again with each line: 2^N - 1 entries

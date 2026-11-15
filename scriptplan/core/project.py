@@ -34,7 +34,7 @@ from scriptplan.core.property import (
 from scriptplan.core.scenario import Scenario
 from scriptplan.core.timesheet import TimeSheets
 from scriptplan.scheduler.postcheck import run_post_checks
-from scriptplan.scheduler.preflight import check_no_cycles, stated_dates_inside_window
+from scriptplan.scheduler.preflight import check_no_cycles, onstart_only_on_forward_tasks, stated_dates_inside_window
 from scriptplan.scheduler.scoreboard import Scoreboard
 from scriptplan.scheduler.stalls import break_deadlock, report_unscheduled
 from scriptplan.utils.data_cache import FileList
@@ -225,8 +225,11 @@ class Project(MessageHandler):
                 # does not hide the others.
                 self.attributeMode = AttributeBase.COMPUTED
                 with handler.collecting():
-                    # A date stated outside the project cannot be placed at all.
-                    if not stated_dates_inside_window(self, scIdx) or not self.scheduleScenario(scIdx):
+                    # A date stated outside the project cannot be placed at all,
+                    # and neither can an onstart dependency on a backward task.
+                    placeable = stated_dates_inside_window(self, scIdx)
+                    placeable = onstart_only_on_forward_tasks(self, scIdx) and placeable
+                    if not placeable or not self.scheduleScenario(scIdx):
                         ok = False
 
                     # Finish

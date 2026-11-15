@@ -1,8 +1,16 @@
 """
-WorkingHours class for managing per-resource working hour schedules.
+A working week: for each weekday, the intervals that are worked.
 
-This class handles irregular working hours like "08:15 - 11:45, 13:15 - 16:30"
-for specific days of the week.
+A block of the project file (the project, a shift, a resource) does not state
+its week from nothing. It starts with the week it inherits, and each
+``workinghours`` line replaces the hours of the days it names:
+
+    workinghours mon - thu 08:00 - 18:00    # Friday keeps what it had
+    workinghours fri off                    # now Friday is not worked
+
+The project starts from weekdays nine to five. A shift starts from the
+project's week. A resource starts from its parent resource's week, or from the
+project's when it has no parent.
 """
 
 from datetime import datetime
@@ -27,75 +35,84 @@ if TYPE_CHECKING:
     from scriptplan.core.project import Project
 
 
-class WorkingHours:
-    """
-    Manages working hours for a resource.
+# The week a project has until its own lines change it.
+DEFAULT_WEEKDAYS = (0, 1, 2, 3, 4)
+DEFAULT_HOURS = ((9, 0), (17, 0))
 
-    Working hours are defined as time intervals for each day of the week.
-    For example:
-        Mon, Wed, Fri: 08:15 - 11:45, 13:15 - 16:30
-        Tue, Thu: 09:00 - 10:30, 14:45 - 16:00
-    """
+
+class WorkingHours:
+    """The intervals worked on each day of the week."""
 
     # Map day names to weekday numbers (0=Monday, 6=Sunday)
     DAY_MAP: ClassVar[dict[str, int]] = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
     def __init__(self, project: "Project") -> None:
-        """
-        Initialize working hours.
-
-        Args:
-            project: Project reference for time conversion
-        """
+        """An empty week. ``default_week`` and ``copy`` give one to start from."""
         self.project = project
-        # Dict mapping weekday (0-6) to list of (start_time, end_time) tuples
-        # Times are stored as (hour, minute) tuples
+        # What each weekday (0-6) was given, as ((hour, minute), (hour, minute))
+        # pairs. An interval whose end is at or before its start runs past
+        # midnight and belongs to the day it starts on.
+        self._given: dict[int, list[tuple[tuple[int, int], tuple[int, int]]]] = {}
+        # The same week cut at midnight, so each interval lies inside one day.
+        # Derived from _given; this is what lookups read.
         self._hours: dict[int, list[tuple[tuple[int, int], tuple[int, int]]]] = {}
-        # Start with empty hours - will be populated by set_hours()
-        # If no hours are set, onShift will fall back to project default
+        # False until the week holds something; onShift then falls back to the
+        # project's calendar.
         self._custom_hours_set = False
 
+    @classmethod
+    def default_week(cls, project: "Project") -> "WorkingHours":
+        """Monday to Friday, nine to five."""
+        week = cls(project)
+        week._custom_hours_set = True
+        for day in DEFAULT_WEEKDAYS:
+            week._given[day] = [DEFAULT_HOURS]
+        week._cut_at_midnight()
+        return week
+
+    def copy(self) -> "WorkingHours":
+        """A week of its own with the same hours, for a block that inherits them."""
+        week = WorkingHours(self.project)
+        week._custom_hours_set = self._custom_hours_set
+        week._given = {day: list(intervals) for day, intervals in self._given.items()}
+        week._cut_at_midnight()
+        return week
+
     def set_hours(self, days: list[str], ranges: list[tuple[str, str]]) -> None:
-        """
-        Set working hours for specific days.
+        """Apply one ``workinghours`` line: the named days get exactly these hours.
 
         Args:
             days: List of day names like ['mon', 'wed', 'fri']
-            ranges: List of (start_time, end_time) tuples like [('08:15', '11:45')]
+            ranges: List of (start_time, end_time) tuples like [('08:15', '11:45')].
+                Empty for ``off``: the named days are not worked.
+
+        A day the line does not name keeps the hours it had. A night shift
+        belongs to the day it starts on: "sun 22:00 - 06:00" is Sunday's, and
+        a later line for Monday leaves Monday's early hours alone.
         """
         self._custom_hours_set = True
 
-        # Convert day names to weekday numbers
-        day_nums: list[int] = []
-        for day in days:
-            day_lower = day.lower()
-            if day_lower in self.DAY_MAP:
-                day_nums.append(self.DAY_MAP[day_lower])
-
-        # Handle day ranges like "mon - fri"
-        if len(day_nums) == 0:
-            return
-
-        # Parse time ranges to (hour, minute) tuples
         time_intervals: list[tuple[tuple[int, int], tuple[int, int]]] = []
         for start_str, end_str in ranges:
-            start_h, start_m = self._parse_time(start_str)
-            end_h, end_m = self._parse_time(end_str)
-            time_intervals.append(((start_h, start_m), (end_h, end_m)))
+            time_intervals.append((self._parse_time(start_str), self._parse_time(end_str)))
 
-        # Set hours for each day.
-        #
-        # An interval whose end is at or before its start crosses midnight:
-        # "fri 22:00 - 06:00" is Friday evening plus Saturday morning. It is
-        # split here, at definition time, so that a later lookup is a plain
-        # "is this minute inside one of today's intervals" question. Deciding
-        # it at lookup time means consulting the previous day, which is easy to
-        # get wrong in one implementation and not the other.
-        #
-        # Several workinghours directives for the same resource accumulate, so
-        # a resource can have more than one block per day.
-        for day_num in day_nums:
-            for (start_h, start_m), (end_h, end_m) in time_intervals:
+        for day in days:
+            day_num = self.DAY_MAP.get(day.lower())
+            if day_num is not None:
+                self._given[day_num] = list(time_intervals)
+        self._cut_at_midnight()
+
+    def _cut_at_midnight(self) -> None:
+        """Derive the same-day intervals lookups read from what each day was given.
+
+        "fri 22:00 - 06:00" becomes Friday 22:00-24:00 plus Saturday
+        00:00-06:00. Cutting here keeps a lookup a plain "is this minute
+        inside one of today's intervals" question, with no need to consult
+        the day before.
+        """
+        self._hours = {}
+        for day_num in sorted(self._given):
+            for (start_h, start_m), (end_h, end_m) in self._given[day_num]:
                 start_minutes = start_h * 60 + start_m
                 end_minutes = end_h * 60 + end_m
                 if end_minutes <= start_minutes:
@@ -132,7 +149,7 @@ class WorkingHours:
         Returns:
             True if the slot is within working hours
         """
-        # If no custom hours set, fall back to the project's week
+        # An empty week falls back to the project's
         if not self._custom_hours_set:
             from scriptplan.core.project_calendar import in_week
 
@@ -150,18 +167,35 @@ class WorkingHours:
             weekday, slot_minutes = placement
             return self._within_hours(weekday, slot_minutes)
 
-        # A resource in another timezone needs the real conversion, because a
-        # zone that observes daylight saving is not weekly-periodic.
-        dt = self.project.idxToDate(slot_idx)
-        if dt is None:
+        # Any other zone needs the real conversion, because a zone that
+        # observes daylight saving is not weekly-periodic. It is the same for
+        # every resource in the zone, so it is worked out once per zone.
+        placed = self._zone_placement(slot_idx, timezone)
+        if placed is None:
             return False
-        dt = self._convert_to_timezone(dt, timezone)
-        if dt is None:
-            return False
+        return self._within_hours(placed // 1440, placed % 1440)
 
-        weekday = dt.weekday()
-
-        return self._within_hours(weekday, dt.hour * 60 + dt.minute)
+    def _zone_placement(self, slot_idx: int, timezone: str) -> Optional[int]:
+        """Weekday * 1440 + minute of day, in ``timezone``, for a slot."""
+        project = self.project
+        axis = (project.attributes.get("start"), int(project.attributes.get("scheduleGranularity", 3600)))
+        cache: dict[str, Any] = project.__dict__.setdefault("_zone_placements", {})
+        if cache.get("axis") != axis:
+            # A run on a different start or slot size must not read the
+            # placements of the run before it.
+            cache.clear()
+            cache["axis"] = axis
+        slots: dict[int, int] = cache.setdefault(timezone, {})
+        placed = slots.get(slot_idx)
+        if placed is None:
+            dt = project.idxToDate(slot_idx)
+            if dt is None:
+                return None
+            local = self._convert_to_timezone(dt, timezone)
+            if local is None:
+                return None
+            placed = slots[slot_idx] = local.weekday() * 1440 + local.hour * 60 + local.minute
+        return placed
 
     def covers(self, local: datetime) -> bool:
         """Whether a moment, already in the zone the hours are meant in, is worked."""
@@ -222,13 +256,14 @@ class WorkingHours:
         return total_minutes / 60.0
 
     def clear_day(self, weekday: int) -> None:
-        """Clear working hours for a specific day."""
-        if weekday in self._hours:
-            self._hours[weekday] = []
+        """Make one day unworked."""
+        self._given[weekday] = []
+        self._cut_at_midnight()
 
     def clear_all(self) -> None:
-        """Clear all working hours."""
-        self._hours = {}
+        """Make every day unworked."""
+        self._given = {}
+        self._cut_at_midnight()
 
     def _convert_to_timezone(self, dt: datetime, timezone_str: str) -> Optional[datetime]:
         """

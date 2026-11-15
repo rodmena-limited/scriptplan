@@ -37,7 +37,7 @@ task sequence "Event" {
   task a "Alpha" {
     effort 12h
     allocate n
-    depends !!b { gapduration 48h onstart }
+    precedes !!b { gapduration 48h }
   }
 }
 

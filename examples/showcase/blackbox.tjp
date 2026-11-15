@@ -11,10 +11,12 @@ project "Black_Box_Protocol" 2025-01-01 +1m {
 
 shift alpha_shift {
   workinghours mon - wed 10:00 - 14:00
+  workinghours thu, fri off
 }
 
 shift beta_shift {
   workinghours thu - sun 18:00 - 22:00
+  workinghours mon - wed off
 }
 
 resource agent_a "Alpha" {

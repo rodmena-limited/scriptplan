@@ -7,7 +7,8 @@ Arithmetic check: `out/walk6.py` (stdlib only, no scriptplan).
 
 - Project period: 2025-06-01 00:00 + 1m (30.4167 d) = up to 2025-07-01 ~10:00. 2025-06-01
   is a Sunday. No vacations.
-- `r_sun`: `s_odd` = Mon, Wed, Fri 09:00-17:00 only.
+- `r_sun`: `s_odd` = Mon, Wed, Fri 09:00-17:00, with `workinghours tue, thu off` closing
+  the two weekdays the shift would otherwise inherit from the project.
 - `r_moon`: `s_mid` = every day 12:00-14:00.
 - `sys.sync`: effort 14h, `allocate r_sun { mandatory }, r_moon { mandatory }`,
   `start 2025-06-01-00:00`.
@@ -38,11 +39,13 @@ Arithmetic check: `out/walk6.py` (stdlib only, no scriptplan).
 1. **AMBIGUOUS: reported start.** Declared `start 2025-06-01-00:00` (Sunday, no joint time)
    vs first booked minute 2025-06-02 12:00. Chosen: first booked minute (the reference scheduler
    reports this too). Alternative: 2025-06-01 00:00 for both `sys.sync` and `sys`.
-2. **AMBIGUOUS: unlisted weekdays in `workinghours mon, wed, fri ...`.** Chosen (brief:
-   workinghours "replace the default"): r_sun has no Tue/Thu hours. Alternative (the reference scheduler behaviour): Tue/Thu keep the 09:00-17:00 default, the joint window becomes Mon-Fri
-   12:00-14:00, and sync runs 2025-06-02 12:00 -> 2025-06-05 13:00
-   (Mon 120 + Tue 120 + Wed 120 + Thu 60 = 420 min). The project's header comment
-   ("discontinuous shift patterns", shift named "Odd") supports the chosen reading.
+2. **Decided in 0.11.0: unlisted weekdays in `workinghours mon, wed, fri ...`.** A day no
+   line names keeps the hours it inherits, as in the reference scheduler. Until 0.11.0
+   ScriptPlan left such a day unworked, and this file relied on that. It now states
+   `workinghours tue, thu off`, so r_sun still has no Tue/Thu hours and the dates did not
+   change. Without that line Tue/Thu keep the 09:00-17:00 default, the joint window
+   becomes Mon-Fri 12:00-14:00, and sync runs 2025-06-02 12:00 -> 2025-06-05 13:00
+   (Mon 120 + Tue 120 + Wed 120 + Thu 60 = 420 min).
 
 ## the reference scheduler cross-check
 
@@ -53,8 +56,7 @@ the reference scheduler rejects `workinghours s_odd` (shift name). Variants in a
 - a translated copy (not kept) (same, plus `workinghours tue, thu, sat, sun off` on r_sun):
   `sys.sync;2025-06-02-12:00;2025-06-09-13:00` — **agrees with the derivation**.
 
-The first variant differs because the reference scheduler's `workinghours` replaces only the listed weekdays;
+The first variant is the file without its `off` line. It differs because `workinghours` replaces only the listed weekdays;
 an hourly booking dump (a translated copy (not kept), `rr.csv`) shows r_sun booked on Tue 3
-Jun 12:00-14:00 and Thu 5 Jun 12:00-13:00. Explained by default working hours (AMBIGUOUS
-point 2). Both the reference scheduler runs report the start as 06-02 12:00, not the declared 06-01 00:00, and
+Jun 12:00-14:00 and Thu 5 Jun 12:00-13:00 (point 2 above). Both the reference scheduler runs report the start as 06-02 12:00, not the declared 06-01 00:00, and
 honour `mandatory` (nothing is booked on Sun 1 Jun although r_moon works then).

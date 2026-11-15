@@ -64,7 +64,6 @@ def _check_dependencies_kept(project: Any, scenario_idx: int) -> None:
         start, end = task.get("start", scenario_idx), task.get("end", scenario_idx)
         if not isinstance(start, datetime) or not isinstance(end, datetime):
             continue
-        forward = task.get("forward", scenario_idx) is not False
         reported: set[int] = set()
         for dep in scenario.getAllDependencies():
             predecessor, options = _dependency_parts(dep)
@@ -79,13 +78,6 @@ def _check_dependencies_kept(project: Any, scenario_idx: int) -> None:
             if not isinstance(anchor, datetime):
                 continue
             gap = options.get("gapduration")
-            if onstart and not forward:
-                # Read for a backward task as: it must end before the predecessor starts.
-                latest = anchor - timedelta(seconds=scenario._calendarSeconds(gap)) if gap else anchor
-                if end > latest:
-                    reported.add(id(predecessor))
-                    _dependency_error(project, task, predecessor, f"end by {latest}", f"ends at {end}")
-                continue
             earliest = anchor + timedelta(seconds=scenario._calendarSeconds(gap)) if gap else anchor
             if options.get("gaplength"):
                 earliest = scenario._advanceWorkingTime(anchor, scenario._workingSeconds(options["gaplength"]))

@@ -393,6 +393,46 @@ def probe_week_starts_on_monday() -> tuple[bool, str]:
     return ok, f"ends without and with the directive: {[f'{end:%Y-%m-%d %H:%M}' for end in ends]} (expected 2025-01-07 17:00)"
 
 
+def _ends(tjp: str) -> str:
+    result = outcome(tjp)
+    if result[0] != "scheduled":
+        return str(result[1])
+    return f"{result[1][0]['t'][1]:%m-%d %H:%M}"
+
+
+@probe("workinghours ... off closes the days it names, and a day no line names keeps its hours")
+def probe_off_and_unnamed_days() -> tuple[bool, str]:
+    body = 'resource r "R" {{ {hours} }}\ntask t "T" {{ effort 40h allocate r }}\n'
+    plain = _ends(plan(body.format(hours="")))
+    one_line = _ends(plan(body.format(hours="workinghours mon 9:00 - 17:00")))
+    closed = _ends(plan(body.format(hours="workinghours fri off")))
+    # 2025-01-06 is a Monday: five days end on Friday the 10th, and on Monday the 13th without Fridays.
+    ok = plain == "01-10 17:00" and one_line == plain and closed == "01-13 17:00"
+    return ok, f"no line {plain}; one line naming Monday {one_line} (expected the same); Friday off {closed} (expected 01-13 17:00)"
+
+
+@probe("A resource timezone moves a resource that has no hours of its own")
+def probe_timezone_without_own_hours() -> tuple[bool, str]:
+    body = 'resource r "R" {{ {zone} }}\ntask t "T" {{ effort 8h allocate r }}\n'
+    here = _ends(plan(body.format(zone="")))
+    tokyo = _ends(plan(body.format(zone='timezone "Asia/Tokyo"')))
+    # Nine to five in Tokyo is 00:00 to 08:00 UTC.
+    ok = here == "01-06 17:00" and tokyo == "01-06 08:00"
+    return ok, f"no zone ends {here}; Asia/Tokyo ends {tokyo} (expected 01-06 08:00)"
+
+
+@probe("depends { onstart } on a task scheduled as late as possible is refused, and scheduled as soon as possible is not")
+def probe_onstart_needs_a_forward_task() -> tuple[bool, str]:
+    body = (
+        'task a "A" {{ start 2025-01-13-09:00 duration 2d }}\n'
+        'task t "T" {{ duration 1d depends a {{ onstart }} {mode} }}\n'
+    )
+    forward = outcome(plan(body.format(mode="")))
+    backward = outcome(plan(body.format(mode="scheduling alap end 2025-01-10-17:00")))
+    ok = forward[0] == "scheduled" and backward[0] == "refused"
+    return ok, f"forward {_shown(forward)}; backward {_shown(backward)}"
+
+
 def _shown(result: tuple[str, Any]) -> str:
     if result[0] != "scheduled":
         return str(result[1])

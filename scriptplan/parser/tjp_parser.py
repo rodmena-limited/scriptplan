@@ -19,7 +19,7 @@ from scriptplan.core.resolution import derive_resolution
 from scriptplan.core.resource import Resource
 from scriptplan.core.task import Task
 from scriptplan.core.timezones import to_utc
-from scriptplan.parser.attribute_apply import apply_property_attributes
+from scriptplan.parser.attribute_apply import apply_property_attributes, snapshot_parent_week
 from scriptplan.parser.macro_processor import preprocess_tjp
 from scriptplan.parser.model_pieces import (
     allocation_ids,
@@ -343,6 +343,7 @@ class ModelBuilder:
             obj = Task(project, str(prop_id), str(prop_name), parent if isinstance(parent, Task) else None)
         elif prop_type == "resource":
             obj = Resource(project, str(prop_id), str(prop_name), parent if isinstance(parent, Resource) else None)
+            snapshot_parent_week(obj)
         elif prop_type == "account":
             # Skip accounts for now - need Account class
             return

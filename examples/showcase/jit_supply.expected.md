@@ -1,7 +1,7 @@
 # jit_supply.tjp: derivation
 
 Helpers: `oracle_jpq/walk_jpq.py` (stdlib calendar walker, output in
-`oracle_jpq/walk_jpq.output.txt`) and the the reference scheduler variants in a translated copy (not kept).
+`oracle_jpq/walk_jpq.output.txt`) and the reference scheduler variants in a translated copy (not kept).
 
 ## Setting
 
@@ -16,8 +16,8 @@ Helpers: `oracle_jpq/walk_jpq.py` (stdlib calendar walker, output in
 
 | edge in the file | read as |
 |---|---|
-| `delivery { end 2025-07-18-16:00 }` | Container end as stated. It is passed down to ALAP children that have no end of their own. The README's worked example (this file) says "Anchors packaging to end at 16:00 on July 18", and the the reference scheduler manual says the same of a container `end`. |
-| `assemble_b depends !!pack { onstart }` | `!!pack` resolves to `delivery.pack` (A2). `onstart` takes the README Known-limits reading (A1): "the dependent task must finish before the predecessor starts", so **assemble_b.end <= pack.start**. |
+| `delivery { end 2025-07-18-16:00 }` | Container end as stated. It is passed down to ALAP children that have no end of their own. The README's worked example (this file) says "Anchors packaging to end at 16:00 on July 18", and the reference scheduler manual says the same of a container `end`. |
+| `assemble_b precedes !!pack` | `!!pack` resolves to `delivery.pack` (A2). **assemble_b.end <= pack.start** (A1). |
 | `set_deps depends assemble_a, assemble_b` | set_deps comes after both of them. Backwards, **assemble_x.end <= set_deps.start**. |
 | `set_deps precedes pack` | **set_deps.end <= pack.start**. pack is a successor of set_deps. |
 
@@ -71,13 +71,11 @@ The README states pack 07-18 08:00-16:00, assemble_a 07-14 08:00 to 07-15 16:00,
 
 ## AMBIGUOUS
 
-**A1. `onstart`.**
-- Chosen: the README reading, assemble_b.end <= pack.start.
-- Alternative: the brief's ASAP line ("or start, for { onstart }"), which is the reference scheduler's start-to-start, assemble_b.start >= pack.start.
-- Together with set_deps, the alternative is a cycle: pack.start <= assemble_b.start < assemble_b.end <= set_deps <= pack.start. That cannot hold with 960 min of effort.
-- Under the alternative, delivery.pack, delivery.assemble_b and connection_setup.set_deps (and through them assemble_a and the containers) are **UNSCHEDULABLE**, or the file is rejected as a loop. SPECS/001 notes that the loop check follows finish-to-start edges only, so it may not name this cycle.
-- the reference scheduler shows the cycle: on the onstart variant it crashes with `stack level too deep` in `calcPathCriticalness`.
-- Under the chosen reading the onstart edge is redundant, because set_deps already forces assemble_b before pack. Any reading that does not create the loop, including ignoring the edge, gives the same dates.
+**A1. The edge from assemble_b to pack.**
+- The file writes it `assemble_b precedes !!pack`: assemble_b.end <= pack.start.
+- Until 0.11.0 the file said `depends !!pack { onstart }`, and ScriptPlan read that on a task scheduled as late as possible as "finish before pack starts". 0.11.0 refuses `onstart` on such a task, as the reference scheduler does ("Tasks with on-start dependencies must be ASAP scheduled"), so the file now says the same thing with `precedes`. The dates did not change.
+- Start-to-start (assemble_b.start >= pack.start) was never an option here. Together with set_deps it is a cycle: pack.start <= assemble_b.start < assemble_b.end <= set_deps <= pack.start, which cannot hold with 960 min of effort.
+- The edge is redundant in any case, because set_deps already forces assemble_b before pack.
 
 **A2. Reference `!!pack`.**
 - From `delivery.assemble_b`, the reference scheduler resolves `!!` to the root, where there is no `pack`. the reference scheduler rejects it: "Task delivery.assemble_b has unknown depends pack".
@@ -97,10 +95,10 @@ The README states pack 07-18 08:00-16:00, assemble_a 07-14 08:00 to 07-15 16:00,
 
 **Original file.** Rejected: `scheduling` is not allowed in the project block, and `workinghours factory_hours` is not the reference scheduler syntax.
 
-**a translated copy (not kept).** `scheduling alap` is set on each task, the hours are expanded, `!!pack` becomes `!pack`, and `onstart` is kept.
+**a translated copy (not kept).** `scheduling alap` is set on each task, the hours are expanded, `!!pack` becomes `!pack`, and the edge is written as the file had it until 0.11.0, `depends !pack { onstart }`.
 - the reference scheduler crashes (stack level too deep, path criticalness). This is the A1 loop. Expected.
 
-**a translated copy (not kept).** onstart is rewritten as `assemble_b precedes !pack`, and set_deps keeps its `depends`.
+**a translated copy (not kept).** The edge is `assemble_b precedes !pack`, as the file has it now, and set_deps keeps its `depends`.
 - the reference scheduler: "Task delivery.assemble_a has not been marked as scheduled". It does place set_deps at 2025-07-18-08:00.
 - Reason: the reference scheduler does not derive an ALAP task's end from a successor that names it in `depends`. ALAP chains in the reference scheduler must be written with `precedes`. This is a the reference scheduler limitation, not a disagreement about dates.
 

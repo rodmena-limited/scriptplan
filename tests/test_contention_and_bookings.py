@@ -166,3 +166,37 @@ def test_a_minimum_that_is_met_draws_no_warning(tmp_path: Path) -> None:
     code, output = plan(tmp_path, text)
     assert code == 0, output
     assert "Warning" not in output
+
+
+DIAMOND = {
+    "a": 'task a "A" { start 2025-01-06 effort 2h allocate desk }\n',
+    "b": 'task b "B" { start 2025-01-06 effort 3h allocate desk }\n',
+}
+
+
+@pytest.mark.parametrize("order", ["ab", "ba"])
+def test_a_shared_follower_counts_for_both_tasks_that_lead_into_it(tmp_path: Path, order: str) -> None:
+    # ScriptPlan's own rule (issuedb #44). 0.10.3 counted c for whichever of a
+    # and b the file declared first, so a went first when it was declared
+    # first, though b is the larger. Now c counts for both and b goes first
+    # in either order.
+    text = 'project "K" 2025-01-06 +2w { timezone "Etc/UTC" }\n' + DESK + DIAMOND[order[0]] + DIAMOND[order[1]] + (
+        'task c "C" { depends a, b effort 8h allocate desk }\n'
+    )
+    code, output = plan(tmp_path, text)
+    assert code == 0, output
+    for row in ("b,2025-01-06-09:00,2025-01-06-12:00", "a,2025-01-06-12:00,2025-01-06-14:00", "c,2025-01-06-14:00,2025-01-07-14:00"):
+        assert row in output, output
+
+
+def test_a_chain_of_twelve_hundred_tasks_schedules(tmp_path: Path) -> None:
+    # 0.10.3 walked the chain by recursion and stopped with "maximum recursion
+    # depth exceeded" at about a thousand tasks (issuedb #46).
+    tasks = ['task t0 "T0" { effort 1h allocate desk }'] + [
+        f'task t{i} "T{i}" {{ effort 1h allocate desk depends t{i - 1} }}' for i in range(1, 1200)
+    ]
+    text = 'project "K" 2025-01-06 +2y { timezone "Etc/UTC" }\n' + DESK + "\n".join(tasks) + "\n"
+    code, output = plan(tmp_path, text)
+    assert code == 0, output[-400:]
+    # 1,200 hours at 40 a week is thirty weeks: the last hour is Friday 1 August.
+    assert "t1199,2025-08-01-16:00,2025-08-01-17:00" in output

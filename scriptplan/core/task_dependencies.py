@@ -69,18 +69,18 @@ def bounding_successors(scenario: Any) -> list[Any]:
     """The successors whose start this backward task must end by.
 
     A task that depends on this one finish-to-start must start after it ends,
-    so its start bounds this task. One that depends on it `{ onstart }` is,
-    for a backward task, read the other way round: it must finish before this
-    task starts, so it is bounded by this task rather than bounding it.
+    so its start bounds this task. One that depends on it `{ onstart }` only
+    waits for this task to start, which says nothing about where it ends.
     """
     out = []
     for successor in scenario._getSuccessors():
         other = successor.data[scenario.scenarioIdx] if successor.data else None
-        onstart = any(
-            isinstance(dep, dict) and names_this_task(scenario, dep.get("task")) and dep.get("onstart")
+        entries = [
+            dep
             for dep in (other.getAllDependencies() if other is not None else [])
-        )
-        if not (onstart and successor.get("forward", scenario.scenarioIdx) is False):
+            if names_this_task(scenario, dep.get("task") if isinstance(dep, dict) else getattr(dep, "task", dep))
+        ]
+        if not entries or any(not (isinstance(dep, dict) and dep.get("onstart")) for dep in entries):
             out.append(successor)
     return out
 

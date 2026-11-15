@@ -42,3 +42,7 @@ each with its own file in this directory. Two readings are ScriptPlan's own and 
 they are, both written into the README's known limits: `onstart` on a task scheduled as
 late as possible, and a `workinghours` line leaving the days it does not name unworked.
 Farshid has not accepted either by name.
+
+0.11.0 (2026-11-15) changed both readings after Farshid asked for them to be fixed:
+`onstart` on a task scheduled as late as possible is refused (SPECS/043), and a
+`workinghours` line replaces only the days it names (SPECS/042).
