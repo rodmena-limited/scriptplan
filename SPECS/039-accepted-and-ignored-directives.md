@@ -1,7 +1,7 @@
 # Directives accepted and ignored: group allocation fails, allocate limits and lower limits do nothing
 
 **Ticket**: issuedb #39  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

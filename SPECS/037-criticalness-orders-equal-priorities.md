@@ -1,7 +1,7 @@
 # Task criticalness is never computed, so contention is priority then declaration order (README says otherwise)
 
 **Ticket**: issuedb #37  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

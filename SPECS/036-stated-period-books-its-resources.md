@@ -1,7 +1,7 @@
 # A task with a stated start and end books none of the resources it allocates
 
 **Ticket**: issuedb #36  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

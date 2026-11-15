@@ -1,7 +1,7 @@
 # A task that depends on a container nested two or more levels deep never schedules (trace N5)
 
 **Ticket**: issuedb #33  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

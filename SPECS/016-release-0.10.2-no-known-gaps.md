@@ -33,3 +33,12 @@ RELEASED as scriptplan 0.10.2 (commit b1dbe19, tag v0.10.2, GitHub release v0.10
 After release, two test-only additions (no package change): tests/test_reference_and_duration.py covers #18's ambiguity refusal and #20's duration over a weekend through the CLI; both fail on v0.10.1.
 
 Not exercised: free-threaded (no-GIL) Python builds; Python 3.10-3.12 for the full suite (3.9 and 3.13 only); thread concurrency beyond 15 threads in one process.
+
+---
+
+0.10.3 followed on 2026-11-15 (commit 792f177, tag v0.10.3). It fixed the defects Trace
+and Siambr reported against 0.10.2 and those found while fixing them: issuedb #30 to #40,
+each with its own file in this directory. Two readings are ScriptPlan's own and stay as
+they are, both written into the README's known limits: `onstart` on a task scheduled as
+late as possible, and a `workinghours` line leaving the days it does not name unworked.
+Farshid has not accepted either by name.

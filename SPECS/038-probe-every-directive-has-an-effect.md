@@ -1,7 +1,7 @@
 # Probe: every scheduling directive the grammar accepts changes a schedule or is refused
 
 **Ticket**: issuedb #38  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

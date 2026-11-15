@@ -1,7 +1,7 @@
 # A !reference whose scope is a task binds a task elsewhere when it names no child (0.10.2 regression, trace N2)
 
 **Ticket**: issuedb #30  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

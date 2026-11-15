@@ -1,7 +1,7 @@
 # Each leaves line stores every earlier leave again: 2^N entries, scheduling time doubles per line (Siambr)
 
 **Ticket**: issuedb #40  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

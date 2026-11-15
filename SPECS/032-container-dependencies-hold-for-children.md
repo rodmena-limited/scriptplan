@@ -1,7 +1,7 @@
 # A child of a container that depends on another with a gap or onstart never schedules (trace N4)
 
 **Ticket**: issuedb #32  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: high  
 **Release**: 0.10.3
 

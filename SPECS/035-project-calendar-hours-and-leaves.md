@@ -1,7 +1,7 @@
 # Project workinghours is never applied, and global leaves do not close the project calendar (Siambr)
 
 **Ticket**: issuedb #35  
-**Status**: in progress  
+**Status**: closed (released in 0.10.3)  
 **Priority**: critical  
 **Release**: 0.10.3
 
